@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { evaluateVfxStage } from "./vfxStage";
+import {
+  VFX_STAGE_HOLD_MS,
+  evaluateVfxStage,
+  evaluateVfxStageTransition
+} from "./vfxStage";
 
 describe("evaluateVfxStage", () => {
   it("stays off during bootstrap regardless of fps", () => {
@@ -62,5 +66,95 @@ describe("evaluateVfxStage", () => {
     });
 
     expect(stage).toBe("full");
+  });
+});
+
+describe("evaluateVfxStageTransition", () => {
+  it("guards against threshold jitter around basic/full boundary", () => {
+    const keepBasic = evaluateVfxStageTransition({
+      currentStage: "basic",
+      targetStage: "full",
+      stageStartedAtMs: 0,
+      nowMs: 4000,
+      averageFps: 47
+    });
+    const keepFull = evaluateVfxStageTransition({
+      currentStage: "full",
+      targetStage: "basic",
+      stageStartedAtMs: 0,
+      nowMs: 4000,
+      averageFps: 45
+    });
+
+    expect(keepBasic).toMatchObject({
+      nextStage: "basic",
+      switched: false,
+      reason: "hysteresis_guard"
+    });
+    expect(keepFull).toMatchObject({
+      nextStage: "full",
+      switched: false,
+      reason: "hysteresis_guard"
+    });
+  });
+
+  it("blocks switching inside hold window then allows upgrade after hold", () => {
+    const held = evaluateVfxStageTransition({
+      currentStage: "basic",
+      targetStage: "full",
+      stageStartedAtMs: 1000,
+      nowMs: 1000 + VFX_STAGE_HOLD_MS - 1,
+      averageFps: 58
+    });
+    const upgraded = evaluateVfxStageTransition({
+      currentStage: "basic",
+      targetStage: "full",
+      stageStartedAtMs: 1000,
+      nowMs: 1000 + VFX_STAGE_HOLD_MS + 1,
+      averageFps: 58
+    });
+
+    expect(held).toMatchObject({
+      nextStage: "basic",
+      switched: false,
+      reason: "hold_window"
+    });
+    expect(upgraded).toMatchObject({
+      nextStage: "full",
+      switched: true,
+      reason: "upgrade"
+    });
+  });
+
+  it("downgrades immediately on emergency low fps", () => {
+    const decision = evaluateVfxStageTransition({
+      currentStage: "full",
+      targetStage: "full",
+      stageStartedAtMs: 1000,
+      nowMs: 1100,
+      averageFps: 20
+    });
+
+    expect(decision).toMatchObject({
+      nextStage: "off",
+      switched: true,
+      reason: "emergency_low_fps"
+    });
+  });
+
+  it("allows constraint downgrade without waiting for hold", () => {
+    const decision = evaluateVfxStageTransition({
+      currentStage: "full",
+      targetStage: "basic",
+      stageStartedAtMs: 1000,
+      nowMs: 1100,
+      averageFps: 60
+    });
+
+    expect(decision).toMatchObject({
+      nextStage: "basic",
+      switched: true,
+      reason: "constraint_downgrade"
+    });
   });
 });

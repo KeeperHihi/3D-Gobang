@@ -22,7 +22,11 @@ import {
   evaluateAdaptiveTick,
   type AdaptiveTickIntervalMs
 } from "../game/interaction/adaptiveTick";
-import { evaluateVfxStage } from "../game/interaction/vfxStage";
+import {
+  evaluateVfxStage,
+  evaluateVfxStageTransition,
+  type BoardSceneVfxStage
+} from "../game/interaction/vfxStage";
 import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatency";
 import {
   createAutoRematchRoundKey,
@@ -374,7 +378,7 @@ export function GameRoomPage({
     () => getQualityProfile(effectiveQualityLevel),
     [effectiveQualityLevel]
   );
-  const vfxStage = useMemo(
+  const targetVfxStage = useMemo(
     () =>
       evaluateVfxStage({
         renderBootstrapPhase: renderBootstrapDecision.phase,
@@ -384,6 +388,8 @@ export function GameRoomPage({
       }),
     [averageFps, effectiveQualityLevel, qualityProfile.sparklesEnabled, renderBootstrapDecision.phase]
   );
+  const [vfxStage, setVfxStage] = useState<BoardSceneVfxStage>(targetVfxStage);
+  const [vfxStageStartedAtMs, setVfxStageStartedAtMs] = useState<number>(() => nowMs);
   const winLineDirector = useMemo(
     () =>
       evaluateWinLineDirector({
@@ -1348,6 +1354,28 @@ export function GameRoomPage({
       );
     }
   }, [adaptiveTickDecision, nowMs, tickIntervalMs]);
+
+  useEffect(() => {
+    const transition = evaluateVfxStageTransition({
+      currentStage: vfxStage,
+      targetStage: targetVfxStage,
+      stageStartedAtMs: vfxStageStartedAtMs,
+      nowMs,
+      averageFps
+    });
+    if (!transition.switched || transition.nextStage === vfxStage) {
+      return;
+    }
+    if (import.meta.env.DEV) {
+      const fpsLabel =
+        averageFps !== null && Number.isFinite(averageFps) ? averageFps.toFixed(1) : "n/a";
+      console.debug(
+        `[vfxStage] ${vfxStage} -> ${transition.nextStage} (${transition.reason}, target=${targetVfxStage}, fps=${fpsLabel})`
+      );
+    }
+    setVfxStage(transition.nextStage);
+    setVfxStageStartedAtMs(nowMs);
+  }, [averageFps, nowMs, targetVfxStage, vfxStage, vfxStageStartedAtMs]);
 
   useEffect(() => {
     if (qualityMode === "auto" && renderBootstrapDecision.phase === "boot") {
