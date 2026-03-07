@@ -11,6 +11,7 @@ import type { SmartActionState } from "../game/interaction/smartAction";
 import type { TimeoutAssistUrgency } from "../game/interaction/timeoutAssist";
 import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatency";
 import type { AutoRematchPhase } from "../game/interaction/autoRematch";
+import type { AutoContinueAfterFallbackPhase } from "../game/interaction/autoContinueAfterFallback";
 import type { RematchWaitPhase } from "../game/interaction/rematchWait";
 import { SmartActionBar } from "./SmartActionBar";
 
@@ -42,6 +43,9 @@ interface HUDProps {
   autoRematchPhase: AutoRematchPhase;
   autoRematchCountdownRemainingMs: number | null;
   autoRematchCanCancel: boolean;
+  autoContinuePhase: AutoContinueAfterFallbackPhase;
+  autoContinueCountdownRemainingMs: number | null;
+  autoContinueCanCancel: boolean;
   rematchWaitPhase: RematchWaitPhase;
   rematchWaitRemainingMs: number | null;
   myRematchReady: boolean;
@@ -52,6 +56,7 @@ interface HUDProps {
   onToggleTimeoutAssist: () => void;
   onToggleAutoRematch: () => void;
   onCancelAutoRematch: () => void;
+  onCancelAutoContinue: () => void;
   onOnboardingPrimaryAction: () => void;
   onOnboardingSkip: () => void;
   onToggleAdvanced: () => void;
@@ -117,6 +122,9 @@ export function HUD({
   autoRematchPhase,
   autoRematchCountdownRemainingMs,
   autoRematchCanCancel,
+  autoContinuePhase,
+  autoContinueCountdownRemainingMs,
+  autoContinueCanCancel,
   rematchWaitPhase,
   rematchWaitRemainingMs,
   myRematchReady,
@@ -127,6 +135,7 @@ export function HUD({
   onToggleTimeoutAssist,
   onToggleAutoRematch,
   onCancelAutoRematch,
+  onCancelAutoContinue,
   onOnboardingPrimaryAction,
   onOnboardingSkip,
   onToggleAdvanced,
@@ -161,17 +170,24 @@ export function HUD({
     autoRematchCountdownRemainingMs === null
       ? null
       : Math.max(0, Math.ceil(autoRematchCountdownRemainingMs / 1000));
+  const autoContinueCountdownSeconds =
+    autoContinueCountdownRemainingMs === null
+      ? null
+      : Math.max(0, Math.ceil(autoContinueCountdownRemainingMs / 1000));
   const rematchWaitRemainingSeconds =
     rematchWaitRemainingMs === null ? null : Math.max(0, Math.ceil(rematchWaitRemainingMs / 1000));
   const showTurnCountdown = !winner && turnRemainingSeconds !== null;
   const showTimeoutAssistHint = !winner && turn === myMark;
   const showAutoRematchHint = Boolean(winner) && opponentConnected;
+  const showAutoContinueHint =
+    Boolean(winner) && rematchWaitPhase === "fallback-ready" && autoRematchEnabled;
   const showRematchWaitHint =
     Boolean(winner) &&
     myRematchReady &&
     opponentConnected &&
     !opponentRematchReady &&
-    rematchWaitPhase !== "idle";
+    rematchWaitPhase !== "idle" &&
+    !showAutoContinueHint;
   const timeoutAssistNetworkHint =
     timeoutAssistNetworkTier === "unstable"
       ? "弱网提前"
@@ -204,6 +220,14 @@ export function HUD({
     rematchWaitPhase === "fallback-ready"
       ? "等待较久，你可以一键继续匹配"
       : `等待对手确认，${rematchWaitRemainingSeconds ?? 0}s 后可继续匹配`;
+  const autoContinueText =
+    autoContinuePhase === "countdown"
+      ? `${autoContinueCountdownSeconds ?? 0}s 后自动继续匹配`
+      : autoContinuePhase === "cancelled"
+        ? "本局已取消自动继续，可手动继续匹配"
+        : autoContinuePhase === "armed"
+          ? "正在自动继续匹配..."
+          : "已开启自动继续匹配";
 
   return (
     <div className={`hud-root ${isMobileLayout ? "mobile" : "desktop"}`}>
@@ -313,6 +337,24 @@ export function HUD({
         {showRematchWaitHint ? (
           <div className={`hud-rematch-wait ${rematchWaitPhase === "fallback-ready" ? "fallback-ready" : ""}`}>
             {rematchWaitText}
+          </div>
+        ) : null}
+        {showAutoContinueHint ? (
+          <div
+            className={`hud-auto-continue ${
+              autoContinuePhase === "countdown"
+                ? "countdown"
+                : autoContinuePhase === "cancelled"
+                  ? "cancelled"
+                  : "enabled"
+            }`}
+          >
+            <span>{autoContinueText}</span>
+            {autoContinueCanCancel ? (
+              <button className="hud-mini-button" type="button" onClick={onCancelAutoContinue}>
+                取消自动继续
+              </button>
+            ) : null}
           </div>
         ) : null}
         {showReconnectDeadline ? (
