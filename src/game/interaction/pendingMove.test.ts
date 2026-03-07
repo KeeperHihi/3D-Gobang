@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { RoomSnapshot } from "../../network/protocol";
 import {
   isPendingMoveStale,
+  reconcilePendingMove,
   shouldClearPendingMove,
   type PendingMoveState
 } from "./pendingMove";
@@ -94,6 +95,42 @@ describe("pendingMove helpers", () => {
     const pendingMove = createPendingMove();
 
     expect(shouldClearPendingMove(snapshot, pendingMove)).toBe(false);
+  });
+
+  it("reconcile helper clears pending and requests tracking cleanup when evidence exists", () => {
+    const pendingMove = createPendingMove();
+    const snapshot = createSnapshot({
+      lastMove: {
+        ...pendingMove.coordinate,
+        player: pendingMove.player,
+        moveNumber: 12,
+        timestamp: 500
+      }
+    });
+
+    const reconciled = reconcilePendingMove(snapshot, pendingMove);
+
+    expect(reconciled.pendingMove).toBeNull();
+    expect(reconciled.shouldDropTracking).toBe(true);
+  });
+
+  it("reconcile helper keeps pending and tracking when evidence is missing", () => {
+    const pendingMove = createPendingMove();
+    const snapshot = createSnapshot();
+
+    const reconciled = reconcilePendingMove(snapshot, pendingMove);
+
+    expect(reconciled.pendingMove).toBe(pendingMove);
+    expect(reconciled.shouldDropTracking).toBe(false);
+  });
+
+  it("reconcile helper stays idle when pending move is absent", () => {
+    const snapshot = createSnapshot();
+
+    const reconciled = reconcilePendingMove(snapshot, null);
+
+    expect(reconciled.pendingMove).toBeNull();
+    expect(reconciled.shouldDropTracking).toBe(false);
   });
 
   it("marks pending move as stale after timeout", () => {

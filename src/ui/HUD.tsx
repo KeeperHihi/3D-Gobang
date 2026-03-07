@@ -9,6 +9,7 @@ import {
 import type { OnboardingGuideState } from "../game/interaction/onboardingGuide";
 import type { SmartActionState } from "../game/interaction/smartAction";
 import type { TimeoutAssistUrgency } from "../game/interaction/timeoutAssist";
+import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatency";
 import { SmartActionBar } from "./SmartActionBar";
 
 interface HUDProps {
@@ -33,6 +34,8 @@ interface HUDProps {
   turnUrgent: boolean;
   timeoutAssistEnabled: boolean;
   timeoutAssistUrgency: TimeoutAssistUrgency;
+  timeoutAssistThresholdMs: number;
+  timeoutAssistNetworkTier: TimeoutAssistNetworkTier;
   myRematchReady: boolean;
   opponentRematchReady: boolean;
   opponentReconnectRemainingMs: number | null;
@@ -98,6 +101,8 @@ export function HUD({
   turnUrgent,
   timeoutAssistEnabled,
   timeoutAssistUrgency,
+  timeoutAssistThresholdMs,
+  timeoutAssistNetworkTier,
   myRematchReady,
   opponentRematchReady,
   opponentReconnectRemainingMs,
@@ -133,15 +138,26 @@ export function HUD({
       : "展开高级操作";
   const turnRemainingSeconds =
     turnRemainingMs === null ? null : Math.max(0, Math.ceil(turnRemainingMs / 1000));
+  const timeoutAssistThresholdSeconds = Math.max(1, Math.ceil(timeoutAssistThresholdMs / 1000));
   const showTurnCountdown = !winner && turnRemainingSeconds !== null;
   const showTimeoutAssistHint = !winner && turn === myMark;
+  const timeoutAssistNetworkHint =
+    timeoutAssistNetworkTier === "unstable"
+      ? "弱网提前"
+      : timeoutAssistNetworkTier === "elevated"
+        ? "网络波动提前"
+        : null;
   const timeoutAssistText = !timeoutAssistEnabled
     ? "超时护航已关闭"
     : timeoutAssistUrgency === "armed"
-      ? `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，将自动按建议落子`
+      ? timeoutAssistNetworkHint
+        ? `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，${timeoutAssistNetworkHint}自动执行建议落子`
+        : `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，将自动按建议落子`
       : timeoutAssistUrgency === "triggered"
-        ? "超时护航：本回合已自动执行保底落子"
-        : "超时护航已开启";
+        ? timeoutAssistNetworkHint
+          ? `超时护航：本回合已自动执行保底落子（${timeoutAssistNetworkHint}）`
+          : "超时护航：本回合已自动执行保底落子"
+        : `超时护航已开启（阈值 ${timeoutAssistThresholdSeconds}s）`;
 
   return (
     <div className={`hud-root ${isMobileLayout ? "mobile" : "desktop"}`}>

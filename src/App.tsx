@@ -5,7 +5,7 @@ import { LoadingStage } from "./ui/LoadingStage";
 import {
   isPendingMoveStale,
   PENDING_MOVE_STALE_TIMEOUT_MS,
-  shouldClearPendingMove,
+  reconcilePendingMove,
   type PendingMoveState
 } from "./game/interaction/pendingMove";
 import {
@@ -14,6 +14,11 @@ import {
 } from "./game/interaction/qualityProfile";
 import { validateContinueMatchRequest } from "./game/interaction/continueMatch";
 import { type SceneWarmupStatus } from "./game/interaction/sceneWarmup";
+import {
+  createInitialNetworkLatencyProfile,
+  deriveTimeoutAssistThresholdMs,
+  updateLatencySamples
+} from "./game/interaction/networkLatency";
 import type {
   Coordinate3D,
   MoveAckPayload,
@@ -133,11 +138,15 @@ export default function App() {
   const [timeoutAssistEnabled, setTimeoutAssistEnabled] = useState<boolean>(() =>
     readTimeoutAssistFromStorage()
   );
+  const [networkLatencyProfile, setNetworkLatencyProfile] = useState(() =>
+    createInitialNetworkLatencyProfile()
+  );
   const [sceneWarmupStatus, setSceneWarmupStatus] = useState<SceneWarmupStatus>("idle");
 
   const sessionRef = useRef<RoomSession | null>(session);
   const matchPhaseRef = useRef<MatchPhase>(matchPhase);
   const sceneWarmupStartedRef = useRef(false);
+  const pendingMoveSubmittedAtRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     sessionRef.current = session;
@@ -221,6 +230,7 @@ export default function App() {
     const handleDisconnect = () => {
       setConnectionState("reconnecting");
       setPendingMove(null);
+      pendingMoveSubmittedAtRef.current.clear();
       if (!sessionRef.current) {
         setMatchPhase("idle");
         resetQueueState();
@@ -265,6 +275,7 @@ export default function App() {
       resetQueueState();
       setErrorMessage(null);
       setPendingMove(null);
+      pendingMoveSubmittedAtRef.current.clear();
     });
 
     socket.on("room:resumed", ({ roomId, mark, seatToken, snapshot: nextSnapshot }) => {
@@ -275,6 +286,7 @@ export default function App() {
       resetQueueState();
       setErrorMessage(null);
       setPendingMove(null);
+      pendingMoveSubmittedAtRef.current.clear();
     });
 
     socket.on("room:update", ({ snapshot: nextSnapshot }) => {
@@ -282,13 +294,11 @@ export default function App() {
       setMatchPhase("matched");
       resetQueueState();
       setPendingMove((currentPendingMove) => {
-        if (!currentPendingMove) {
-          return null;
+        const reconciled = reconcilePendingMove(nextSnapshot, currentPendingMove);
+        if (reconciled.shouldDropTracking && currentPendingMove) {
+          pendingMoveSubmittedAtRef.current.delete(currentPendingMove.clientMoveId);
         }
-        if (shouldClearPendingMove(nextSnapshot, currentPendingMove)) {
-          return null;
-        }
-        return currentPendingMove;
+        return reconciled.pendingMove;
       });
     });
 
@@ -300,9 +310,17 @@ export default function App() {
       resetQueueState();
       setErrorMessage(reason);
       setPendingMove(null);
+      pendingMoveSubmittedAtRef.current.clear();
     });
 
     socket.on("game:move:ack", ({ clientMoveId, accepted, reason, roomMoveNumber }: MoveAckPayload) => {
+      const submittedAt = pendingMoveSubmittedAtRef.current.get(clientMoveId);
+      if (submittedAt !== undefined) {
+        pendingMoveSubmittedAtRef.current.delete(clientMoveId);
+        const roundTripMs = Date.now() - submittedAt;
+        setNetworkLatencyProfile((current) => updateLatencySamples(current, roundTripMs));
+      }
+
       setPendingMove((currentPendingMove) => {
         if (!currentPendingMove || currentPendingMove.clientMoveId !== clientMoveId) {
           return currentPendingMove;
@@ -328,6 +346,7 @@ export default function App() {
       }
       setErrorMessage(message);
       setPendingMove(null);
+      pendingMoveSubmittedAtRef.current.clear();
     });
 
     socket.connect();
@@ -374,6 +393,7 @@ export default function App() {
             seatToken: currentSession.seatToken
           });
         }
+        pendingMoveSubmittedAtRef.current.delete(pendingMove.clientMoveId);
         setErrorMessage("网络波动，正在同步棋盘状态，请重试落子");
         return null;
       });
@@ -428,12 +448,14 @@ export default function App() {
     }
 
     const clientMoveId = createClientMoveId();
+    const submittedAt = Date.now();
+    pendingMoveSubmittedAtRef.current.set(clientMoveId, submittedAt);
     setPendingMove({
       clientMoveId,
       coordinate,
       player: session.mark,
       status: "pending",
-      submittedAt: Date.now()
+      submittedAt
     });
     socket.emit("game:place", {
       roomId: session.roomId,
@@ -483,6 +505,7 @@ export default function App() {
     setQueueElapsedSeconds(0);
     sessionRef.current = null;
     persistSession(null);
+    pendingMoveSubmittedAtRef.current.clear();
 
     socket.emit("queue:continue", {
       roomId: session.roomId,
@@ -502,6 +525,7 @@ export default function App() {
     setQueueElapsedSeconds(0);
     setErrorMessage(null);
     setPendingMove(null);
+    pendingMoveSubmittedAtRef.current.clear();
     socket.disconnect();
     socket.connect();
   };
@@ -527,6 +551,7 @@ export default function App() {
     roomEntryMode === "fresh" &&
     !snapshot.winner &&
     snapshot.board.every((cell) => cell === 0);
+  const timeoutAssistThresholdMs = deriveTimeoutAssistThresholdMs(networkLatencyProfile);
 
   return (
     <Suspense
@@ -559,6 +584,8 @@ export default function App() {
         onCompleteOnboarding={() => setOnboardingCompleted(true)}
         timeoutAssistEnabled={timeoutAssistEnabled}
         onTimeoutAssistEnabledChange={setTimeoutAssistEnabled}
+        timeoutAssistThresholdMs={timeoutAssistThresholdMs}
+        timeoutAssistNetworkTier={networkLatencyProfile.networkTier}
         onLeave={leaveRoom}
       />
     </Suspense>

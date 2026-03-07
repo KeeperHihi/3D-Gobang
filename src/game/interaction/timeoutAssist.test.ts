@@ -90,6 +90,20 @@ describe("evaluateTimeoutAssist", () => {
     expect(decision.shouldAutoAct).toBe(false);
     expect(decision.urgencyLabel).toBe("off");
   });
+
+  it("supports adaptive threshold overrides", () => {
+    const remainsAt2300WithStrictThreshold = createDecision({
+      turnRemainingMs: 2_300,
+      thresholdMs: 2_200
+    });
+    const remainsAt2300WithLooseThreshold = createDecision({
+      turnRemainingMs: 2_300,
+      thresholdMs: 2_800
+    });
+
+    expect(remainsAt2300WithStrictThreshold.shouldAutoAct).toBe(false);
+    expect(remainsAt2300WithLooseThreshold.shouldAutoAct).toBe(true);
+  });
 });
 
 describe("createTimeoutAssistTurnKey", () => {

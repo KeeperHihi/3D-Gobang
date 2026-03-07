@@ -11,6 +11,11 @@ export interface PendingMoveState {
   submittedAt: number;
 }
 
+export interface PendingMoveReconcileResult {
+  pendingMove: PendingMoveState | null;
+  shouldDropTracking: boolean;
+}
+
 function coordinateEquals(left: Coordinate3D, right: Coordinate3D): boolean {
   return left.x === right.x && left.y === right.y && left.z === right.z;
 }
@@ -44,6 +49,30 @@ export function shouldClearPendingMove(snapshot: RoomSnapshot, pendingMove: Pend
   }
 
   return false;
+}
+
+export function reconcilePendingMove(
+  snapshot: RoomSnapshot,
+  pendingMove: PendingMoveState | null
+): PendingMoveReconcileResult {
+  if (!pendingMove) {
+    return {
+      pendingMove: null,
+      shouldDropTracking: false
+    };
+  }
+
+  if (shouldClearPendingMove(snapshot, pendingMove)) {
+    return {
+      pendingMove: null,
+      shouldDropTracking: true
+    };
+  }
+
+  return {
+    pendingMove,
+    shouldDropTracking: false
+  };
 }
 
 export function isPendingMoveStale(

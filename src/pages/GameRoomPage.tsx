@@ -13,6 +13,7 @@ import {
   type QualityLevel,
   type QualityMode
 } from "../game/interaction/qualityProfile";
+import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatency";
 import {
   createDefaultOnboardingProgress,
   createOnboardingGuideState,
@@ -44,6 +45,8 @@ interface GameRoomPageProps {
   onCompleteOnboarding: () => void;
   timeoutAssistEnabled: boolean;
   onTimeoutAssistEnabledChange: (enabled: boolean) => void;
+  timeoutAssistThresholdMs: number;
+  timeoutAssistNetworkTier: TimeoutAssistNetworkTier;
   onLeave: () => void;
 }
 
@@ -76,6 +79,8 @@ export function GameRoomPage({
   onCompleteOnboarding,
   timeoutAssistEnabled,
   onTimeoutAssistEnabledChange,
+  timeoutAssistThresholdMs,
+  timeoutAssistNetworkTier,
   onLeave
 }: GameRoomPageProps) {
   const lastMoveNumberRef = useRef(0);
@@ -210,7 +215,8 @@ export function GameRoomPage({
         canPlace,
         hasPendingMove,
         smartAction,
-        alreadyTriggeredThisTurn: timeoutAssistAlreadyTriggered
+        alreadyTriggeredThisTurn: timeoutAssistAlreadyTriggered,
+        thresholdMs: timeoutAssistThresholdMs
       }),
     [
       timeoutAssistAlreadyTriggered,
@@ -218,7 +224,8 @@ export function GameRoomPage({
       turnRemainingMs,
       canPlace,
       hasPendingMove,
-      smartAction
+      smartAction,
+      timeoutAssistThresholdMs
     ]
   );
   const turnUrgent = turnRemainingMs !== null && turnRemainingMs <= 8_000;
@@ -522,6 +529,8 @@ export function GameRoomPage({
         turnUrgent={turnUrgent}
         timeoutAssistEnabled={timeoutAssistEnabled}
         timeoutAssistUrgency={timeoutAssistDecision.urgencyLabel}
+        timeoutAssistThresholdMs={timeoutAssistThresholdMs}
+        timeoutAssistNetworkTier={timeoutAssistNetworkTier}
         myRematchReady={myRematchReady}
         opponentRematchReady={opponentRematchReady}
         opponentReconnectRemainingMs={opponentReconnectRemainingMs}
