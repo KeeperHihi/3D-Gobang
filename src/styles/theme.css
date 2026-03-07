@@ -626,6 +626,34 @@ body {
   background: rgba(139, 68, 142, 0.34);
 }
 
+.hud-tap-lock {
+  margin-bottom: 10px;
+  border-radius: 12px;
+  padding: 9px 10px;
+  border: 1px solid rgba(179, 255, 144, 0.52);
+  background: linear-gradient(110deg, rgba(52, 128, 76, 0.26), rgba(40, 90, 148, 0.28));
+  box-shadow:
+    0 0 0 1px rgba(230, 255, 213, 0.06) inset,
+    0 8px 22px rgba(21, 58, 90, 0.2);
+}
+
+.hud-tap-lock-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 5px;
+  font-size: 11px;
+  color: rgba(227, 255, 229, 0.92);
+}
+
+.hud-tap-lock-text {
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(225, 247, 255, 0.95);
+}
+
 @keyframes turn-clock-pulse {
   from {
     filter: brightness(0.95);

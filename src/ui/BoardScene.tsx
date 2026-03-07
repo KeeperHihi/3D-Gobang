@@ -24,13 +24,14 @@ interface BoardSceneProps {
   winLineCinematicActive: boolean;
   winLineFocusCoordinate: Coordinate3D | null;
   focusLayer: number | null;
+  tapLockCoordinate: Coordinate3D | null;
   hintMoves: MoveHint[];
   pendingMove: {
     coordinate: Coordinate3D;
     player: PlayerMark;
   } | null;
   onPlace: (coordinate: Coordinate3D) => void;
-  onRequestFocusLayer: (layer: number) => void;
+  onRequestFocusLayer: (coordinate: Coordinate3D) => void;
   onLayerWheel?: (deltaY: number) => boolean;
   onLayerSwipe?: (deltaY: number) => void;
   onUserRotate?: () => void;
@@ -138,6 +139,7 @@ export function BoardScene({
   winLineCinematicActive,
   winLineFocusCoordinate,
   focusLayer,
+  tapLockCoordinate,
   hintMoves,
   pendingMove,
   onPlace,
@@ -164,6 +166,20 @@ export function BoardScene({
     return x + y * size + z * size * size;
   }, [pendingMove, size]);
   const pendingCellStillEmpty = pendingCellIndex !== null ? board[pendingCellIndex] === 0 : false;
+  const tapLockPosition = useMemo(() => {
+    if (!tapLockCoordinate) {
+      return null;
+    }
+    return toWorldPosition(size, tapLockCoordinate);
+  }, [size, tapLockCoordinate]);
+  const tapLockIndex = useMemo(() => {
+    if (!tapLockCoordinate) {
+      return null;
+    }
+    const { x, y, z } = tapLockCoordinate;
+    return x + y * size + z * size * size;
+  }, [size, tapLockCoordinate]);
+  const tapLockStillEmpty = tapLockIndex !== null ? board[tapLockIndex] === 0 : false;
   const hintMap = useMemo(() => {
     const map = new Map<number, HintMeta>();
     hintMoves.forEach((hint, rank) => {
@@ -362,7 +378,11 @@ export function BoardScene({
                     return;
                   }
                   if (tapAssistDecision.action === "focus" && tapAssistDecision.nextFocusLayer !== null) {
-                    onRequestFocusLayer(tapAssistDecision.nextFocusLayer);
+                    onRequestFocusLayer({
+                      x: coordinateFromHit.x,
+                      y: coordinateFromHit.y,
+                      z: tapAssistDecision.nextFocusLayer
+                    });
                   }
                 }}
               >
@@ -404,6 +424,22 @@ export function BoardScene({
                 metalness={0.26}
               />
             </mesh>
+          ) : null}
+
+          {tapLockPosition && tapLockStillEmpty ? (
+            <>
+              <HintPulse
+                position={tapLockPosition}
+                color="#a5ff8a"
+                opacity={0.42 * qualityProfile.hintPulseOpacityScale}
+                speed={Math.max(1.9, qualityProfile.hintPulseSpeed)}
+                phase={0.35}
+              />
+              <mesh position={tapLockPosition} scale={1.2}>
+                <torusGeometry args={[0.47, 0.04, 18, 44]} />
+                <meshBasicMaterial color="#dcffc4" transparent opacity={0.88} />
+              </mesh>
+            </>
           ) : null}
 
           {winningPulsePoints.map((position, index) => (

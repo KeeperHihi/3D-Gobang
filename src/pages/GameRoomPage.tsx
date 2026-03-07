@@ -49,6 +49,11 @@ import {
   createFocusGuardTurnKey,
   evaluateFocusGuard
 } from "../game/interaction/focusGuard";
+import {
+  createLayerTapLock,
+  evaluateLayerTapLock,
+  type LayerTapLock
+} from "../game/interaction/layerTapLock";
 import { evaluateHudSpotlight } from "../game/interaction/hudSpotlight";
 import { evaluateLayerQuickNav } from "../game/interaction/layerQuickNav";
 import {
@@ -112,7 +117,7 @@ function resolveTurnNudgeNotificationPermission(): TurnNudgeNotificationPermissi
 
 const WIN_LINE_CINEMATIC_DURATION_MS = 2200;
 const LAYER_NAV_INPUT_THROTTLE_MS = 170;
-const LAYER_TAP_ASSIST_TOAST_MS = 1200;
+const LAYER_TAP_LOCK_TTL_MS = 3500;
 
 export function GameRoomPage({
   snapshot,
@@ -201,10 +206,7 @@ export function GameRoomPage({
   const [autoContinueCountdownStartedAtMs, setAutoContinueCountdownStartedAtMs] = useState<
     number | null
   >(null);
-  const [layerTapAssistHint, setLayerTapAssistHint] = useState<{
-    layer: number;
-    expiresAtMs: number;
-  } | null>(null);
+  const [layerTapLock, setLayerTapLock] = useState<LayerTapLock | null>(null);
   const opponentMark: PlayerMark = myMark === "X" ? "O" : "X";
   const opponentConnected = snapshot.players[opponentMark].connected;
   const opponentReconnectDeadlineAt = snapshot.players[opponentMark].reconnectDeadlineAt;
@@ -317,6 +319,20 @@ export function GameRoomPage({
       snapshot.winner
     ]
   );
+  const layerTapLockDecision = useMemo(
+    () =>
+      evaluateLayerTapLock({
+        lock: layerTapLock,
+        nowMs,
+        canPlace,
+        board: snapshot.board,
+        boardSize: snapshot.size
+      }),
+    [canPlace, layerTapLock, nowMs, snapshot.board, snapshot.size]
+  );
+  const activeLayerTapLock = layerTapLockDecision.lock;
+  const tapLockRemainingMs =
+    activeLayerTapLock === null ? null : Math.max(0, activeLayerTapLock.expiresAtMs - nowMs);
   const onboardingGuide = useMemo(
     () =>
       createOnboardingGuideState({
@@ -731,22 +747,45 @@ export function GameRoomPage({
     setFocusLayer(layerQuickNav.smartJumpLayer);
   }, [focusLayer, layerQuickNav.smartJumpLayer]);
   const handleRequestFocusLayer = useCallback(
-    (targetLayer: number) => {
-      const clampedLayer = clampLayer(targetLayer, snapshot.size);
-      if (clampedLayer === focusLayer) {
-        return;
-      }
+    (targetCoordinate: Coordinate3D) => {
+      const clampedLayer = clampLayer(targetCoordinate.z, snapshot.size);
       const now = Date.now();
       layerNavLastInputAtMsRef.current = now;
       setFocusMode("manual");
       setFocusLayer(clampedLayer);
-      setLayerTapAssistHint({
-        layer: clampedLayer,
-        expiresAtMs: now + LAYER_TAP_ASSIST_TOAST_MS
-      });
+      setLayerTapLock(
+        createLayerTapLock({
+          coordinate: {
+            x: targetCoordinate.x,
+            y: targetCoordinate.y,
+            z: clampedLayer
+          },
+          nowMs: now,
+          ttlMs: LAYER_TAP_LOCK_TTL_MS
+        })
+      );
     },
-    [focusLayer, snapshot.size]
+    [snapshot.size]
   );
+  const handleClearTapLock = useCallback(() => {
+    setLayerTapLock(null);
+  }, []);
+  const handleConfirmTapLock = useCallback(() => {
+    const decision = evaluateLayerTapLock({
+      lock: layerTapLock,
+      nowMs: Date.now(),
+      canPlace,
+      board: snapshot.board,
+      boardSize: snapshot.size
+    });
+    if (!decision.lock || !decision.canConfirm) {
+      setLayerTapLock(null);
+      return;
+    }
+    stopWinLineCinematic();
+    setLayerTapLock(null);
+    onPlace(decision.lock.coordinate);
+  }, [canPlace, layerTapLock, onPlace, snapshot.board, snapshot.size, stopWinLineCinematic]);
 
   const handleLayerWheel = useCallback(
     (deltaY: number): boolean => {
@@ -882,7 +921,7 @@ export function GameRoomPage({
     stopWinLineCinematic();
     layerNavLastInputAtMsRef.current = 0;
     layerNavLastRotateAtMsRef.current = 0;
-    setLayerTapAssistHint(null);
+    setLayerTapLock(null);
     setSettlementStartedAtMs(null);
     setAutoRematchCountdownStartedAtMs(null);
     setAutoContinueCountdownStartedAtMs(null);
@@ -1188,13 +1227,14 @@ export function GameRoomPage({
   }, []);
 
   useEffect(() => {
-    if (!layerTapAssistHint) {
+    if (!layerTapLock) {
       return;
     }
-    if (nowMs >= layerTapAssistHint.expiresAtMs) {
-      setLayerTapAssistHint(null);
+    if (layerTapLockDecision.lock !== null) {
+      return;
     }
-  }, [layerTapAssistHint, nowMs]);
+    setLayerTapLock(null);
+  }, [layerTapLock, layerTapLockDecision.lock]);
 
   useEffect(() => {
     const nowMs = Date.now();
@@ -1237,11 +1277,7 @@ export function GameRoomPage({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handlePrimaryAction, layoutMode, smartAction.enabled]);
 
-  const layerTapAssistMessage =
-    layerTapAssistHint && nowMs < layerTapAssistHint.expiresAtMs
-      ? `已切到 L${layerTapAssistHint.layer + 1}，再点一次即可落子`
-      : null;
-  const gameToastMessage = errorMessage ?? layerTapAssistMessage;
+  const gameToastMessage = errorMessage;
 
   return (
     <main className={`game-page ${layoutMode === "mobile" ? "mobile" : "desktop"}`}>
@@ -1256,6 +1292,7 @@ export function GameRoomPage({
         winLineCinematicActive={winLineCinematicActive}
         winLineFocusCoordinate={winLineCinematicActive ? winLineDirector?.focusCoordinate ?? null : null}
         focusLayer={focusLayer}
+        tapLockCoordinate={activeLayerTapLock?.coordinate ?? null}
         hintMoves={hintMovesForBoard}
         pendingMove={pendingMove}
         onPlace={onPlace}
@@ -1278,6 +1315,9 @@ export function GameRoomPage({
         focusLayer={focusLayer}
         focusMode={focusMode}
         layerQuickNav={layerQuickNav}
+        tapLockCoordinate={activeLayerTapLock?.coordinate ?? null}
+        tapLockCanConfirm={layerTapLockDecision.canConfirm}
+        tapLockRemainingMs={tapLockRemainingMs}
         smartAction={smartAction}
         onboardingGuide={onboardingGuide.visible ? onboardingGuide : null}
         advancedOpen={advancedOpen}
@@ -1322,6 +1362,8 @@ export function GameRoomPage({
         onToggleAdvanced={handleToggleAdvanced}
         onLayerStep={handleLayerStep}
         onLayerSmartJump={handleLayerSmartJump}
+        onConfirmTapLock={handleConfirmTapLock}
+        onCancelTapLock={handleClearTapLock}
         onAutoFocus={handleAutoFocus}
         onToggleAssist={handleAssistToggle}
         onQualityModeChange={onQualityModeChange}

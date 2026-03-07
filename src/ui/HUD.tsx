@@ -1,4 +1,4 @@
-import type { PlayerMark, Winner } from "../network/protocol";
+import type { Coordinate3D, PlayerMark, Winner } from "../network/protocol";
 import type { LayoutMode } from "../game/interaction/deviceMode";
 import {
   qualityLevelLabel,
@@ -32,6 +32,9 @@ interface HUDProps {
   focusLayer: number;
   focusMode: "auto" | "manual";
   layerQuickNav: LayerQuickNavDecision;
+  tapLockCoordinate: Coordinate3D | null;
+  tapLockCanConfirm: boolean;
+  tapLockRemainingMs: number | null;
   smartAction: SmartActionState;
   onboardingGuide: OnboardingGuideState | null;
   advancedOpen: boolean;
@@ -76,6 +79,8 @@ interface HUDProps {
   onToggleAdvanced: () => void;
   onLayerStep: (step: -1 | 1) => void;
   onLayerSmartJump: () => void;
+  onConfirmTapLock: () => void;
+  onCancelTapLock: () => void;
   onAutoFocus: () => void;
   onToggleAssist: () => void;
   onQualityModeChange: (mode: QualityMode) => void;
@@ -157,6 +162,9 @@ export function HUD({
   focusLayer,
   focusMode,
   layerQuickNav,
+  tapLockCoordinate,
+  tapLockCanConfirm,
+  tapLockRemainingMs,
   smartAction,
   onboardingGuide,
   advancedOpen,
@@ -201,6 +209,8 @@ export function HUD({
   onToggleAdvanced,
   onLayerStep,
   onLayerSmartJump,
+  onConfirmTapLock,
+  onCancelTapLock,
   onAutoFocus,
   onToggleAssist,
   onQualityModeChange,
@@ -237,6 +247,8 @@ export function HUD({
       : Math.max(0, Math.ceil(autoContinueCountdownRemainingMs / 1000));
   const rematchWaitRemainingSeconds =
     rematchWaitRemainingMs === null ? null : Math.max(0, Math.ceil(rematchWaitRemainingMs / 1000));
+  const tapLockSecondsLeft =
+    tapLockRemainingMs === null ? null : Math.max(0, Math.ceil(tapLockRemainingMs / 1000));
   const primaryCardId = hudSpotlight.primaryCard?.id ?? null;
   const showTurnCountdown = primaryCardId === "turn-clock" && !winner && turnRemainingSeconds !== null;
   const showTimeoutAssistHint = primaryCardId === "timeout-assist" && !winner && turn === myMark;
@@ -365,6 +377,9 @@ export function HUD({
         : layerQuickNav.smartJumpSource === "auto"
           ? "智能跳层"
           : "已在目标层";
+  const tapLockCoordinateLabel = tapLockCoordinate
+    ? `L${tapLockCoordinate.z + 1} · (${tapLockCoordinate.x + 1}, ${tapLockCoordinate.y + 1})`
+    : null;
 
   return (
     <div className={`hud-root ${isMobileLayout ? "mobile" : "desktop"}`}>
@@ -612,6 +627,30 @@ export function HUD({
             ))}
           </div>
         </div>
+        {tapLockCoordinate ? (
+          <div className="hud-tap-lock">
+            <div className="hud-tap-lock-header">
+              <span>目标已锁定</span>
+              <span>{tapLockCoordinateLabel}</span>
+            </div>
+            <div className="hud-tap-lock-text">
+              点击确认即可落子{tapLockSecondsLeft !== null ? ` · ${tapLockSecondsLeft}s` : ""}
+            </div>
+            <div className="hud-actions">
+              <button
+                className="hud-mini-button active"
+                type="button"
+                onClick={onConfirmTapLock}
+                disabled={!tapLockCanConfirm}
+              >
+                确认落子
+              </button>
+              <button className="hud-mini-button" type="button" onClick={onCancelTapLock}>
+                取消
+              </button>
+            </div>
+          </div>
+        ) : null}
         <SmartActionBar action={smartAction} onAction={onPrimaryAction} layoutMode={layoutMode} />
         <div className="hud-actions">
           <button className="hud-button ghost" type="button" onClick={onToggleAdvanced}>
