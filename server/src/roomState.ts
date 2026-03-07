@@ -23,6 +23,14 @@ interface PlayerSeatState {
   connected: boolean;
 }
 
+export interface RecordedMoveAck {
+  accepted: boolean;
+  reason?: string;
+  roomMoveNumber?: number;
+}
+
+const CLIENT_MOVE_ACK_HISTORY_LIMIT = 80;
+
 export interface RoomState {
   roomId: string;
   size: number;
@@ -35,6 +43,14 @@ export interface RoomState {
   players: {
     X: PlayerSeatState;
     O: PlayerSeatState;
+  };
+  clientMoveAcks: {
+    X: Map<string, RecordedMoveAck>;
+    O: Map<string, RecordedMoveAck>;
+  };
+  clientMoveAckOrder: {
+    X: string[];
+    O: string[];
   };
   rematchVotes: Set<PlayerMark>;
   winLinesIndex: WinLinesIndex;
@@ -86,10 +102,59 @@ export function createRoomState(options: RoomCreateOptions): RoomState {
         connected: true
       }
     },
+    clientMoveAcks: {
+      X: new Map<string, RecordedMoveAck>(),
+      O: new Map<string, RecordedMoveAck>()
+    },
+    clientMoveAckOrder: {
+      X: [],
+      O: []
+    },
     rematchVotes: new Set<PlayerMark>(),
     winLinesIndex: createWinLinesIndex(size, connect),
     moveCount: 0
   };
+}
+
+export function getRecordedMoveAck(
+  room: RoomState,
+  mark: PlayerMark,
+  clientMoveId: string
+): RecordedMoveAck | null {
+  return room.clientMoveAcks[mark].get(clientMoveId) ?? null;
+}
+
+export function recordMoveAck(
+  room: RoomState,
+  mark: PlayerMark,
+  clientMoveId: string,
+  ack: RecordedMoveAck
+): void {
+  const ackMap = room.clientMoveAcks[mark];
+  const ackOrder = room.clientMoveAckOrder[mark];
+
+  if (ackMap.has(clientMoveId)) {
+    return;
+  }
+
+  ackMap.set(clientMoveId, ack);
+  ackOrder.push(clientMoveId);
+  if (ackOrder.length <= CLIENT_MOVE_ACK_HISTORY_LIMIT) {
+    return;
+  }
+
+  const removedMoveId = ackOrder.shift();
+  if (!removedMoveId) {
+    return;
+  }
+  ackMap.delete(removedMoveId);
+}
+
+function clearRecordedMoveAcks(room: RoomState): void {
+  room.clientMoveAcks.X.clear();
+  room.clientMoveAcks.O.clear();
+  room.clientMoveAckOrder.X = [];
+  room.clientMoveAckOrder.O = [];
 }
 
 export function snapshotFromRoomState(room: RoomState): RoomSnapshot {
@@ -223,6 +288,7 @@ export function requestRematch(room: RoomState, mark: PlayerMark): RematchReques
   room.winningLine = null;
   room.moveCount = 0;
   room.rematchVotes.clear();
+  clearRecordedMoveAcks(room);
 
   return {
     accepted: true,

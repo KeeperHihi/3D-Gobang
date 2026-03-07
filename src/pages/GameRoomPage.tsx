@@ -13,6 +13,10 @@ interface GameRoomPageProps {
   snapshot: RoomSnapshot;
   myMark: PlayerMark;
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
+  pendingMove: {
+    coordinate: Coordinate3D;
+    player: PlayerMark;
+  } | null;
   errorMessage: string | null;
   onPlace: (coordinate: Coordinate3D) => void;
   onRematch: () => void;
@@ -27,6 +31,7 @@ export function GameRoomPage({
   snapshot,
   myMark,
   connectionStatus,
+  pendingMove,
   errorMessage,
   onPlace,
   onRematch,
@@ -38,7 +43,9 @@ export function GameRoomPage({
   const [focusMode, setFocusMode] = useState<"auto" | "manual">("auto");
   const [focusLayer, setFocusLayer] = useState(Math.floor(snapshot.size / 2));
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const canPlace = snapshot.turn === myMark && !snapshot.winner && connectionStatus === "online";
+  const hasPendingMove = pendingMove !== null;
+  const canPlace =
+    snapshot.turn === myMark && !snapshot.winner && connectionStatus === "online" && !hasPendingMove;
   const boardCells = snapshot.board as BoardCell[];
   const hintsWinLinesIndex = useMemo(
     () => createWinLinesIndex(snapshot.size, snapshot.connect),
@@ -84,9 +91,18 @@ export function GameRoomPage({
         myMark,
         hints: hintMovesForBoard,
         connectionStatus,
-        assistEnabled
+        assistEnabled,
+        hasPendingMove
       }),
-    [assistEnabled, connectionStatus, hintMovesForBoard, myMark, snapshot.turn, snapshot.winner]
+    [
+      assistEnabled,
+      connectionStatus,
+      hasPendingMove,
+      hintMovesForBoard,
+      myMark,
+      snapshot.turn,
+      snapshot.winner
+    ]
   );
 
   const handlePrimaryAction = useCallback(() => {
@@ -187,6 +203,7 @@ export function GameRoomPage({
         winningLine={snapshot.winningLine}
         focusLayer={focusLayer}
         hintMoves={hintMovesForBoard}
+        pendingMove={pendingMove}
         onPlace={onPlace}
       />
       <HUD

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createRoomState, requestRematch } from "./roomState";
+import {
+  createRoomState,
+  getRecordedMoveAck,
+  recordMoveAck,
+  requestRematch
+} from "./roomState";
 
 function createFixtureRoom() {
   return createRoomState({
@@ -12,6 +17,18 @@ function createFixtureRoom() {
 }
 
 describe("requestRematch", () => {
+  it("stores and reuses client move ack by seat", () => {
+    const room = createFixtureRoom();
+    const ack = {
+      accepted: true,
+      roomMoveNumber: 5
+    };
+    recordMoveAck(room, "X", "move-x-1", ack);
+
+    expect(getRecordedMoveAck(room, "X", "move-x-1")).toEqual(ack);
+    expect(getRecordedMoveAck(room, "O", "move-x-1")).toBeNull();
+  });
+
   it("rejects rematch while game is still running", () => {
     const room = createFixtureRoom();
     const result = requestRematch(room, "X");
@@ -28,6 +45,7 @@ describe("requestRematch", () => {
     room.board[0] = 1;
     room.moveCount = 11;
     room.winner = "X";
+    recordMoveAck(room, "X", "move-x-1", { accepted: true, roomMoveNumber: 11 });
 
     const firstVote = requestRematch(room, "X");
     expect(firstVote).toEqual({
@@ -46,5 +64,6 @@ describe("requestRematch", () => {
     expect(room.turn).toBe("X");
     expect(room.winner).toBeNull();
     expect(room.moveCount).toBe(0);
+    expect(getRecordedMoveAck(room, "X", "move-x-1")).toBeNull();
   });
 });

@@ -17,6 +17,7 @@ function createStateFixture(params?: {
   winner?: Winner;
   hints?: MoveHint[];
   assistEnabled?: boolean;
+  hasPendingMove?: boolean;
   connectionStatus?: "connecting" | "online" | "reconnecting" | "offline";
 }) {
   return createSmartActionState({
@@ -27,6 +28,7 @@ function createStateFixture(params?: {
     myMark: "X",
     hints: params?.hints ?? [createHint("best")],
     assistEnabled: params?.assistEnabled ?? true,
+    hasPendingMove: params?.hasPendingMove ?? false,
     connectionStatus: params?.connectionStatus ?? "online"
   });
 }
@@ -71,6 +73,17 @@ describe("createSmartActionState", () => {
     expect(state.actionType).toBe("wait");
     expect(state.label).toBe("等待对手");
     expect(state.enabled).toBe(false);
+  });
+
+  it("disables action while a move is pending confirmation", () => {
+    const state = createStateFixture({
+      hasPendingMove: true,
+      hints: [createHint("win")]
+    });
+
+    expect(state.actionType).toBe("pending");
+    expect(state.enabled).toBe(false);
+    expect(state.label).toBe("提交中...");
   });
 
   it("returns rematch action when game ended", () => {

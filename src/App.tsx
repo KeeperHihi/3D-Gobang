@@ -2,7 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MatchPage } from "./pages/MatchPage";
 import { GameRoomPage } from "./pages/GameRoomPage";
 import { createSocketClient } from "./network/socketClient";
-import type { Coordinate3D, PlayerMark, RoomSnapshot } from "./network/protocol";
+import {
+  isPendingMoveStale,
+  PENDING_MOVE_STALE_TIMEOUT_MS,
+  shouldClearPendingMove,
+  type PendingMoveState
+} from "./game/interaction/pendingMove";
+import type {
+  Coordinate3D,
+  MoveAckPayload,
+  PlayerMark,
+  RoomSnapshot
+} from "./network/protocol";
 
 type ConnectionState = "connecting" | "online" | "reconnecting" | "offline";
 
@@ -13,6 +24,13 @@ interface RoomSession {
 }
 
 const SESSION_STORAGE_KEY = "nebula-cube-session";
+
+function createClientMoveId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `move_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
 
 function readSessionFromStorage(): RoomSession | null {
   const raw = localStorage.getItem(SESSION_STORAGE_KEY);
@@ -45,6 +63,7 @@ export default function App() {
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null);
   const [isMatching, setIsMatching] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [pendingMove, setPendingMove] = useState<PendingMoveState | null>(null);
 
   const sessionRef = useRef<RoomSession | null>(session);
 
@@ -67,6 +86,7 @@ export default function App() {
 
     const handleDisconnect = () => {
       setConnectionState("reconnecting");
+      setPendingMove(null);
     };
 
     const handleConnectionError = () => {
@@ -87,6 +107,7 @@ export default function App() {
       setSnapshot(nextSnapshot);
       setIsMatching(false);
       setErrorMessage(null);
+      setPendingMove(null);
     });
 
     socket.on("room:resumed", ({ roomId, mark, seatToken, snapshot: nextSnapshot }) => {
@@ -94,11 +115,21 @@ export default function App() {
       setSnapshot(nextSnapshot);
       setIsMatching(false);
       setErrorMessage(null);
+      setPendingMove(null);
     });
 
     socket.on("room:update", ({ snapshot: nextSnapshot }) => {
       setSnapshot(nextSnapshot);
       setIsMatching(false);
+      setPendingMove((currentPendingMove) => {
+        if (!currentPendingMove) {
+          return null;
+        }
+        if (shouldClearPendingMove(nextSnapshot, currentPendingMove)) {
+          return null;
+        }
+        return currentPendingMove;
+      });
     });
 
     socket.on("room:resume-failed", ({ reason }) => {
@@ -106,10 +137,31 @@ export default function App() {
       setSnapshot(null);
       setIsMatching(false);
       setErrorMessage(reason);
+      setPendingMove(null);
+    });
+
+    socket.on("game:move:ack", ({ clientMoveId, accepted, reason, roomMoveNumber }: MoveAckPayload) => {
+      setPendingMove((currentPendingMove) => {
+        if (!currentPendingMove || currentPendingMove.clientMoveId !== clientMoveId) {
+          return currentPendingMove;
+        }
+
+        if (!accepted) {
+          setErrorMessage(reason ?? "落子失败");
+          return null;
+        }
+
+        return {
+          ...currentPendingMove,
+          status: "accepted",
+          roomMoveNumber
+        };
+      });
     });
 
     socket.on("game:error", ({ message }) => {
       setErrorMessage(message);
+      setPendingMove(null);
     });
 
     socket.connect();
@@ -130,6 +182,40 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [errorMessage]);
 
+  useEffect(() => {
+    if (!pendingMove) {
+      return;
+    }
+    if (pendingMove.status !== "pending") {
+      return;
+    }
+
+    const elapsed = Date.now() - pendingMove.submittedAt;
+    const remaining = Math.max(0, PENDING_MOVE_STALE_TIMEOUT_MS - elapsed);
+    const timeout = window.setTimeout(() => {
+      setPendingMove((currentPendingMove) => {
+        if (!currentPendingMove || currentPendingMove.clientMoveId !== pendingMove.clientMoveId) {
+          return currentPendingMove;
+        }
+        if (!isPendingMoveStale(currentPendingMove)) {
+          return currentPendingMove;
+        }
+
+        const currentSession = sessionRef.current;
+        if (socket.connected && currentSession) {
+          socket.emit("room:state:request", {
+            roomId: currentSession.roomId,
+            seatToken: currentSession.seatToken
+          });
+        }
+        setErrorMessage("网络波动，正在同步棋盘状态，请重试落子");
+        return null;
+      });
+    }, remaining);
+
+    return () => window.clearTimeout(timeout);
+  }, [pendingMove, socket]);
+
   const startMatch = () => {
     if (!socket.connected) {
       setErrorMessage("正在连接服务器，请稍后重试");
@@ -147,9 +233,28 @@ export default function App() {
     if (snapshot.winner) {
       return;
     }
+    if (pendingMove) {
+      return;
+    }
+
+    const boardIndex =
+      coordinate.x + coordinate.y * snapshot.size + coordinate.z * snapshot.size * snapshot.size;
+    if (snapshot.board[boardIndex] !== 0) {
+      return;
+    }
+
+    const clientMoveId = createClientMoveId();
+    setPendingMove({
+      clientMoveId,
+      coordinate,
+      player: session.mark,
+      status: "pending",
+      submittedAt: Date.now()
+    });
     socket.emit("game:place", {
       roomId: session.roomId,
       seatToken: session.seatToken,
+      clientMoveId,
       x: coordinate.x,
       y: coordinate.y,
       z: coordinate.z
@@ -173,6 +278,7 @@ export default function App() {
     setSnapshot(null);
     setIsMatching(false);
     setErrorMessage(null);
+    setPendingMove(null);
     socket.disconnect();
     socket.connect();
   };
@@ -192,6 +298,14 @@ export default function App() {
       snapshot={snapshot}
       myMark={session.mark}
       connectionStatus={connectionState}
+      pendingMove={
+        pendingMove
+          ? {
+              coordinate: pendingMove.coordinate,
+              player: pendingMove.player
+            }
+          : null
+      }
       errorMessage={errorMessage}
       onPlace={placePiece}
       onRematch={requestRematch}

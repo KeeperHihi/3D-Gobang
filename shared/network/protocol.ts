@@ -72,9 +72,17 @@ export interface QueueJoinPayload {
 export interface PlaceMovePayload {
   roomId: string;
   seatToken: string;
+  clientMoveId: string;
   x: number;
   y: number;
   z: number;
+}
+
+export interface MoveAckPayload {
+  clientMoveId: string;
+  accepted: boolean;
+  reason?: string;
+  roomMoveNumber?: number;
 }
 
 export interface RematchPayload {
@@ -106,5 +114,6 @@ export interface ServerToClientEvents {
   "room:update": (payload: RoomUpdatePayload) => void;
   "room:resumed": (payload: RoomResumedPayload) => void;
   "room:resume-failed": (payload: ResumeFailedPayload) => void;
+  "game:move:ack": (payload: MoveAckPayload) => void;
   "game:error": (payload: ErrorPayload) => void;
 }

@@ -12,8 +12,10 @@ import type {
 import {
   applyMoveToRoom,
   createRoomState,
+  getRecordedMoveAck,
   markForSeatToken,
   markForSocket,
+  recordMoveAck,
   requestRematch,
   setPlayerConnection,
   snapshotFromRoomState,
@@ -235,17 +237,43 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("game:place", ({ roomId, seatToken, x, y, z }) => {
+  socket.on("game:place", ({ roomId, seatToken, clientMoveId, x, y, z }) => {
+    if (!clientMoveId) {
+      emitGameError(socket, "落子请求缺少 clientMoveId");
+      return;
+    }
+
     const resolved = resolveRoomAndMark(roomId, seatToken);
     if (!resolved) {
-      emitGameError(socket, "无效落子请求");
+      socket.emit("game:move:ack", {
+        clientMoveId,
+        accepted: false,
+        reason: "无效落子请求"
+      });
       return;
     }
     const { room, mark } = resolved;
 
+    const recordedAck = getRecordedMoveAck(room, mark, clientMoveId);
+    if (recordedAck) {
+      socket.emit("game:move:ack", {
+        clientMoveId,
+        ...recordedAck
+      });
+      return;
+    }
+
     const assignedSocketId = room.players[mark].socketId;
     if (assignedSocketId && assignedSocketId !== socket.id) {
-      emitGameError(socket, "该席位已在其他设备在线");
+      const ack = {
+        accepted: false,
+        reason: "该席位已在其他设备在线"
+      };
+      recordMoveAck(room, mark, clientMoveId, ack);
+      socket.emit("game:move:ack", {
+        clientMoveId,
+        ...ack
+      });
       return;
     }
 
@@ -254,10 +282,27 @@ io.on("connection", (socket) => {
 
     const applyResult = applyMoveToRoom(room, mark, { x, y, z });
     if (!applyResult.accepted) {
-      emitGameError(socket, applyResult.reason ?? "落子失败");
+      const ack = {
+        accepted: false,
+        reason: applyResult.reason ?? "落子失败"
+      };
+      recordMoveAck(room, mark, clientMoveId, ack);
+      socket.emit("game:move:ack", {
+        clientMoveId,
+        ...ack
+      });
       return;
     }
 
+    const ack = {
+      accepted: true,
+      roomMoveNumber: room.moveCount
+    };
+    recordMoveAck(room, mark, clientMoveId, ack);
+    socket.emit("game:move:ack", {
+      clientMoveId,
+      ...ack
+    });
     emitRoomUpdate(roomId);
   });
 

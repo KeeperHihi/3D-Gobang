@@ -7,6 +7,7 @@ export type SmartActionType =
   | "win"
   | "block"
   | "suggest"
+  | "pending"
   | "manual"
   | "wait"
   | "rematch"
@@ -26,6 +27,7 @@ interface SmartActionInput {
   hints: MoveHint[];
   connectionStatus: ConnectionStatus;
   assistEnabled: boolean;
+  hasPendingMove: boolean;
 }
 
 function connectionReason(status: ConnectionStatus): string {
@@ -49,7 +51,7 @@ function winnerReason(winner: Winner, myMark: PlayerMark): string {
 }
 
 export function createSmartActionState(input: SmartActionInput): SmartActionState {
-  const { snapshot, myMark, hints, connectionStatus, assistEnabled } = input;
+  const { snapshot, myMark, hints, connectionStatus, assistEnabled, hasPendingMove } = input;
 
   if (connectionStatus !== "online") {
     return {
@@ -77,6 +79,16 @@ export function createSmartActionState(input: SmartActionInput): SmartActionStat
       label: "等待对手",
       enabled: false,
       reason: "当前不是你的回合",
+      target: null
+    };
+  }
+
+  if (hasPendingMove) {
+    return {
+      actionType: "pending",
+      label: "提交中...",
+      enabled: false,
+      reason: "正在等待服务器确认本次落子",
       target: null
     };
   }

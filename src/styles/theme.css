@@ -236,6 +236,11 @@ body {
   background: linear-gradient(90deg, #7df4ff, #a7d5ff);
 }
 
+.smart-action-button.pending {
+  color: #d9efff;
+  background: linear-gradient(90deg, rgba(94, 147, 208, 0.95), rgba(124, 112, 206, 0.95));
+}
+
 .smart-action-button:hover {
   transform: translateY(-1px);
   filter: brightness(1.05);

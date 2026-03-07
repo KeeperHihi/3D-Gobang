@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Line, OrbitControls, Sparkles, Stars } from "@react-three/drei";
 import type { Mesh } from "three";
-import type { Coordinate3D, MoveRecord } from "../network/protocol";
+import type { Coordinate3D, MoveRecord, PlayerMark } from "../network/protocol";
 import { fromLinearIndex } from "../game/engine/board";
 import type { HintPriority, MoveHint } from "../game/engine/moveHints";
 import { createCameraTarget, useCameraAssist } from "../game/interaction/cameraAssist";
@@ -18,6 +18,10 @@ interface BoardSceneProps {
   winningLine: number[] | null;
   focusLayer: number | null;
   hintMoves: MoveHint[];
+  pendingMove: {
+    coordinate: Coordinate3D;
+    player: PlayerMark;
+  } | null;
   onPlace: (coordinate: Coordinate3D) => void;
 }
 
@@ -108,10 +112,25 @@ export function BoardScene({
   winningLine,
   focusLayer,
   hintMoves,
+  pendingMove,
   onPlace
 }: BoardSceneProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const winningSet = useMemo(() => new Set(winningLine ?? []), [winningLine]);
+  const pendingCellPosition = useMemo(() => {
+    if (!pendingMove) {
+      return null;
+    }
+    return toWorldPosition(size, pendingMove.coordinate);
+  }, [pendingMove, size]);
+  const pendingCellIndex = useMemo(() => {
+    if (!pendingMove) {
+      return null;
+    }
+    const { x, y, z } = pendingMove.coordinate;
+    return x + y * size + z * size * size;
+  }, [pendingMove, size]);
+  const pendingCellStillEmpty = pendingCellIndex !== null ? board[pendingCellIndex] === 0 : false;
   const hintMap = useMemo(() => {
     const map = new Map<number, HintMeta>();
     hintMoves.forEach((hint, rank) => {
@@ -262,6 +281,21 @@ export function BoardScene({
               phase={rank * 0.75}
             />
           ))}
+
+          {pendingCellPosition && pendingMove && pendingCellStillEmpty ? (
+            <mesh position={pendingCellPosition} scale={1.08}>
+              <sphereGeometry args={[0.3, 32, 32]} />
+              <meshStandardMaterial
+                color={pendingMove.player === "X" ? "#74fdff" : "#ffa0dd"}
+                emissive={pendingMove.player === "X" ? "#66ffff" : "#ff88de"}
+                emissiveIntensity={1.45}
+                transparent
+                opacity={0.52}
+                roughness={0.24}
+                metalness={0.26}
+              />
+            </mesh>
+          ) : null}
 
           {linePoints ? (
             <Line points={linePoints} color="#fff960" lineWidth={5.5} transparent opacity={0.95} />
