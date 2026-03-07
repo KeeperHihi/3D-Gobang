@@ -19,6 +19,10 @@ import {
   isOnboardingCompletedByPlayer
 } from "../game/interaction/onboardingGuide";
 import { createSmartActionState } from "../game/interaction/smartAction";
+import {
+  createTimeoutAssistTurnKey,
+  evaluateTimeoutAssist
+} from "../game/interaction/timeoutAssist";
 import { BoardScene } from "../ui/BoardScene";
 import { HUD } from "../ui/HUD";
 
@@ -38,6 +42,8 @@ interface GameRoomPageProps {
   onRematch: () => void;
   onContinueMatch: () => void;
   onCompleteOnboarding: () => void;
+  timeoutAssistEnabled: boolean;
+  onTimeoutAssistEnabledChange: (enabled: boolean) => void;
   onLeave: () => void;
 }
 
@@ -68,12 +74,15 @@ export function GameRoomPage({
   onRematch,
   onContinueMatch,
   onCompleteOnboarding,
+  timeoutAssistEnabled,
+  onTimeoutAssistEnabledChange,
   onLeave
 }: GameRoomPageProps) {
   const lastMoveNumberRef = useRef(0);
   const winnerRef = useRef(snapshot.winner);
   const onboardingCompletionSentRef = useRef(false);
   const onboardingActivatedRef = useRef(false);
+  const timeoutAssistTurnKeyRef = useRef<string | null>(null);
   const [assistEnabled, setAssistEnabled] = useState(true);
   const [onboardingProgress, setOnboardingProgress] = useState(() =>
     createDefaultOnboardingProgress()
@@ -182,6 +191,36 @@ export function GameRoomPage({
     }
     return Math.max(0, turnDeadlineAt - nowMs);
   }, [nowMs, snapshot.winner, turnDeadlineAt]);
+  const timeoutAssistTurnKey = useMemo(
+    () =>
+      createTimeoutAssistTurnKey({
+        roomId: snapshot.roomId,
+        turn: snapshot.turn,
+        lastMoveNumber: snapshot.lastMove?.moveNumber ?? null,
+        turnDeadlineAt
+      }),
+    [snapshot.lastMove?.moveNumber, snapshot.roomId, snapshot.turn, turnDeadlineAt]
+  );
+  const timeoutAssistAlreadyTriggered = timeoutAssistTurnKeyRef.current === timeoutAssistTurnKey;
+  const timeoutAssistDecision = useMemo(
+    () =>
+      evaluateTimeoutAssist({
+        enabled: timeoutAssistEnabled,
+        turnRemainingMs,
+        canPlace,
+        hasPendingMove,
+        smartAction,
+        alreadyTriggeredThisTurn: timeoutAssistAlreadyTriggered
+      }),
+    [
+      timeoutAssistAlreadyTriggered,
+      timeoutAssistEnabled,
+      turnRemainingMs,
+      canPlace,
+      hasPendingMove,
+      smartAction
+    ]
+  );
   const turnUrgent = turnRemainingMs !== null && turnRemainingMs <= 8_000;
   const opponentReconnectRemainingMs = useMemo(() => {
     if (snapshot.winner || opponentReconnectDeadlineAt === null) {
@@ -213,6 +252,10 @@ export function GameRoomPage({
       onPlace(smartAction.target);
     }
   }, [onContinueMatch, onPlace, onRematch, smartAction]);
+
+  const handleToggleTimeoutAssist = useCallback(() => {
+    onTimeoutAssistEnabledChange(!timeoutAssistEnabled);
+  }, [onTimeoutAssistEnabledChange, timeoutAssistEnabled]);
 
   const handleBoardRotate = useCallback(() => {
     if (!shouldShowOnboarding) {
@@ -293,6 +336,7 @@ export function GameRoomPage({
   useEffect(() => {
     onboardingCompletionSentRef.current = false;
     onboardingActivatedRef.current = false;
+    timeoutAssistTurnKeyRef.current = null;
     setOnboardingProgress(createDefaultOnboardingProgress());
   }, [snapshot.roomId]);
 
@@ -333,6 +377,17 @@ export function GameRoomPage({
     onboardingCompletionSentRef.current = true;
     onCompleteOnboarding();
   }, [onCompleteOnboarding, onboardingProgress]);
+
+  useEffect(() => {
+    if (!timeoutAssistDecision.shouldAutoAct) {
+      return;
+    }
+    if (timeoutAssistTurnKeyRef.current === timeoutAssistTurnKey) {
+      return;
+    }
+    timeoutAssistTurnKeyRef.current = timeoutAssistTurnKey;
+    handlePrimaryAction();
+  }, [handlePrimaryAction, timeoutAssistDecision.shouldAutoAct, timeoutAssistTurnKey]);
 
   useEffect(() => {
     if (focusMode !== "auto") {
@@ -465,11 +520,14 @@ export function GameRoomPage({
         opponentConnected={snapshot.players[opponentMark].connected}
         turnRemainingMs={turnRemainingMs}
         turnUrgent={turnUrgent}
+        timeoutAssistEnabled={timeoutAssistEnabled}
+        timeoutAssistUrgency={timeoutAssistDecision.urgencyLabel}
         myRematchReady={myRematchReady}
         opponentRematchReady={opponentRematchReady}
         opponentReconnectRemainingMs={opponentReconnectRemainingMs}
         connectionStatus={connectionStatus}
         onPrimaryAction={handlePrimaryAction}
+        onToggleTimeoutAssist={handleToggleTimeoutAssist}
         onOnboardingPrimaryAction={handleOnboardingPrimaryAction}
         onOnboardingSkip={handleOnboardingSkip}
         onToggleAdvanced={handleToggleAdvanced}

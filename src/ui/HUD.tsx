@@ -8,6 +8,7 @@ import {
 } from "../game/interaction/qualityProfile";
 import type { OnboardingGuideState } from "../game/interaction/onboardingGuide";
 import type { SmartActionState } from "../game/interaction/smartAction";
+import type { TimeoutAssistUrgency } from "../game/interaction/timeoutAssist";
 import { SmartActionBar } from "./SmartActionBar";
 
 interface HUDProps {
@@ -30,11 +31,14 @@ interface HUDProps {
   opponentConnected: boolean;
   turnRemainingMs: number | null;
   turnUrgent: boolean;
+  timeoutAssistEnabled: boolean;
+  timeoutAssistUrgency: TimeoutAssistUrgency;
   myRematchReady: boolean;
   opponentRematchReady: boolean;
   opponentReconnectRemainingMs: number | null;
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
   onPrimaryAction: () => void;
+  onToggleTimeoutAssist: () => void;
   onOnboardingPrimaryAction: () => void;
   onOnboardingSkip: () => void;
   onToggleAdvanced: () => void;
@@ -92,11 +96,14 @@ export function HUD({
   opponentConnected,
   turnRemainingMs,
   turnUrgent,
+  timeoutAssistEnabled,
+  timeoutAssistUrgency,
   myRematchReady,
   opponentRematchReady,
   opponentReconnectRemainingMs,
   connectionStatus,
   onPrimaryAction,
+  onToggleTimeoutAssist,
   onOnboardingPrimaryAction,
   onOnboardingSkip,
   onToggleAdvanced,
@@ -127,6 +134,14 @@ export function HUD({
   const turnRemainingSeconds =
     turnRemainingMs === null ? null : Math.max(0, Math.ceil(turnRemainingMs / 1000));
   const showTurnCountdown = !winner && turnRemainingSeconds !== null;
+  const showTimeoutAssistHint = !winner && turn === myMark;
+  const timeoutAssistText = !timeoutAssistEnabled
+    ? "超时护航已关闭"
+    : timeoutAssistUrgency === "armed"
+      ? `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，将自动按建议落子`
+      : timeoutAssistUrgency === "triggered"
+        ? "超时护航：本回合已自动执行保底落子"
+        : "超时护航已开启";
 
   return (
     <div className={`hud-root ${isMobileLayout ? "mobile" : "desktop"}`}>
@@ -160,6 +175,19 @@ export function HUD({
         {showTurnCountdown ? (
           <div className={`hud-turn-clock ${turnUrgent ? "urgent" : ""}`}>
             {turn === myMark ? "你的回合" : "对手回合"} · 剩余 {turnRemainingSeconds}s（以服务器结算为准）
+          </div>
+        ) : null}
+        {showTimeoutAssistHint ? (
+          <div
+            className={`hud-timeout-assist ${
+              timeoutAssistEnabled
+                ? timeoutAssistUrgency === "armed"
+                  ? "urgent"
+                  : "enabled"
+                : "disabled"
+            }`}
+          >
+            {timeoutAssistText}
           </div>
         ) : null}
         {onboardingGuide ? (
@@ -305,6 +333,13 @@ export function HUD({
               </button>
             </div>
             <div className="hud-actions">
+              <button
+                className={`hud-mini-button ${timeoutAssistEnabled ? "active" : ""}`}
+                type="button"
+                onClick={onToggleTimeoutAssist}
+              >
+                超时护航：{timeoutAssistEnabled ? "开" : "关"}
+              </button>
               <button className="hud-button ghost" type="button" onClick={onToggleAssist}>
                 战术辅助：{assistEnabled ? "开" : "关"}
               </button>

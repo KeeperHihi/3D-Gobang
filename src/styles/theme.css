@@ -366,6 +366,33 @@ body {
   animation: turn-clock-pulse 0.9s ease-in-out infinite alternate;
 }
 
+.hud-timeout-assist {
+  margin-bottom: 10px;
+  border-radius: 11px;
+  padding: 8px 10px;
+  font-size: 12px;
+  border: 1px solid transparent;
+}
+
+.hud-timeout-assist.enabled {
+  color: #dcf5ff;
+  border-color: rgba(109, 218, 255, 0.35);
+  background: linear-gradient(90deg, rgba(62, 129, 201, 0.18), rgba(58, 85, 176, 0.18));
+}
+
+.hud-timeout-assist.urgent {
+  color: #fff7df;
+  border-color: rgba(255, 192, 124, 0.75);
+  background: linear-gradient(90deg, rgba(171, 69, 31, 0.44), rgba(158, 46, 81, 0.36));
+  animation: turn-clock-pulse 0.9s ease-in-out infinite alternate;
+}
+
+.hud-timeout-assist.disabled {
+  color: rgba(198, 220, 236, 0.85);
+  border-color: rgba(128, 182, 215, 0.25);
+  background: rgba(66, 94, 128, 0.22);
+}
+
 @keyframes turn-clock-pulse {
   from {
     filter: brightness(0.95);

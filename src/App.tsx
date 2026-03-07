@@ -34,6 +34,7 @@ interface RoomSession {
 const SESSION_STORAGE_KEY = "nebula-cube-session";
 const QUALITY_MODE_STORAGE_KEY = "nebula-cube-quality-mode";
 const ONBOARDING_STORAGE_KEY = "nebula-cube-onboarding-v1";
+const TIMEOUT_ASSIST_STORAGE_KEY = "nebula-cube-timeout-assist-v1";
 
 function loadGameRoomPageModule() {
   return import("./pages/GameRoomPage");
@@ -99,6 +100,18 @@ function persistOnboardingCompleted(completed: boolean): void {
   localStorage.setItem(ONBOARDING_STORAGE_KEY, "done");
 }
 
+function readTimeoutAssistFromStorage(): boolean {
+  const raw = localStorage.getItem(TIMEOUT_ASSIST_STORAGE_KEY);
+  if (raw === "off") {
+    return false;
+  }
+  return true;
+}
+
+function persistTimeoutAssistToStorage(enabled: boolean): void {
+  localStorage.setItem(TIMEOUT_ASSIST_STORAGE_KEY, enabled ? "on" : "off");
+}
+
 export default function App() {
   const socket = useMemo(() => createSocketClient(), []);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
@@ -116,6 +129,9 @@ export default function App() {
   );
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(() =>
     readOnboardingCompletedFromStorage()
+  );
+  const [timeoutAssistEnabled, setTimeoutAssistEnabled] = useState<boolean>(() =>
+    readTimeoutAssistFromStorage()
   );
   const [sceneWarmupStatus, setSceneWarmupStatus] = useState<SceneWarmupStatus>("idle");
 
@@ -139,6 +155,10 @@ export default function App() {
   useEffect(() => {
     persistOnboardingCompleted(onboardingCompleted);
   }, [onboardingCompleted]);
+
+  useEffect(() => {
+    persistTimeoutAssistToStorage(timeoutAssistEnabled);
+  }, [timeoutAssistEnabled]);
 
   useEffect(() => {
     if (matchPhase !== "queuing" || queueStartedAtMs === null) {
@@ -537,6 +557,8 @@ export default function App() {
         onRematch={requestRematch}
         onContinueMatch={requestContinueMatch}
         onCompleteOnboarding={() => setOnboardingCompleted(true)}
+        timeoutAssistEnabled={timeoutAssistEnabled}
+        onTimeoutAssistEnabledChange={setTimeoutAssistEnabled}
         onLeave={leaveRoom}
       />
     </Suspense>
