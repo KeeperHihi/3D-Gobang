@@ -497,6 +497,22 @@ body {
   color: rgba(199, 227, 245, 0.75);
 }
 
+.hud-rematch-wait {
+  margin-bottom: 10px;
+  border-radius: 11px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: rgba(220, 243, 255, 0.92);
+  border: 1px solid rgba(121, 213, 255, 0.32);
+  background: linear-gradient(90deg, rgba(52, 109, 186, 0.24), rgba(55, 78, 165, 0.2));
+}
+
+.hud-rematch-wait.fallback-ready {
+  color: #fff4d7;
+  border-color: rgba(255, 186, 124, 0.72);
+  background: linear-gradient(90deg, rgba(162, 66, 31, 0.42), rgba(157, 46, 79, 0.34));
+}
+
 .hud-reconnect-banner {
   margin-bottom: 10px;
   border-radius: 12px;

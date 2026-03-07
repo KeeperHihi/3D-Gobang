@@ -17,10 +17,11 @@ function createStateFixture(params?: {
   winner?: Winner;
   hints?: MoveHint[];
   assistEnabled?: boolean;
-  hasPendingMove?: boolean;
-  canContinueMatch?: boolean;
-  myRematchReady?: boolean;
-  opponentRematchReady?: boolean;
+    hasPendingMove?: boolean;
+    canContinueMatch?: boolean;
+    continueMatchReason?: "opponentOffline" | "readyTimeout";
+    myRematchReady?: boolean;
+    opponentRematchReady?: boolean;
   connectionStatus?: "connecting" | "online" | "reconnecting" | "offline";
 }) {
   return createSmartActionState({
@@ -33,6 +34,7 @@ function createStateFixture(params?: {
     assistEnabled: params?.assistEnabled ?? true,
     hasPendingMove: params?.hasPendingMove ?? false,
     canContinueMatch: params?.canContinueMatch ?? false,
+    continueMatchReason: params?.continueMatchReason ?? null,
     myRematchReady: params?.myRematchReady ?? false,
     opponentRematchReady: params?.opponentRematchReady ?? false,
     connectionStatus: params?.connectionStatus ?? "online"
@@ -105,12 +107,25 @@ describe("createSmartActionState", () => {
   it("returns continue match action when settlement supports quick continuation", () => {
     const state = createStateFixture({
       winner: "X",
-      canContinueMatch: true
+      canContinueMatch: true,
+      continueMatchReason: "opponentOffline"
     });
 
     expect(state.actionType).toBe("continueMatch");
     expect(state.label).toBe("继续匹配");
     expect(state.enabled).toBe(true);
+    expect(state.reason).toContain("掉线");
+  });
+
+  it("uses timeout-specific reason when ready-check waiting is fused off", () => {
+    const state = createStateFixture({
+      winner: "draw",
+      canContinueMatch: true,
+      continueMatchReason: "readyTimeout"
+    });
+
+    expect(state.actionType).toBe("continueMatch");
+    expect(state.reason).toContain("超时");
   });
 
   it("returns waiting-ready action when I already confirmed rematch", () => {

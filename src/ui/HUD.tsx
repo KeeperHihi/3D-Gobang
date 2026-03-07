@@ -11,6 +11,7 @@ import type { SmartActionState } from "../game/interaction/smartAction";
 import type { TimeoutAssistUrgency } from "../game/interaction/timeoutAssist";
 import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatency";
 import type { AutoRematchPhase } from "../game/interaction/autoRematch";
+import type { RematchWaitPhase } from "../game/interaction/rematchWait";
 import { SmartActionBar } from "./SmartActionBar";
 
 interface HUDProps {
@@ -41,6 +42,8 @@ interface HUDProps {
   autoRematchPhase: AutoRematchPhase;
   autoRematchCountdownRemainingMs: number | null;
   autoRematchCanCancel: boolean;
+  rematchWaitPhase: RematchWaitPhase;
+  rematchWaitRemainingMs: number | null;
   myRematchReady: boolean;
   opponentRematchReady: boolean;
   opponentReconnectRemainingMs: number | null;
@@ -114,6 +117,8 @@ export function HUD({
   autoRematchPhase,
   autoRematchCountdownRemainingMs,
   autoRematchCanCancel,
+  rematchWaitPhase,
+  rematchWaitRemainingMs,
   myRematchReady,
   opponentRematchReady,
   opponentReconnectRemainingMs,
@@ -156,9 +161,17 @@ export function HUD({
     autoRematchCountdownRemainingMs === null
       ? null
       : Math.max(0, Math.ceil(autoRematchCountdownRemainingMs / 1000));
+  const rematchWaitRemainingSeconds =
+    rematchWaitRemainingMs === null ? null : Math.max(0, Math.ceil(rematchWaitRemainingMs / 1000));
   const showTurnCountdown = !winner && turnRemainingSeconds !== null;
   const showTimeoutAssistHint = !winner && turn === myMark;
   const showAutoRematchHint = Boolean(winner) && opponentConnected;
+  const showRematchWaitHint =
+    Boolean(winner) &&
+    myRematchReady &&
+    opponentConnected &&
+    !opponentRematchReady &&
+    rematchWaitPhase !== "idle";
   const timeoutAssistNetworkHint =
     timeoutAssistNetworkTier === "unstable"
       ? "弱网提前"
@@ -187,6 +200,10 @@ export function HUD({
         : autoRematchPhase === "cancelled"
           ? "连战模式：本局已取消自动准备"
           : "连战模式已开启";
+  const rematchWaitText =
+    rematchWaitPhase === "fallback-ready"
+      ? "等待较久，你可以一键继续匹配"
+      : `等待对手确认，${rematchWaitRemainingSeconds ?? 0}s 后可继续匹配`;
 
   return (
     <div className={`hud-root ${isMobileLayout ? "mobile" : "desktop"}`}>
@@ -291,6 +308,11 @@ export function HUD({
               <span>对手</span>
               <span>{opponentRematchReady ? "已准备" : "未准备"}</span>
             </div>
+          </div>
+        ) : null}
+        {showRematchWaitHint ? (
+          <div className={`hud-rematch-wait ${rematchWaitPhase === "fallback-ready" ? "fallback-ready" : ""}`}>
+            {rematchWaitText}
           </div>
         ) : null}
         {showReconnectDeadline ? (

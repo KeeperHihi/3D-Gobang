@@ -2,6 +2,7 @@ import type { Coordinate3D, PlayerMark, RoomSnapshot, Winner } from "../../netwo
 import type { MoveHint } from "../engine/moveHints";
 
 export type ConnectionStatus = "connecting" | "online" | "reconnecting" | "offline";
+export type ContinueMatchReason = "opponentOffline" | "readyTimeout";
 
 export type SmartActionType =
   | "win"
@@ -32,6 +33,7 @@ interface SmartActionInput {
   assistEnabled: boolean;
   hasPendingMove: boolean;
   canContinueMatch: boolean;
+  continueMatchReason?: ContinueMatchReason | null;
   myRematchReady: boolean;
   opponentRematchReady: boolean;
 }
@@ -56,6 +58,16 @@ function winnerReason(winner: Winner, myMark: PlayerMark): string {
   return "本局结束，点击再来一局";
 }
 
+function continueMatchActionReason(reason: ContinueMatchReason | null | undefined): string {
+  if (reason === "readyTimeout") {
+    return "等待对手确认超时，点击一键继续匹配";
+  }
+  if (reason === "opponentOffline") {
+    return "对手掉线已结算，点击一键继续匹配";
+  }
+  return "当前可继续匹配，点击后自动为你寻找新对手";
+}
+
 export function createSmartActionState(input: SmartActionInput): SmartActionState {
   const {
     snapshot,
@@ -65,6 +77,7 @@ export function createSmartActionState(input: SmartActionInput): SmartActionStat
     assistEnabled,
     hasPendingMove,
     canContinueMatch,
+    continueMatchReason,
     myRematchReady,
     opponentRematchReady
   } = input;
@@ -85,7 +98,7 @@ export function createSmartActionState(input: SmartActionInput): SmartActionStat
         actionType: "continueMatch",
         label: "继续匹配",
         enabled: true,
-        reason: "对手掉线已结算，点击一键继续匹配",
+        reason: continueMatchActionReason(continueMatchReason),
         target: null
       };
     }

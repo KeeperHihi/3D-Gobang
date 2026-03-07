@@ -19,6 +19,10 @@ import {
   evaluateAutoRematch
 } from "../game/interaction/autoRematch";
 import {
+  evaluateRematchWait,
+  resolveRematchWaitStartedAtMs
+} from "../game/interaction/rematchWait";
+import {
   createDefaultOnboardingProgress,
   createOnboardingGuideState,
   isOnboardingCompletedByPlayer
@@ -119,10 +123,12 @@ export function GameRoomPage({
   const [qualityLastSwitchAtMs, setQualityLastSwitchAtMs] = useState<number>(0);
   const [averageFps, setAverageFps] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [settlementStartedAtMs, setSettlementStartedAtMs] = useState<number | null>(null);
   const [autoRematchCountdownStartedAtMs, setAutoRematchCountdownStartedAtMs] = useState<number | null>(
     null
   );
   const opponentMark: PlayerMark = myMark === "X" ? "O" : "X";
+  const opponentConnected = snapshot.players[opponentMark].connected;
   const opponentReconnectDeadlineAt = snapshot.players[opponentMark].reconnectDeadlineAt;
   const turnDeadlineAt = snapshot.turnDeadlineAt;
   const myRematchReady = snapshot.rematchReady[myMark];
@@ -130,7 +136,7 @@ export function GameRoomPage({
   const hasPendingMove = pendingMove !== null;
   const canPlace =
     snapshot.turn === myMark && !snapshot.winner && connectionStatus === "online" && !hasPendingMove;
-  const canContinueMatch = Boolean(snapshot.winner && !snapshot.players[opponentMark].connected);
+  const canContinueMatchByOffline = Boolean(snapshot.winner && !opponentConnected);
   const boardCells = snapshot.board as BoardCell[];
   const hintsWinLinesIndex = useMemo(
     () => createWinLinesIndex(snapshot.size, snapshot.connect),
@@ -166,6 +172,29 @@ export function GameRoomPage({
     }
     return Math.floor(snapshot.size / 2);
   }, [primaryHint, snapshot.lastMove, snapshot.size]);
+  const rematchWaitDecision = useMemo(
+    () =>
+      evaluateRematchWait({
+        winner: snapshot.winner,
+        myRematchReady,
+        opponentRematchReady,
+        opponentConnected,
+        settlementStartedAtMs,
+        nowMs
+      }),
+    [
+      myRematchReady,
+      nowMs,
+      opponentRematchReady,
+      opponentConnected,
+      settlementStartedAtMs,
+      snapshot.winner
+    ]
+  );
+  const canContinueMatchByReadyTimeout = rematchWaitDecision.canForceContinueMatch;
+  const canContinueMatch = canContinueMatchByOffline || canContinueMatchByReadyTimeout;
+  const continueMatchReason =
+    canContinueMatchByOffline ? "opponentOffline" : canContinueMatchByReadyTimeout ? "readyTimeout" : null;
   const smartAction = useMemo(
     () =>
       createSmartActionState({
@@ -179,12 +208,14 @@ export function GameRoomPage({
         assistEnabled,
         hasPendingMove,
         canContinueMatch,
+        continueMatchReason,
         myRematchReady,
         opponentRematchReady
       }),
     [
       assistEnabled,
       canContinueMatch,
+      continueMatchReason,
       connectionStatus,
       hasPendingMove,
       hintMovesForBoard,
@@ -258,7 +289,7 @@ export function GameRoomPage({
       evaluateAutoRematch({
         enabled: autoRematchEnabled,
         winner: snapshot.winner,
-        opponentConnected: snapshot.players[opponentMark].connected,
+        opponentConnected,
         canContinueMatch,
         myRematchReady,
         countdownStartedAtMs: autoRematchCountdownStartedAtMs,
@@ -273,8 +304,7 @@ export function GameRoomPage({
       canContinueMatch,
       myRematchReady,
       nowMs,
-      opponentMark,
-      snapshot.players,
+      opponentConnected,
       snapshot.winner
     ]
   );
@@ -416,9 +446,25 @@ export function GameRoomPage({
     timeoutAssistTurnKeyRef.current = null;
     autoRematchTriggeredRoundKeyRef.current = null;
     autoRematchCancelledRoundKeyRef.current = null;
+    setSettlementStartedAtMs(null);
     setAutoRematchCountdownStartedAtMs(null);
     setOnboardingProgress(createDefaultOnboardingProgress());
   }, [snapshot.roomId]);
+
+  useEffect(() => {
+    setSettlementStartedAtMs((current) =>
+      resolveRematchWaitStartedAtMs(
+        current,
+        {
+          winner: snapshot.winner,
+          myRematchReady,
+          opponentRematchReady,
+          opponentConnected
+        },
+        Date.now()
+      )
+    );
+  }, [myRematchReady, opponentConnected, opponentRematchReady, snapshot.winner]);
 
   useEffect(() => {
     if (!snapshot.winner) {
@@ -627,7 +673,7 @@ export function GameRoomPage({
         qualityLevel={qualityLevel}
         averageFps={averageFps}
         myConnected={snapshot.players[myMark].connected}
-        opponentConnected={snapshot.players[opponentMark].connected}
+        opponentConnected={opponentConnected}
         turnRemainingMs={turnRemainingMs}
         turnUrgent={turnUrgent}
         timeoutAssistEnabled={timeoutAssistEnabled}
@@ -638,6 +684,8 @@ export function GameRoomPage({
         autoRematchPhase={autoRematchDecision.phase}
         autoRematchCountdownRemainingMs={autoRematchDecision.countdownRemainingMs}
         autoRematchCanCancel={autoRematchDecision.canCancel}
+        rematchWaitPhase={rematchWaitDecision.phase}
+        rematchWaitRemainingMs={rematchWaitDecision.remainingMs}
         myRematchReady={myRematchReady}
         opponentRematchReady={opponentRematchReady}
         opponentReconnectRemainingMs={opponentReconnectRemainingMs}
