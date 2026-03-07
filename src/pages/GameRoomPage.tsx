@@ -51,6 +51,7 @@ interface GameRoomPageProps {
   onRematch: () => void;
   onRematchCancel: () => void;
   onContinueMatch: () => void;
+  continueSubmitting: boolean;
   onCompleteOnboarding: () => void;
   timeoutAssistEnabled: boolean;
   onTimeoutAssistEnabledChange: (enabled: boolean) => void;
@@ -88,6 +89,7 @@ export function GameRoomPage({
   onRematch,
   onRematchCancel,
   onContinueMatch,
+  continueSubmitting,
   onCompleteOnboarding,
   timeoutAssistEnabled,
   onTimeoutAssistEnabledChange,
@@ -209,6 +211,7 @@ export function GameRoomPage({
         hasPendingMove,
         canContinueMatch,
         continueMatchReason,
+        continueSubmitting,
         myRematchReady,
         opponentRematchReady
       }),
@@ -222,6 +225,7 @@ export function GameRoomPage({
       myMark,
       myRematchReady,
       opponentRematchReady,
+      continueSubmitting,
       snapshot.turn,
       snapshot.winner
     ]

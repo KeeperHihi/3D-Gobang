@@ -9,6 +9,7 @@ export type SmartActionType =
   | "block"
   | "suggest"
   | "pending"
+  | "continuePending"
   | "manual"
   | "wait"
   | "continueMatch"
@@ -34,6 +35,7 @@ interface SmartActionInput {
   hasPendingMove: boolean;
   canContinueMatch: boolean;
   continueMatchReason?: ContinueMatchReason | null;
+  continueSubmitting?: boolean;
   myRematchReady: boolean;
   opponentRematchReady: boolean;
 }
@@ -78,6 +80,7 @@ export function createSmartActionState(input: SmartActionInput): SmartActionStat
     hasPendingMove,
     canContinueMatch,
     continueMatchReason,
+    continueSubmitting,
     myRematchReady,
     opponentRematchReady
   } = input;
@@ -93,6 +96,16 @@ export function createSmartActionState(input: SmartActionInput): SmartActionStat
   }
 
   if (snapshot.winner) {
+    if (continueSubmitting) {
+      return {
+        actionType: "continuePending",
+        label: "切换中...",
+        enabled: false,
+        reason: "正在切换到匹配队列，请稍候",
+        target: null
+      };
+    }
+
     if (canContinueMatch) {
       return {
         actionType: "continueMatch",

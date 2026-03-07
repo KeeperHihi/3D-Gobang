@@ -20,9 +20,10 @@ function createStateFixture(params?: {
     hasPendingMove?: boolean;
     canContinueMatch?: boolean;
     continueMatchReason?: "opponentOffline" | "readyTimeout";
+    continueSubmitting?: boolean;
     myRematchReady?: boolean;
     opponentRematchReady?: boolean;
-  connectionStatus?: "connecting" | "online" | "reconnecting" | "offline";
+    connectionStatus?: "connecting" | "online" | "reconnecting" | "offline";
 }) {
   return createSmartActionState({
     snapshot: {
@@ -35,6 +36,7 @@ function createStateFixture(params?: {
     hasPendingMove: params?.hasPendingMove ?? false,
     canContinueMatch: params?.canContinueMatch ?? false,
     continueMatchReason: params?.continueMatchReason ?? null,
+    continueSubmitting: params?.continueSubmitting ?? false,
     myRematchReady: params?.myRematchReady ?? false,
     opponentRematchReady: params?.opponentRematchReady ?? false,
     connectionStatus: params?.connectionStatus ?? "online"
@@ -126,6 +128,17 @@ describe("createSmartActionState", () => {
 
     expect(state.actionType).toBe("continueMatch");
     expect(state.reason).toContain("超时");
+  });
+
+  it("shows continue submitting state while switching queue", () => {
+    const state = createStateFixture({
+      winner: "X",
+      continueSubmitting: true
+    });
+
+    expect(state.actionType).toBe("continuePending");
+    expect(state.enabled).toBe(false);
+    expect(state.reason).toContain("切换");
   });
 
   it("returns waiting-ready action when I already confirmed rematch", () => {

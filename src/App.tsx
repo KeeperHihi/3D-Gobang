@@ -19,6 +19,12 @@ import {
   deriveTimeoutAssistThresholdMs,
   updateLatencySamples
 } from "./game/interaction/networkLatency";
+import {
+  createInitialContinueTransitionState,
+  reduceContinueTransition,
+  shouldRestoreContinueMatchBackup,
+  type ContinueTransitionEvent
+} from "./game/interaction/continueTransition";
 import type {
   Coordinate3D,
   MoveAckPayload,
@@ -34,6 +40,12 @@ interface RoomSession {
   roomId: string;
   seatToken: string;
   mark: PlayerMark;
+}
+
+interface ContinueMatchBackup {
+  session: RoomSession;
+  snapshot: RoomSnapshot;
+  roomEntryMode: RoomEntryMode;
 }
 
 const SESSION_STORAGE_KEY = "nebula-cube-session";
@@ -150,15 +162,21 @@ export default function App() {
   const [autoRematchEnabled, setAutoRematchEnabled] = useState<boolean>(() =>
     readAutoRematchFromStorage()
   );
+  const [continueTransition, setContinueTransition] = useState(() =>
+    createInitialContinueTransitionState()
+  );
   const [networkLatencyProfile, setNetworkLatencyProfile] = useState(() =>
     createInitialNetworkLatencyProfile()
   );
   const [sceneWarmupStatus, setSceneWarmupStatus] = useState<SceneWarmupStatus>("idle");
 
   const sessionRef = useRef<RoomSession | null>(session);
+  const snapshotRef = useRef<RoomSnapshot | null>(snapshot);
   const matchPhaseRef = useRef<MatchPhase>(matchPhase);
   const sceneWarmupStartedRef = useRef(false);
   const pendingMoveSubmittedAtRef = useRef<Map<string, number>>(new Map());
+  const continueTransitionRef = useRef(continueTransition);
+  const continueMatchBackupRef = useRef<ContinueMatchBackup | null>(null);
 
   useEffect(() => {
     sessionRef.current = session;
@@ -166,8 +184,24 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
+
+  useEffect(() => {
     matchPhaseRef.current = matchPhase;
   }, [matchPhase]);
+
+  useEffect(() => {
+    continueTransitionRef.current = continueTransition;
+  }, [continueTransition]);
+
+  const applyContinueTransition = (event: ContinueTransitionEvent) => {
+    setContinueTransition((current) => {
+      const next = reduceContinueTransition(current, event);
+      continueTransitionRef.current = next;
+      return next;
+    });
+  };
 
   useEffect(() => {
     persistQualityMode(qualityMode);
@@ -225,6 +259,85 @@ export default function App() {
       setQueueSize(0);
     };
 
+    const finalizeContinueMatchSuccess = () => {
+      const currentTransition = continueTransitionRef.current;
+      if (currentTransition.phase !== "submitting") {
+        return;
+      }
+
+      const acceptedTransition = reduceContinueTransition(currentTransition, {
+        type: "SERVER_ACCEPT",
+        requestId: currentTransition.requestId
+      });
+      continueTransitionRef.current = acceptedTransition;
+      setContinueTransition(acceptedTransition);
+
+      continueMatchBackupRef.current = null;
+      sessionRef.current = null;
+      snapshotRef.current = null;
+      persistSession(null);
+      setSession(null);
+      setSnapshot(null);
+      setRoomEntryMode("fresh");
+      setPendingMove(null);
+      pendingMoveSubmittedAtRef.current.clear();
+
+      const resetTransition = reduceContinueTransition(acceptedTransition, {
+        type: "RESET"
+      });
+      continueTransitionRef.current = resetTransition;
+      setContinueTransition(resetTransition);
+    };
+
+    const rollbackContinueMatchIfNeeded = () => {
+      const currentTransition = continueTransitionRef.current;
+      if (currentTransition.phase !== "submitting") {
+        return false;
+      }
+
+      const rollbackTransition = reduceContinueTransition(currentTransition, {
+        type: "SERVER_REJECT",
+        requestId: currentTransition.requestId
+      });
+      continueTransitionRef.current = rollbackTransition;
+      setContinueTransition(rollbackTransition);
+
+      const backup = continueMatchBackupRef.current;
+      continueMatchBackupRef.current = null;
+      if (backup) {
+        const shouldRestore = shouldRestoreContinueMatchBackup({
+          backupRoomId: backup.session.roomId,
+          currentSessionRoomId: sessionRef.current?.roomId ?? null,
+          currentSnapshotRoomId: snapshotRef.current?.roomId ?? null,
+          currentWinner: snapshotRef.current?.winner ?? null
+        });
+
+        if (shouldRestore) {
+          sessionRef.current = backup.session;
+          snapshotRef.current = backup.snapshot;
+          setSession(backup.session);
+          setSnapshot(backup.snapshot);
+          setRoomEntryMode(backup.roomEntryMode);
+          setMatchPhase("matched");
+        }
+
+        const stateRequestSession = shouldRestore ? backup.session : sessionRef.current;
+        if (socket.connected && stateRequestSession) {
+          socket.emit("room:state:request", {
+            roomId: stateRequestSession.roomId,
+            seatToken: stateRequestSession.seatToken
+          });
+        }
+      }
+
+      const resetTransition = reduceContinueTransition(rollbackTransition, {
+        type: "RESET"
+      });
+      continueTransitionRef.current = resetTransition;
+      setContinueTransition(resetTransition);
+      return true;
+    };
+
     const handleConnect = () => {
       setConnectionState("online");
       const currentSession = sessionRef.current;
@@ -247,6 +360,8 @@ export default function App() {
       setConnectionState("reconnecting");
       setPendingMove(null);
       pendingMoveSubmittedAtRef.current.clear();
+      continueMatchBackupRef.current = null;
+      applyContinueTransition({ type: "RESET" });
       if (!sessionRef.current) {
         setMatchPhase("idle");
         resetQueueState();
@@ -262,6 +377,7 @@ export default function App() {
     socket.on("connect_error", handleConnectionError);
 
     socket.on("queue:joined", ({ waitingForOpponent, queueSize: nextQueueSize }) => {
+      finalizeContinueMatchSuccess();
       if (waitingForOpponent) {
         setMatchPhase("queuing");
         setQueueSize(nextQueueSize);
@@ -284,6 +400,9 @@ export default function App() {
     });
 
     socket.on("queue:matched", ({ roomId, mark, seatToken, snapshot: nextSnapshot }) => {
+      finalizeContinueMatchSuccess();
+      sessionRef.current = { roomId, mark, seatToken };
+      snapshotRef.current = nextSnapshot;
       setSession({ roomId, mark, seatToken });
       setSnapshot(nextSnapshot);
       setMatchPhase("matched");
@@ -295,6 +414,8 @@ export default function App() {
     });
 
     socket.on("room:resumed", ({ roomId, mark, seatToken, snapshot: nextSnapshot }) => {
+      sessionRef.current = { roomId, mark, seatToken };
+      snapshotRef.current = nextSnapshot;
       setSession({ roomId, mark, seatToken });
       setSnapshot(nextSnapshot);
       setMatchPhase("matched");
@@ -306,6 +427,7 @@ export default function App() {
     });
 
     socket.on("room:update", ({ snapshot: nextSnapshot }) => {
+      snapshotRef.current = nextSnapshot;
       setSnapshot(nextSnapshot);
       setMatchPhase("matched");
       resetQueueState();
@@ -319,6 +441,9 @@ export default function App() {
     });
 
     socket.on("room:resume-failed", ({ reason }) => {
+      rollbackContinueMatchIfNeeded();
+      sessionRef.current = null;
+      snapshotRef.current = null;
       setSession(null);
       setSnapshot(null);
       setMatchPhase("idle");
@@ -356,6 +481,7 @@ export default function App() {
     });
 
     socket.on("game:error", ({ message }) => {
+      const continueRejected = rollbackContinueMatchIfNeeded();
       if (matchPhaseRef.current === "queuing") {
         setMatchPhase("idle");
         resetQueueState();
@@ -363,6 +489,9 @@ export default function App() {
       setErrorMessage(message);
       setPendingMove(null);
       pendingMoveSubmittedAtRef.current.clear();
+      if (continueRejected) {
+        return;
+      }
     });
 
     socket.connect();
@@ -504,6 +633,10 @@ export default function App() {
   };
 
   const requestContinueMatch = () => {
+    if (continueTransitionRef.current.phase === "submitting") {
+      return;
+    }
+
     const validation = validateContinueMatchRequest({
       hasSession: session !== null,
       hasSnapshot: snapshot !== null,
@@ -521,16 +654,22 @@ export default function App() {
       return;
     }
 
+    const nextTransition = reduceContinueTransition(continueTransitionRef.current, {
+      type: "REQUEST"
+    });
+    if (nextTransition === continueTransitionRef.current) {
+      return;
+    }
+    continueTransitionRef.current = nextTransition;
+    setContinueTransition(nextTransition);
+    continueMatchBackupRef.current = {
+      session,
+      snapshot,
+      roomEntryMode
+    };
+
     setPendingMove(null);
     setErrorMessage(null);
-    setSession(null);
-    setSnapshot(null);
-    setMatchPhase("queuing");
-    setQueueSize(1);
-    setQueueStartedAtMs(Date.now());
-    setQueueElapsedSeconds(0);
-    sessionRef.current = null;
-    persistSession(null);
     pendingMoveSubmittedAtRef.current.clear();
 
     socket.emit("queue:continue", {
@@ -541,6 +680,7 @@ export default function App() {
 
   const leaveRoom = () => {
     sessionRef.current = null;
+    snapshotRef.current = null;
     persistSession(null);
     setSession(null);
     setSnapshot(null);
@@ -551,6 +691,8 @@ export default function App() {
     setQueueElapsedSeconds(0);
     setErrorMessage(null);
     setPendingMove(null);
+    continueMatchBackupRef.current = null;
+    applyContinueTransition({ type: "RESET" });
     pendingMoveSubmittedAtRef.current.clear();
     socket.disconnect();
     socket.connect();
@@ -608,6 +750,7 @@ export default function App() {
         onRematch={requestRematch}
         onRematchCancel={requestRematchCancel}
         onContinueMatch={requestContinueMatch}
+        continueSubmitting={continueTransition.phase === "submitting"}
         onCompleteOnboarding={() => setOnboardingCompleted(true)}
         timeoutAssistEnabled={timeoutAssistEnabled}
         onTimeoutAssistEnabledChange={setTimeoutAssistEnabled}

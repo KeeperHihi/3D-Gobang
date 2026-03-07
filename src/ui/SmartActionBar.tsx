@@ -20,6 +20,9 @@ function actionClassName(actionType: SmartActionState["actionType"]): string {
   if (actionType === "continueMatch") {
     return "smart-action-button continue-match";
   }
+  if (actionType === "continuePending") {
+    return "smart-action-button pending";
+  }
   if (actionType === "readyWaiting") {
     return "smart-action-button ready-waiting";
   }
