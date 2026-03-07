@@ -40,6 +40,10 @@ import {
   createTurnNudgeTurnKey,
   shouldTriggerTurnNudge
 } from "../game/interaction/turnNudge";
+import {
+  evaluateTurnNudgePermission,
+  type TurnNudgeNotificationPermission
+} from "../game/interaction/turnNudgePermission";
 import { BoardScene } from "../ui/BoardScene";
 import { HUD } from "../ui/HUD";
 
@@ -69,6 +73,8 @@ interface GameRoomPageProps {
   onAutoRematchEnabledChange: (enabled: boolean) => void;
   turnNudgeEnabled: boolean;
   onTurnNudgeEnabledChange: (enabled: boolean) => void;
+  turnNudgePermissionHintDismissed: boolean;
+  onTurnNudgePermissionHintDismissedChange: (dismissed: boolean) => void;
   onLeave: () => void;
 }
 
@@ -84,6 +90,13 @@ function initialQualityLevelFromMode(mode: QualityMode): QualityLevel {
     return "low";
   }
   return DEFAULT_QUALITY_LEVEL;
+}
+
+function resolveTurnNudgeNotificationPermission(): TurnNudgeNotificationPermission {
+  if (typeof window === "undefined" || typeof Notification === "undefined") {
+    return "unsupported";
+  }
+  return Notification.permission;
 }
 
 export function GameRoomPage({
@@ -109,6 +122,8 @@ export function GameRoomPage({
   onAutoRematchEnabledChange,
   turnNudgeEnabled,
   onTurnNudgeEnabledChange,
+  turnNudgePermissionHintDismissed,
+  onTurnNudgePermissionHintDismissedChange,
   onLeave
 }: GameRoomPageProps) {
   const lastMoveNumberRef = useRef(0);
@@ -151,6 +166,12 @@ export function GameRoomPage({
   const [windowFocused, setWindowFocused] = useState<boolean>(() =>
     typeof document === "undefined" ? true : document.hasFocus()
   );
+  const [turnNudgeNotificationPermission, setTurnNudgeNotificationPermission] =
+    useState<TurnNudgeNotificationPermission>(() => resolveTurnNudgeNotificationPermission());
+  const [turnNudgePermissionRequestPending, setTurnNudgePermissionRequestPending] = useState(false);
+  const [turnNudgePermissionLastRequestedAtMs, setTurnNudgePermissionLastRequestedAtMs] = useState<
+    number | null
+  >(null);
   const [settlementStartedAtMs, setSettlementStartedAtMs] = useState<number | null>(null);
   const [autoRematchCountdownStartedAtMs, setAutoRematchCountdownStartedAtMs] = useState<number | null>(
     null
@@ -286,6 +307,25 @@ export function GameRoomPage({
         turnDeadlineAt
       }),
     [snapshot.lastMove?.moveNumber, snapshot.roomId, snapshot.turn, snapshot.winner, turnDeadlineAt]
+  );
+  const turnNudgePermissionDecision = useMemo(
+    () =>
+      evaluateTurnNudgePermission({
+        enabled: turnNudgeEnabled,
+        permission: turnNudgeNotificationPermission,
+        dismissed: turnNudgePermissionHintDismissed,
+        requestPending: turnNudgePermissionRequestPending,
+        lastRequestedAtMs: turnNudgePermissionLastRequestedAtMs,
+        nowMs
+      }),
+    [
+      nowMs,
+      turnNudgeEnabled,
+      turnNudgeNotificationPermission,
+      turnNudgePermissionHintDismissed,
+      turnNudgePermissionLastRequestedAtMs,
+      turnNudgePermissionRequestPending
+    ]
   );
   const timeoutAssistTurnKey = useMemo(
     () =>
@@ -423,6 +463,33 @@ export function GameRoomPage({
   const handleToggleTurnNudge = useCallback(() => {
     onTurnNudgeEnabledChange(!turnNudgeEnabled);
   }, [onTurnNudgeEnabledChange, turnNudgeEnabled]);
+  const syncTurnNudgeNotificationPermission = useCallback(() => {
+    setTurnNudgeNotificationPermission(resolveTurnNudgeNotificationPermission());
+  }, []);
+  const handleRequestTurnNudgePermission = useCallback(async () => {
+    if (typeof window === "undefined" || typeof Notification === "undefined") {
+      setTurnNudgeNotificationPermission("unsupported");
+      return;
+    }
+    if (!turnNudgePermissionDecision.canRequest || Notification.permission !== "default") {
+      syncTurnNudgeNotificationPermission();
+      return;
+    }
+
+    setTurnNudgePermissionRequestPending(true);
+    setTurnNudgePermissionLastRequestedAtMs(Date.now());
+    try {
+      const permission = await Notification.requestPermission();
+      setTurnNudgeNotificationPermission(permission);
+    } catch {
+      syncTurnNudgeNotificationPermission();
+    } finally {
+      setTurnNudgePermissionRequestPending(false);
+    }
+  }, [syncTurnNudgeNotificationPermission, turnNudgePermissionDecision.canRequest]);
+  const handleDismissTurnNudgePermissionHint = useCallback(() => {
+    onTurnNudgePermissionHintDismissedChange(true);
+  }, [onTurnNudgePermissionHintDismissedChange]);
   const handleCancelAutoRematch = useCallback(() => {
     if (!snapshot.winner) {
       return;
@@ -695,9 +762,11 @@ export function GameRoomPage({
 
     const handleVisibilityChange = () => {
       setPageVisible(document.visibilityState === "visible");
+      syncTurnNudgeNotificationPermission();
     };
     const handleFocus = () => {
       setWindowFocused(true);
+      syncTurnNudgeNotificationPermission();
     };
     const handleBlur = () => {
       setWindowFocused(false);
@@ -713,7 +782,7 @@ export function GameRoomPage({
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("blur", handleBlur);
     };
-  }, []);
+  }, [syncTurnNudgeNotificationPermission]);
 
   useEffect(() => {
     const shouldNudge = shouldTriggerTurnNudge({
@@ -732,7 +801,7 @@ export function GameRoomPage({
       turnNudgeTriggeredTurnKeyRef.current = turnNudgeTurnKey;
       applyTurnNudgeTitle();
       playTurnNudgeSfx();
-      if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+      if (turnNudgeNotificationPermission === "granted" && typeof window !== "undefined") {
         try {
           new Notification("轮到你了", {
             body: "现在是你的回合，返回战局即可一键落子"
@@ -755,6 +824,7 @@ export function GameRoomPage({
     pageVisible,
     snapshot.winner,
     turnNudgeEnabled,
+    turnNudgeNotificationPermission,
     turnNudgeTurnKey,
     windowFocused
   ]);
@@ -901,6 +971,9 @@ export function GameRoomPage({
         timeoutAssistThresholdMs={timeoutAssistThresholdMs}
         timeoutAssistNetworkTier={timeoutAssistNetworkTier}
         turnNudgeEnabled={turnNudgeEnabled}
+        turnNudgePermissionPhase={turnNudgePermissionDecision.phase}
+        turnNudgePermissionCanRequest={turnNudgePermissionDecision.canRequest}
+        turnNudgePermissionRequestPending={turnNudgePermissionRequestPending}
         autoRematchEnabled={autoRematchEnabled}
         autoRematchPhase={autoRematchDecision.phase}
         autoRematchCountdownRemainingMs={autoRematchDecision.countdownRemainingMs}
@@ -917,6 +990,8 @@ export function GameRoomPage({
         onPrimaryAction={handlePrimaryAction}
         onToggleTimeoutAssist={handleToggleTimeoutAssist}
         onToggleTurnNudge={handleToggleTurnNudge}
+        onRequestTurnNudgePermission={handleRequestTurnNudgePermission}
+        onDismissTurnNudgePermissionHint={handleDismissTurnNudgePermissionHint}
         onToggleAutoRematch={handleToggleAutoRematch}
         onCancelAutoRematch={handleCancelAutoRematch}
         onCancelAutoContinue={handleCancelAutoContinue}

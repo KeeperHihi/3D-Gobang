@@ -456,6 +456,31 @@ body {
   background: rgba(66, 94, 128, 0.22);
 }
 
+.hud-turn-nudge-permission {
+  margin-bottom: 10px;
+  border-radius: 11px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+}
+
+.hud-turn-nudge-permission.prompt {
+  color: #dff4ff;
+  border-color: rgba(120, 221, 255, 0.4);
+  background: linear-gradient(90deg, rgba(52, 112, 189, 0.26), rgba(56, 81, 173, 0.24));
+}
+
+.hud-turn-nudge-permission.denied {
+  color: #ffeccf;
+  border-color: rgba(255, 183, 126, 0.56);
+  background: linear-gradient(90deg, rgba(151, 73, 33, 0.36), rgba(133, 54, 71, 0.3));
+}
+
+.hud-turn-nudge-permission-text {
+  font-size: 12px;
+  line-height: 1.45;
+  margin-bottom: 8px;
+}
+
 @keyframes turn-clock-pulse {
   from {
     filter: brightness(0.95);

@@ -13,6 +13,7 @@ import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatenc
 import type { AutoRematchPhase } from "../game/interaction/autoRematch";
 import type { AutoContinueAfterFallbackPhase } from "../game/interaction/autoContinueAfterFallback";
 import type { RematchWaitPhase } from "../game/interaction/rematchWait";
+import type { TurnNudgePermissionPhase } from "../game/interaction/turnNudgePermission";
 import { SmartActionBar } from "./SmartActionBar";
 
 interface HUDProps {
@@ -40,6 +41,9 @@ interface HUDProps {
   timeoutAssistThresholdMs: number;
   timeoutAssistNetworkTier: TimeoutAssistNetworkTier;
   turnNudgeEnabled: boolean;
+  turnNudgePermissionPhase: TurnNudgePermissionPhase;
+  turnNudgePermissionCanRequest: boolean;
+  turnNudgePermissionRequestPending: boolean;
   autoRematchEnabled: boolean;
   autoRematchPhase: AutoRematchPhase;
   autoRematchCountdownRemainingMs: number | null;
@@ -56,6 +60,8 @@ interface HUDProps {
   onPrimaryAction: () => void;
   onToggleTimeoutAssist: () => void;
   onToggleTurnNudge: () => void;
+  onRequestTurnNudgePermission: () => void;
+  onDismissTurnNudgePermissionHint: () => void;
   onToggleAutoRematch: () => void;
   onCancelAutoRematch: () => void;
   onCancelAutoContinue: () => void;
@@ -121,6 +127,9 @@ export function HUD({
   timeoutAssistThresholdMs,
   timeoutAssistNetworkTier,
   turnNudgeEnabled,
+  turnNudgePermissionPhase,
+  turnNudgePermissionCanRequest,
+  turnNudgePermissionRequestPending,
   autoRematchEnabled,
   autoRematchPhase,
   autoRematchCountdownRemainingMs,
@@ -137,6 +146,8 @@ export function HUD({
   onPrimaryAction,
   onToggleTimeoutAssist,
   onToggleTurnNudge,
+  onRequestTurnNudgePermission,
+  onDismissTurnNudgePermissionHint,
   onToggleAutoRematch,
   onCancelAutoRematch,
   onCancelAutoContinue,
@@ -232,6 +243,10 @@ export function HUD({
         : autoContinuePhase === "armed"
           ? "正在自动继续匹配..."
           : "已开启自动继续匹配";
+  const showTurnNudgePermissionPrompt = turnNudgePermissionPhase === "prompt";
+  const showTurnNudgePermissionDenied = turnNudgePermissionPhase === "denied";
+  const turnNudgePermissionPromptText = "启用系统通知后，切后台也能及时收到“轮到你了”提醒";
+  const turnNudgePermissionDeniedText = "浏览器已禁用系统通知，可在浏览器设置中手动开启";
 
   return (
     <div className={`hud-root ${isMobileLayout ? "mobile" : "desktop"}`}>
@@ -494,6 +509,42 @@ export function HUD({
                 再来一局
               </button>
             </div>
+            {showTurnNudgePermissionPrompt ? (
+              <div className="hud-turn-nudge-permission prompt">
+                <div className="hud-turn-nudge-permission-text">{turnNudgePermissionPromptText}</div>
+                <div className="hud-actions">
+                  <button
+                    className="hud-mini-button active"
+                    type="button"
+                    onClick={onRequestTurnNudgePermission}
+                    disabled={!turnNudgePermissionCanRequest || turnNudgePermissionRequestPending}
+                  >
+                    {turnNudgePermissionRequestPending ? "请求中..." : "启用系统通知"}
+                  </button>
+                  <button
+                    className="hud-mini-button"
+                    type="button"
+                    onClick={onDismissTurnNudgePermissionHint}
+                  >
+                    暂不提示
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {showTurnNudgePermissionDenied ? (
+              <div className="hud-turn-nudge-permission denied">
+                <div className="hud-turn-nudge-permission-text">{turnNudgePermissionDeniedText}</div>
+                <div className="hud-actions">
+                  <button
+                    className="hud-mini-button"
+                    type="button"
+                    onClick={onDismissTurnNudgePermissionHint}
+                  >
+                    我知道了
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className="hud-actions">
               <button className="hud-button ghost" type="button" onClick={onLeave}>
                 离开

@@ -54,6 +54,7 @@ const ONBOARDING_STORAGE_KEY = "nebula-cube-onboarding-v1";
 const TIMEOUT_ASSIST_STORAGE_KEY = "nebula-cube-timeout-assist-v1";
 const AUTO_REMATCH_STORAGE_KEY = "nebula-cube-auto-rematch-v1";
 const TURN_NUDGE_STORAGE_KEY = "nebula-cube-turn-nudge-v1";
+const TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY = "nebula-cube-turn-nudge-permission-hint-v1";
 
 function loadGameRoomPageModule() {
   return import("./pages/GameRoomPage");
@@ -151,6 +152,18 @@ function persistTurnNudgeToStorage(enabled: boolean): void {
   localStorage.setItem(TURN_NUDGE_STORAGE_KEY, enabled ? "on" : "off");
 }
 
+function readTurnNudgePermissionHintDismissedFromStorage(): boolean {
+  return localStorage.getItem(TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY) === "dismissed";
+}
+
+function persistTurnNudgePermissionHintDismissedToStorage(dismissed: boolean): void {
+  if (dismissed) {
+    localStorage.setItem(TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY, "dismissed");
+    return;
+  }
+  localStorage.removeItem(TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY);
+}
+
 export default function App() {
   const socket = useMemo(() => createSocketClient(), []);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
@@ -177,6 +190,9 @@ export default function App() {
   );
   const [turnNudgeEnabled, setTurnNudgeEnabled] = useState<boolean>(() =>
     readTurnNudgeFromStorage()
+  );
+  const [turnNudgePermissionHintDismissed, setTurnNudgePermissionHintDismissed] = useState<boolean>(
+    () => readTurnNudgePermissionHintDismissedFromStorage()
   );
   const [continueTransition, setContinueTransition] = useState(() =>
     createInitialContinueTransitionState()
@@ -238,6 +254,10 @@ export default function App() {
   useEffect(() => {
     persistTurnNudgeToStorage(turnNudgeEnabled);
   }, [turnNudgeEnabled]);
+
+  useEffect(() => {
+    persistTurnNudgePermissionHintDismissedToStorage(turnNudgePermissionHintDismissed);
+  }, [turnNudgePermissionHintDismissed]);
 
   useEffect(() => {
     if (matchPhase !== "queuing" || queueStartedAtMs === null) {
@@ -780,6 +800,8 @@ export default function App() {
         onAutoRematchEnabledChange={setAutoRematchEnabled}
         turnNudgeEnabled={turnNudgeEnabled}
         onTurnNudgeEnabledChange={setTurnNudgeEnabled}
+        turnNudgePermissionHintDismissed={turnNudgePermissionHintDismissed}
+        onTurnNudgePermissionHintDismissedChange={setTurnNudgePermissionHintDismissed}
         onLeave={leaveRoom}
       />
     </Suspense>
