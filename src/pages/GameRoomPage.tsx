@@ -54,6 +54,7 @@ import {
   evaluateLayerTapLock,
   type LayerTapLock
 } from "../game/interaction/layerTapLock";
+import { createPrimaryIntentState } from "../game/interaction/primaryIntent";
 import { evaluateHudSpotlight } from "../game/interaction/hudSpotlight";
 import { evaluateLayerQuickNav } from "../game/interaction/layerQuickNav";
 import {
@@ -333,14 +334,22 @@ export function GameRoomPage({
   const activeLayerTapLock = layerTapLockDecision.lock;
   const tapLockRemainingMs =
     activeLayerTapLock === null ? null : Math.max(0, activeLayerTapLock.expiresAtMs - nowMs);
+  const primaryIntent = useMemo(
+    () =>
+      createPrimaryIntentState({
+        smartAction,
+        layerTapLockDecision
+      }),
+    [layerTapLockDecision, smartAction]
+  );
   const onboardingGuide = useMemo(
     () =>
       createOnboardingGuideState({
         enabled: shouldShowOnboarding,
-        canUsePrimaryAction: smartAction.enabled,
+        canUsePrimaryAction: primaryIntent.enabled,
         progress: onboardingProgress
       }),
-    [onboardingProgress, shouldShowOnboarding, smartAction.enabled]
+    [onboardingProgress, primaryIntent.enabled, shouldShowOnboarding]
   );
   const qualityProfile = useMemo(() => getQualityProfile(qualityLevel), [qualityLevel]);
   const winLineDirector = useMemo(
@@ -427,7 +436,7 @@ export function GameRoomPage({
         turnRemainingMs,
         canPlace,
         hasPendingMove,
-        smartAction,
+        smartAction: primaryIntent,
         alreadyTriggeredThisTurn: timeoutAssistAlreadyTriggered,
         thresholdMs: timeoutAssistThresholdMs
       }),
@@ -437,7 +446,7 @@ export function GameRoomPage({
       turnRemainingMs,
       canPlace,
       hasPendingMove,
-      smartAction,
+      primaryIntent,
       timeoutAssistThresholdMs
     ]
   );
@@ -603,31 +612,6 @@ export function GameRoomPage({
     onRematch();
   }, [onRematch, stopWinLineCinematic]);
 
-  const handlePrimaryAction = useCallback(() => {
-    if (!smartAction.enabled) {
-      return;
-    }
-    if (smartAction.actionType === "continueMatch") {
-      handleContinueMatchAction();
-      return;
-    }
-    if (smartAction.actionType === "rematch" || smartAction.actionType === "opponentReady") {
-      handleRematchAction();
-      return;
-    }
-    if (
-      smartAction.actionType === "win" ||
-      smartAction.actionType === "block" ||
-      smartAction.actionType === "suggest"
-    ) {
-      stopWinLineCinematic();
-      if (!smartAction.target) {
-        return;
-      }
-      onPlace(smartAction.target);
-    }
-  }, [handleContinueMatchAction, handleRematchAction, onPlace, smartAction, stopWinLineCinematic]);
-
   const handleToggleTimeoutAssist = useCallback(() => {
     onTimeoutAssistEnabledChange(!timeoutAssistEnabled);
   }, [onTimeoutAssistEnabledChange, timeoutAssistEnabled]);
@@ -786,6 +770,41 @@ export function GameRoomPage({
     setLayerTapLock(null);
     onPlace(decision.lock.coordinate);
   }, [canPlace, layerTapLock, onPlace, snapshot.board, snapshot.size, stopWinLineCinematic]);
+  const handlePrimaryAction = useCallback(() => {
+    if (!primaryIntent.enabled) {
+      return;
+    }
+    if (primaryIntent.source === "tap-lock") {
+      handleConfirmTapLock();
+      return;
+    }
+    if (primaryIntent.actionType === "continueMatch") {
+      handleContinueMatchAction();
+      return;
+    }
+    if (primaryIntent.actionType === "rematch" || primaryIntent.actionType === "opponentReady") {
+      handleRematchAction();
+      return;
+    }
+    if (
+      primaryIntent.actionType === "win" ||
+      primaryIntent.actionType === "block" ||
+      primaryIntent.actionType === "suggest"
+    ) {
+      stopWinLineCinematic();
+      if (!primaryIntent.target) {
+        return;
+      }
+      onPlace(primaryIntent.target);
+    }
+  }, [
+    handleConfirmTapLock,
+    handleContinueMatchAction,
+    handleRematchAction,
+    onPlace,
+    primaryIntent,
+    stopWinLineCinematic
+  ]);
 
   const handleLayerWheel = useCallback(
     (deltaY: number): boolean => {
@@ -1267,7 +1286,7 @@ export function GameRoomPage({
       if (shouldBlockGlobalSpaceHotkey(event.target)) {
         return;
       }
-      if (!smartAction.enabled) {
+      if (!primaryIntent.enabled) {
         return;
       }
       event.preventDefault();
@@ -1275,7 +1294,7 @@ export function GameRoomPage({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handlePrimaryAction, layoutMode, smartAction.enabled]);
+  }, [handlePrimaryAction, layoutMode, primaryIntent.enabled]);
 
   const gameToastMessage = errorMessage;
 
@@ -1316,9 +1335,8 @@ export function GameRoomPage({
         focusMode={focusMode}
         layerQuickNav={layerQuickNav}
         tapLockCoordinate={activeLayerTapLock?.coordinate ?? null}
-        tapLockCanConfirm={layerTapLockDecision.canConfirm}
         tapLockRemainingMs={tapLockRemainingMs}
-        smartAction={smartAction}
+        primaryAction={primaryIntent}
         onboardingGuide={onboardingGuide.visible ? onboardingGuide : null}
         advancedOpen={advancedOpen}
         qualityMode={qualityMode}
@@ -1362,7 +1380,6 @@ export function GameRoomPage({
         onToggleAdvanced={handleToggleAdvanced}
         onLayerStep={handleLayerStep}
         onLayerSmartJump={handleLayerSmartJump}
-        onConfirmTapLock={handleConfirmTapLock}
         onCancelTapLock={handleClearTapLock}
         onAutoFocus={handleAutoFocus}
         onToggleAssist={handleAssistToggle}

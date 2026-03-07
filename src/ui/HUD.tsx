@@ -7,7 +7,7 @@ import {
   type QualityMode
 } from "../game/interaction/qualityProfile";
 import type { OnboardingGuideState } from "../game/interaction/onboardingGuide";
-import type { SmartActionState } from "../game/interaction/smartAction";
+import type { PrimaryIntentState } from "../game/interaction/primaryIntent";
 import type { TimeoutAssistUrgency } from "../game/interaction/timeoutAssist";
 import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatency";
 import type { AutoRematchPhase } from "../game/interaction/autoRematch";
@@ -33,9 +33,8 @@ interface HUDProps {
   focusMode: "auto" | "manual";
   layerQuickNav: LayerQuickNavDecision;
   tapLockCoordinate: Coordinate3D | null;
-  tapLockCanConfirm: boolean;
   tapLockRemainingMs: number | null;
-  smartAction: SmartActionState;
+  primaryAction: PrimaryIntentState;
   onboardingGuide: OnboardingGuideState | null;
   advancedOpen: boolean;
   qualityMode: QualityMode;
@@ -79,7 +78,6 @@ interface HUDProps {
   onToggleAdvanced: () => void;
   onLayerStep: (step: -1 | 1) => void;
   onLayerSmartJump: () => void;
-  onConfirmTapLock: () => void;
   onCancelTapLock: () => void;
   onAutoFocus: () => void;
   onToggleAssist: () => void;
@@ -163,9 +161,8 @@ export function HUD({
   focusMode,
   layerQuickNav,
   tapLockCoordinate,
-  tapLockCanConfirm,
   tapLockRemainingMs,
-  smartAction,
+  primaryAction,
   onboardingGuide,
   advancedOpen,
   qualityMode,
@@ -209,7 +206,6 @@ export function HUD({
   onToggleAdvanced,
   onLayerStep,
   onLayerSmartJump,
-  onConfirmTapLock,
   onCancelTapLock,
   onAutoFocus,
   onToggleAssist,
@@ -281,12 +277,12 @@ export function HUD({
     ? "超时护航已关闭"
     : timeoutAssistUrgency === "armed"
       ? timeoutAssistNetworkHint
-        ? `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，${timeoutAssistNetworkHint}自动执行建议落子`
-        : `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，将自动按建议落子`
+        ? `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，${timeoutAssistNetworkHint}自动执行当前主动作`
+        : `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，将自动执行当前主动作`
       : timeoutAssistUrgency === "triggered"
         ? timeoutAssistNetworkHint
-          ? `超时护航：本回合已自动执行保底落子（${timeoutAssistNetworkHint}）`
-          : "超时护航：本回合已自动执行保底落子"
+          ? `超时护航：本回合已自动执行主动作（${timeoutAssistNetworkHint}）`
+          : "超时护航：本回合已自动执行主动作"
         : `超时护航已开启（阈值 ${timeoutAssistThresholdSeconds}s）`;
   const autoRematchText = !autoRematchEnabled
     ? "连战模式已关闭"
@@ -634,24 +630,16 @@ export function HUD({
               <span>{tapLockCoordinateLabel}</span>
             </div>
             <div className="hud-tap-lock-text">
-              点击确认即可落子{tapLockSecondsLeft !== null ? ` · ${tapLockSecondsLeft}s` : ""}
+              主按钮或空格确认落子{tapLockSecondsLeft !== null ? ` · ${tapLockSecondsLeft}s` : ""}
             </div>
             <div className="hud-actions">
-              <button
-                className="hud-mini-button active"
-                type="button"
-                onClick={onConfirmTapLock}
-                disabled={!tapLockCanConfirm}
-              >
-                确认落子
-              </button>
               <button className="hud-mini-button" type="button" onClick={onCancelTapLock}>
                 取消
               </button>
             </div>
           </div>
         ) : null}
-        <SmartActionBar action={smartAction} onAction={onPrimaryAction} layoutMode={layoutMode} />
+        <SmartActionBar action={primaryAction} onAction={onPrimaryAction} layoutMode={layoutMode} />
         <div className="hud-actions">
           <button className="hud-button ghost" type="button" onClick={onToggleAdvanced}>
             {advancedToggleLabel}
