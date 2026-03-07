@@ -1,16 +1,18 @@
 import type { SmartActionState } from "./smartAction";
 import type { PlayerMark } from "../../network/protocol";
+import type { Coordinate3D } from "../../network/protocol";
 
 export type TimeoutAssistUrgency = "off" | "idle" | "armed" | "triggered";
-export type TimeoutAssistNextAction = "none" | "jumpToLock" | "autoAct";
+export type TimeoutAssistNextAction = "none" | "autoAct";
+export type TimeoutAssistAutoActSource = "none" | "smartAction" | "fallbackTarget";
 
 export interface TimeoutAssistInput {
   enabled: boolean;
   turnRemainingMs: number | null;
   canPlace: boolean;
   hasPendingMove: boolean;
-  hasHiddenConfirmableLock?: boolean;
   smartAction: Pick<SmartActionState, "actionType" | "enabled" | "target">;
+  fallbackTarget?: Coordinate3D | null;
   alreadyTriggeredThisTurn: boolean;
   thresholdMs?: number;
 }
@@ -18,6 +20,7 @@ export interface TimeoutAssistInput {
 export interface TimeoutAssistDecision {
   shouldAutoAct: boolean;
   nextAction: TimeoutAssistNextAction;
+  autoActSource: TimeoutAssistAutoActSource;
   urgencyLabel: TimeoutAssistUrgency;
   remainingMs: number | null;
 }
@@ -48,6 +51,7 @@ export function evaluateTimeoutAssist(input: TimeoutAssistInput): TimeoutAssistD
     return {
       shouldAutoAct: false,
       nextAction: "none",
+      autoActSource: "none",
       urgencyLabel: "off",
       remainingMs
     };
@@ -57,6 +61,7 @@ export function evaluateTimeoutAssist(input: TimeoutAssistInput): TimeoutAssistD
     return {
       shouldAutoAct: false,
       nextAction: "none",
+      autoActSource: "none",
       urgencyLabel: "triggered",
       remainingMs
     };
@@ -66,6 +71,7 @@ export function evaluateTimeoutAssist(input: TimeoutAssistInput): TimeoutAssistD
     return {
       shouldAutoAct: false,
       nextAction: "none",
+      autoActSource: "none",
       urgencyLabel: "idle",
       remainingMs
     };
@@ -75,16 +81,8 @@ export function evaluateTimeoutAssist(input: TimeoutAssistInput): TimeoutAssistD
     return {
       shouldAutoAct: false,
       nextAction: "none",
+      autoActSource: "none",
       urgencyLabel: "idle",
-      remainingMs
-    };
-  }
-
-  if (input.hasHiddenConfirmableLock) {
-    return {
-      shouldAutoAct: false,
-      nextAction: "jumpToLock",
-      urgencyLabel: "armed",
       remainingMs
     };
   }
@@ -93,19 +91,31 @@ export function evaluateTimeoutAssist(input: TimeoutAssistInput): TimeoutAssistD
     input.smartAction.enabled &&
     input.smartAction.target !== null &&
     isAutoActionType(input.smartAction.actionType);
-  if (!canAutoAct) {
+  if (canAutoAct) {
     return {
-      shouldAutoAct: false,
-      nextAction: "none",
-      urgencyLabel: "idle",
+      shouldAutoAct: true,
+      nextAction: "autoAct",
+      autoActSource: "smartAction",
+      urgencyLabel: "armed",
+      remainingMs
+    };
+  }
+
+  if (input.fallbackTarget) {
+    return {
+      shouldAutoAct: true,
+      nextAction: "autoAct",
+      autoActSource: "fallbackTarget",
+      urgencyLabel: "armed",
       remainingMs
     };
   }
 
   return {
-    shouldAutoAct: true,
-    nextAction: "autoAct",
-    urgencyLabel: "armed",
+    shouldAutoAct: false,
+    nextAction: "none",
+    autoActSource: "none",
+    urgencyLabel: "idle",
     remainingMs
   };
 }

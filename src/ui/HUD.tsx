@@ -1,4 +1,4 @@
-import type { Coordinate3D, PlayerMark, Winner } from "../network/protocol";
+import type { PlayerMark, Winner } from "../network/protocol";
 import type { LayoutMode } from "../game/interaction/deviceMode";
 import {
   qualityLevelLabel,
@@ -9,7 +9,7 @@ import {
 import type { OnboardingGuideState } from "../game/interaction/onboardingGuide";
 import type { PrimaryIntentState } from "../game/interaction/primaryIntent";
 import type {
-  TimeoutAssistNextAction,
+  TimeoutAssistAutoActSource,
   TimeoutAssistUrgency
 } from "../game/interaction/timeoutAssist";
 import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatency";
@@ -36,9 +36,6 @@ interface HUDProps {
   focusLayer: number;
   focusMode: "auto" | "manual";
   layerQuickNav: LayerQuickNavDecision;
-  tapLockCoordinate: Coordinate3D | null;
-  tapLockVisible: boolean;
-  tapLockRemainingMs: number | null;
   primaryAction: PrimaryIntentState;
   onboardingGuide: OnboardingGuideState | null;
   advancedOpen: boolean;
@@ -52,7 +49,7 @@ interface HUDProps {
   turnUrgent: boolean;
   timeoutAssistEnabled: boolean;
   timeoutAssistUrgency: TimeoutAssistUrgency;
-  timeoutAssistNextAction: TimeoutAssistNextAction;
+  timeoutAssistAutoActSource: TimeoutAssistAutoActSource;
   timeoutAssistThresholdMs: number;
   timeoutAssistNetworkTier: TimeoutAssistNetworkTier;
   turnNudgeEnabled: boolean;
@@ -85,8 +82,6 @@ interface HUDProps {
   onToggleAdvanced: () => void;
   onLayerStep: (step: -1 | 1) => void;
   onLayerSmartJump: () => void;
-  onJumpToTapLockLayer: () => void;
-  onCancelTapLock: () => void;
   onAutoFocus: () => void;
   onToggleAssist: () => void;
   onNonFocusLayerOpacityChange: (opacity: number) => void;
@@ -170,9 +165,6 @@ export function HUD({
   focusLayer,
   focusMode,
   layerQuickNav,
-  tapLockCoordinate,
-  tapLockVisible,
-  tapLockRemainingMs,
   primaryAction,
   onboardingGuide,
   advancedOpen,
@@ -186,7 +178,7 @@ export function HUD({
   turnUrgent,
   timeoutAssistEnabled,
   timeoutAssistUrgency,
-  timeoutAssistNextAction,
+  timeoutAssistAutoActSource,
   timeoutAssistThresholdMs,
   timeoutAssistNetworkTier,
   turnNudgeEnabled,
@@ -219,8 +211,6 @@ export function HUD({
   onToggleAdvanced,
   onLayerStep,
   onLayerSmartJump,
-  onJumpToTapLockLayer,
-  onCancelTapLock,
   onAutoFocus,
   onToggleAssist,
   onNonFocusLayerOpacityChange,
@@ -258,8 +248,6 @@ export function HUD({
       : Math.max(0, Math.ceil(autoContinueCountdownRemainingMs / 1000));
   const rematchWaitRemainingSeconds =
     rematchWaitRemainingMs === null ? null : Math.max(0, Math.ceil(rematchWaitRemainingMs / 1000));
-  const tapLockSecondsLeft =
-    tapLockRemainingMs === null ? null : Math.max(0, Math.ceil(tapLockRemainingMs / 1000));
   const nonFocusOpacityPercent = Math.round(Math.max(2, Math.min(100, nonFocusLayerOpacity * 100)));
   const primaryCardId = hudSpotlight.primaryCard?.id ?? null;
   const showTurnCountdown = primaryCardId === "turn-clock" && !winner && turnRemainingSeconds !== null;
@@ -291,12 +279,14 @@ export function HUD({
         : null;
   const timeoutAssistText = !timeoutAssistEnabled
     ? "超时护航已关闭"
-    : timeoutAssistNextAction === "jumpToLock"
-      ? `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，将先回到锁定层再确认`
     : timeoutAssistUrgency === "armed"
-      ? timeoutAssistNetworkHint
-        ? `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，${timeoutAssistNetworkHint}自动执行当前主动作`
-        : `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，将自动执行当前主动作`
+      ? timeoutAssistAutoActSource === "fallbackTarget"
+        ? timeoutAssistNetworkHint
+          ? `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，${timeoutAssistNetworkHint}即将执行兜底落子`
+          : `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，即将执行兜底落子`
+        : timeoutAssistNetworkHint
+          ? `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，${timeoutAssistNetworkHint}自动执行当前主动作`
+          : `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，将自动执行当前主动作`
       : timeoutAssistUrgency === "triggered"
         ? timeoutAssistNetworkHint
           ? `超时护航：本回合已自动执行主动作（${timeoutAssistNetworkHint}）`
@@ -391,9 +381,6 @@ export function HUD({
         : layerQuickNav.smartJumpSource === "auto"
           ? "智能跳层"
           : "已在目标层";
-  const tapLockCoordinateLabel = tapLockCoordinate
-    ? `L${tapLockCoordinate.z + 1} · (${tapLockCoordinate.x + 1}, ${tapLockCoordinate.y + 1})`
-    : null;
   const showMinimalConnectionSpotlight = !advancedOpen && showConnectionSpotlight;
   const showMinimalReconnectSpotlight = !advancedOpen && showReconnectSpotlight;
   const showMinimalOnboarding = !advancedOpen && showOnboardingSpotlight && onboardingGuide;
@@ -690,31 +677,6 @@ export function HUD({
             ))}
           </div>
         </div>
-        {tapLockCoordinate ? (
-          <div className="hud-tap-lock">
-            <div className="hud-tap-lock-header">
-              <span>目标已锁定</span>
-              <span>{tapLockCoordinateLabel}</span>
-            </div>
-            <div className="hud-tap-lock-text">
-              {tapLockVisible
-                ? `主按钮或空格确认落子${tapLockSecondsLeft !== null ? ` · ${tapLockSecondsLeft}s` : ""}`
-                : `当前不在锁定层，先回到 L${tapLockCoordinate.z + 1} 再确认${
-                    tapLockSecondsLeft !== null ? ` · ${tapLockSecondsLeft}s` : ""
-                  }`}
-            </div>
-            <div className="hud-actions">
-              {!tapLockVisible ? (
-                <button className="hud-mini-button active" type="button" onClick={onJumpToTapLockLayer}>
-                  回到锁定层
-                </button>
-              ) : null}
-              <button className="hud-mini-button" type="button" onClick={onCancelTapLock}>
-                取消
-              </button>
-            </div>
-          </div>
-        ) : null}
         <SmartActionBar action={primaryAction} onAction={onPrimaryAction} layoutMode={layoutMode} />
         <div className="hud-actions">
           <button className="hud-button ghost" type="button" onClick={onToggleAdvanced}>

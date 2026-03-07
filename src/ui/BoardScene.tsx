@@ -23,7 +23,6 @@ interface BoardSceneProps {
   winningLine: number[] | null;
   winLineCinematicActive: boolean;
   focusLayer: number | null;
-  tapLockCoordinate: Coordinate3D | null;
   hintMoves: MoveHint[];
   pendingMove: {
     coordinate: Coordinate3D;
@@ -171,7 +170,6 @@ export function BoardScene({
   winningLine,
   winLineCinematicActive,
   focusLayer,
-  tapLockCoordinate,
   hintMoves,
   pendingMove,
   onPlace,
@@ -206,20 +204,6 @@ export function BoardScene({
     return x + y * size + z * size * size;
   }, [pendingMove, size]);
   const pendingCellStillEmpty = pendingCellIndex !== null ? board[pendingCellIndex] === 0 : false;
-  const tapLockPosition = useMemo(() => {
-    if (!tapLockCoordinate) {
-      return null;
-    }
-    return toWorldPosition(size, tapLockCoordinate);
-  }, [size, tapLockCoordinate]);
-  const tapLockIndex = useMemo(() => {
-    if (!tapLockCoordinate) {
-      return null;
-    }
-    const { x, y, z } = tapLockCoordinate;
-    return x + y * size + z * size * size;
-  }, [size, tapLockCoordinate]);
-  const tapLockStillEmpty = tapLockIndex !== null ? board[tapLockIndex] === 0 : false;
   const hintMap = useMemo(() => {
     const map = new Map<number, HintMeta>();
     visibleHintMoves.forEach((hint, rank) => {
@@ -462,22 +446,6 @@ export function BoardScene({
                 metalness={0.26}
               />
             </mesh>
-          ) : null}
-
-          {tapLockPosition && tapLockStillEmpty ? (
-            <>
-              <HintPulse
-                position={tapLockPosition}
-                color="#a5ff8a"
-                opacity={0.42 * qualityProfile.hintPulseOpacityScale}
-                speed={Math.max(1.9, qualityProfile.hintPulseSpeed)}
-                phase={0.35}
-              />
-              <mesh position={tapLockPosition} scale={1.2}>
-                <torusGeometry args={[0.47, 0.04, 18, 44]} />
-                <meshBasicMaterial color="#dcffc4" transparent opacity={0.88} />
-              </mesh>
-            </>
           ) : null}
 
           {winningPulsePoints.map((position, index) => (

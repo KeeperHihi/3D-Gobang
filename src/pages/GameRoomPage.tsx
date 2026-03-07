@@ -49,10 +49,6 @@ import {
   createFocusGuardTurnKey,
   evaluateFocusGuard
 } from "../game/interaction/focusGuard";
-import {
-  evaluateLayerTapLock,
-  type LayerTapLock
-} from "../game/interaction/layerTapLock";
 import { createPrimaryIntentState } from "../game/interaction/primaryIntent";
 import { evaluateHudSpotlight } from "../game/interaction/hudSpotlight";
 import { evaluateLayerQuickNav } from "../game/interaction/layerQuickNav";
@@ -163,7 +159,6 @@ export function GameRoomPage({
   const winLineDirectorTriggeredRoundKeyRef = useRef<string | null>(null);
   const winLineDirectorTimerRef = useRef<number | null>(null);
   const focusGuardTriggeredTurnKeyRef = useRef<string | null>(null);
-  const timeoutAssistJumpToLockKeyRef = useRef<string | null>(null);
   const focusGuardWasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
   const layerNavLastInputAtMsRef = useRef(0);
   const layerNavLastRotateAtMsRef = useRef(0);
@@ -214,7 +209,6 @@ export function GameRoomPage({
   const [autoContinueCountdownStartedAtMs, setAutoContinueCountdownStartedAtMs] = useState<
     number | null
   >(null);
-  const [layerTapLock, setLayerTapLock] = useState<LayerTapLock | null>(null);
   const [opponentMoveCue, setOpponentMoveCue] = useState<{
     coordinate: Coordinate3D;
     moveNumber: number;
@@ -331,30 +325,12 @@ export function GameRoomPage({
       snapshot.winner
     ]
   );
-  const layerTapLockDecision = useMemo(
-    () =>
-      evaluateLayerTapLock({
-        lock: layerTapLock,
-        nowMs,
-        canPlace,
-        board: snapshot.board,
-        boardSize: snapshot.size
-      }),
-    [canPlace, layerTapLock, nowMs, snapshot.board, snapshot.size]
-  );
-  const activeLayerTapLock = layerTapLockDecision.lock;
-  const tapLockRemainingMs =
-    activeLayerTapLock === null ? null : Math.max(0, activeLayerTapLock.expiresAtMs - nowMs);
-  const isTapLockVisible =
-    activeLayerTapLock !== null && (focusLayer === null || activeLayerTapLock.coordinate.z === focusLayer);
   const primaryIntent = useMemo(
     () =>
       createPrimaryIntentState({
-        smartAction,
-        layerTapLockDecision,
-        focusLayer
+        smartAction
       }),
-    [focusLayer, layerTapLockDecision, smartAction]
+    [smartAction]
   );
   const onboardingGuide = useMemo(
     () =>
@@ -436,6 +412,38 @@ export function GameRoomPage({
       turnNudgePermissionRequestPending
     ]
   );
+  const timeoutAssistInThresholdWindow =
+    timeoutAssistEnabled &&
+    !assistEnabled &&
+    canPlace &&
+    turnRemainingMs !== null &&
+    turnRemainingMs <= timeoutAssistThresholdMs;
+  const timeoutAssistFallbackTarget = useMemo(() => {
+    if (!timeoutAssistInThresholdWindow) {
+      return null;
+    }
+    const emergencyHints = analyzeMoveHints(
+      boardCells,
+      myMark,
+      snapshot.size,
+      snapshot.connect,
+      1,
+      hintsWinLinesIndex
+    );
+    return (
+      emergencyHints.winningMoves[0]?.coordinate ??
+      emergencyHints.blockingMoves[0]?.coordinate ??
+      emergencyHints.recommendedMoves[0]?.coordinate ??
+      null
+    );
+  }, [
+    boardCells,
+    hintsWinLinesIndex,
+    myMark,
+    snapshot.connect,
+    snapshot.size,
+    timeoutAssistInThresholdWindow
+  ]);
   const timeoutAssistTurnKey = useMemo(
     () =>
       createTimeoutAssistTurnKey({
@@ -454,16 +462,14 @@ export function GameRoomPage({
         turnRemainingMs,
         canPlace,
         hasPendingMove,
-        hasHiddenConfirmableLock: activeLayerTapLock !== null && layerTapLockDecision.canConfirm && !isTapLockVisible,
         smartAction: primaryIntent,
+        fallbackTarget: timeoutAssistFallbackTarget,
         alreadyTriggeredThisTurn: timeoutAssistAlreadyTriggered,
         thresholdMs: timeoutAssistThresholdMs
       }),
     [
-      activeLayerTapLock,
-      isTapLockVisible,
-      layerTapLockDecision.canConfirm,
       timeoutAssistAlreadyTriggered,
+      timeoutAssistFallbackTarget,
       timeoutAssistEnabled,
       turnRemainingMs,
       canPlace,
@@ -752,42 +758,8 @@ export function GameRoomPage({
     setFocusMode("manual");
     setFocusLayer(layerQuickNav.smartJumpLayer);
   }, [focusLayer, layerQuickNav.smartJumpLayer]);
-  const handleClearTapLock = useCallback(() => {
-    setLayerTapLock(null);
-  }, []);
-  const handleJumpToTapLockLayer = useCallback(() => {
-    if (!activeLayerTapLock) {
-      return;
-    }
-    if (focusLayer === activeLayerTapLock.coordinate.z) {
-      return;
-    }
-    layerNavLastInputAtMsRef.current = Date.now();
-    setFocusMode("manual");
-    setFocusLayer(activeLayerTapLock.coordinate.z);
-  }, [activeLayerTapLock, focusLayer]);
-  const handleConfirmTapLock = useCallback(() => {
-    const decision = evaluateLayerTapLock({
-      lock: layerTapLock,
-      nowMs: Date.now(),
-      canPlace,
-      board: snapshot.board,
-      boardSize: snapshot.size
-    });
-    if (!decision.lock || !decision.canConfirm) {
-      setLayerTapLock(null);
-      return;
-    }
-    stopWinLineCinematic();
-    setLayerTapLock(null);
-    onPlace(decision.lock.coordinate);
-  }, [canPlace, layerTapLock, onPlace, snapshot.board, snapshot.size, stopWinLineCinematic]);
   const handlePrimaryAction = useCallback(() => {
     if (!primaryIntent.enabled) {
-      return;
-    }
-    if (primaryIntent.source === "tap-lock") {
-      handleConfirmTapLock();
       return;
     }
     if (primaryIntent.actionType === "enableAssist") {
@@ -815,7 +787,6 @@ export function GameRoomPage({
       onPlace(primaryIntent.target);
     }
   }, [
-    handleConfirmTapLock,
     handleContinueMatchAction,
     handleRematchAction,
     onPlace,
@@ -972,7 +943,6 @@ export function GameRoomPage({
     autoContinueCancelledRoundKeyRef.current = null;
     winLineDirectorTriggeredRoundKeyRef.current = null;
     focusGuardTriggeredTurnKeyRef.current = null;
-    timeoutAssistJumpToLockKeyRef.current = null;
     turnNudgeTriggeredTurnKeyRef.current = null;
     wasMyTurnRef.current = snapshot.turn === myMark && snapshot.winner === null;
     focusGuardWasMyTurnRef.current = snapshot.turn === myMark && snapshot.winner === null;
@@ -980,7 +950,6 @@ export function GameRoomPage({
     stopWinLineCinematic();
     layerNavLastInputAtMsRef.current = 0;
     layerNavLastRotateAtMsRef.current = 0;
-    setLayerTapLock(null);
     setSettlementStartedAtMs(null);
     setAutoRematchCountdownStartedAtMs(null);
     setAutoContinueCountdownStartedAtMs(null);
@@ -1083,37 +1052,31 @@ export function GameRoomPage({
   }, [onCompleteOnboarding, onboardingProgress]);
 
   useEffect(() => {
-    if (timeoutAssistDecision.nextAction === "none") {
-      return;
-    }
-    if (timeoutAssistDecision.nextAction === "jumpToLock") {
-      if (!activeLayerTapLock) {
-        return;
-      }
-      const jumpToLockKey = [
-        timeoutAssistTurnKey,
-        activeLayerTapLock.coordinate.x,
-        activeLayerTapLock.coordinate.y,
-        activeLayerTapLock.coordinate.z,
-        activeLayerTapLock.expiresAtMs
-      ].join(":");
-      if (timeoutAssistJumpToLockKeyRef.current === jumpToLockKey) {
-        return;
-      }
-      timeoutAssistJumpToLockKeyRef.current = jumpToLockKey;
-      handleJumpToTapLockLayer();
+    if (timeoutAssistDecision.nextAction !== "autoAct") {
       return;
     }
     if (timeoutAssistTurnKeyRef.current === timeoutAssistTurnKey) {
       return;
     }
     timeoutAssistTurnKeyRef.current = timeoutAssistTurnKey;
+
+    if (timeoutAssistDecision.autoActSource === "fallbackTarget") {
+      if (!timeoutAssistFallbackTarget) {
+        return;
+      }
+      stopWinLineCinematic();
+      onPlace(timeoutAssistFallbackTarget);
+      return;
+    }
+
     handlePrimaryAction();
   }, [
-    activeLayerTapLock,
-    handleJumpToTapLockLayer,
     handlePrimaryAction,
+    onPlace,
+    stopWinLineCinematic,
+    timeoutAssistDecision.autoActSource,
     timeoutAssistDecision.nextAction,
+    timeoutAssistFallbackTarget,
     timeoutAssistTurnKey
   ]);
 
@@ -1312,16 +1275,6 @@ export function GameRoomPage({
   }, []);
 
   useEffect(() => {
-    if (!layerTapLock) {
-      return;
-    }
-    if (layerTapLockDecision.lock !== null) {
-      return;
-    }
-    setLayerTapLock(null);
-  }, [layerTapLock, layerTapLockDecision.lock]);
-
-  useEffect(() => {
     const nowMs = Date.now();
     const nextLevel = selectQualityLevel({
       mode: qualityMode,
@@ -1396,7 +1349,6 @@ export function GameRoomPage({
         winningLine={snapshot.winningLine}
         winLineCinematicActive={winLineCinematicActive}
         focusLayer={focusLayer}
-        tapLockCoordinate={activeLayerTapLock?.coordinate ?? null}
         hintMoves={hintMovesForBoard}
         pendingMove={pendingMove}
         onPlace={onPlace}
@@ -1419,9 +1371,6 @@ export function GameRoomPage({
         focusLayer={focusLayer}
         focusMode={focusMode}
         layerQuickNav={layerQuickNav}
-        tapLockCoordinate={activeLayerTapLock?.coordinate ?? null}
-        tapLockVisible={isTapLockVisible}
-        tapLockRemainingMs={tapLockRemainingMs}
         primaryAction={primaryIntent}
         onboardingGuide={onboardingGuide.visible ? onboardingGuide : null}
         advancedOpen={advancedOpen}
@@ -1435,7 +1384,7 @@ export function GameRoomPage({
         turnUrgent={turnUrgent}
         timeoutAssistEnabled={timeoutAssistEnabled}
         timeoutAssistUrgency={timeoutAssistDecision.urgencyLabel}
-        timeoutAssistNextAction={timeoutAssistDecision.nextAction}
+        timeoutAssistAutoActSource={timeoutAssistDecision.autoActSource}
         timeoutAssistThresholdMs={timeoutAssistThresholdMs}
         timeoutAssistNetworkTier={timeoutAssistNetworkTier}
         turnNudgeEnabled={turnNudgeEnabled}
@@ -1468,8 +1417,6 @@ export function GameRoomPage({
         onToggleAdvanced={handleToggleAdvanced}
         onLayerStep={handleLayerStep}
         onLayerSmartJump={handleLayerSmartJump}
-        onJumpToTapLockLayer={handleJumpToTapLockLayer}
-        onCancelTapLock={handleClearTapLock}
         onAutoFocus={handleAutoFocus}
         onToggleAssist={handleAssistToggle}
         onNonFocusLayerOpacityChange={handleNonFocusLayerOpacityChange}
