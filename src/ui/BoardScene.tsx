@@ -1,12 +1,13 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, type ThreeEvent } from "@react-three/fiber";
-import { Line, OrbitControls, Sparkles, Stars } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import { Object3D, type InstancedMesh, type Mesh } from "three";
 import type { Coordinate3D, PlayerMark } from "../network/protocol";
 import { fromLinearIndex } from "../game/engine/board";
 import type { HintPriority, MoveHint } from "../game/engine/moveHints";
 import type { LayoutMode } from "../game/interaction/deviceMode";
 import type { QualityProfile } from "../game/interaction/qualityProfile";
+import type { BoardSceneVfxStage } from "../game/interaction/vfxStage";
 import {
   buildBoardInstanceLayout,
   resolveBoardInstanceCell,
@@ -15,12 +16,18 @@ import {
 import { evaluateLayerTapAssist } from "../game/interaction/layerTapAssist";
 
 const BOARD_SPACING = 1.4;
+const LazyBoardSceneVfx = lazy(() =>
+  import("./BoardSceneVfx").then((module) => ({
+    default: module.BoardSceneVfx
+  }))
+);
 
 interface BoardSceneProps {
   layoutMode: LayoutMode;
   board: number[];
   size: number;
   canPlace: boolean;
+  vfxStage: BoardSceneVfxStage;
   ambientEnabled: boolean;
   nonFocusLayerOpacity: number;
   qualityProfile: QualityProfile;
@@ -270,6 +277,7 @@ function BoardSceneComponent({
   board,
   size,
   canPlace,
+  vfxStage,
   ambientEnabled,
   nonFocusLayerOpacity,
   qualityProfile,
@@ -426,8 +434,7 @@ function BoardSceneComponent({
   }, [ambientEnabled]);
 
   const ambientMix = ambientEnabled ? ambientReveal : 0;
-  const starsCount = Math.round(qualityProfile.starsCount * ambientMix);
-  const sparklesCount = Math.round(qualityProfile.sparklesCount * ambientMix);
+  const shouldMountVfxLayer = vfxStage !== "off" || linePoints !== null;
 
   return (
     <div
@@ -480,17 +487,17 @@ function BoardSceneComponent({
         <ambientLight intensity={0.72 + ambientMix * 0.08} />
         <pointLight position={[9, 9, 6]} intensity={16 + ambientMix * 12} color="#40d9ff" />
         <pointLight position={[-8, -6, -10]} intensity={12 + ambientMix * 8} color="#ff45d4" />
-        {starsCount > 0 ? (
-          <Stars radius={80} depth={40} count={starsCount} factor={4.2} fade saturation={0} />
-        ) : null}
-        {qualityProfile.sparklesEnabled && sparklesCount > 0 ? (
-          <Sparkles
-            count={sparklesCount}
-            scale={[20, 20, 20]}
-            speed={qualityProfile.sparklesSpeed}
-            size={qualityProfile.sparklesSize}
-            color="#5fe9ff"
-          />
+        {shouldMountVfxLayer ? (
+          <Suspense fallback={null}>
+            <LazyBoardSceneVfx
+              vfxStage={vfxStage}
+              qualityProfile={qualityProfile}
+              ambientMix={ambientMix}
+              linePoints={linePoints}
+              winLineCinematicActive={winLineCinematicActive}
+              winningPulsePoints={winningPulsePoints}
+            />
+          </Suspense>
         ) : null}
         <OrbitControls
           enablePan={false}
@@ -628,31 +635,10 @@ function BoardSceneComponent({
             </mesh>
           ) : null}
 
-          {winningPulsePoints.map((position, index) => (
-            <HintPulse
-              key={`win-pulse-${index}`}
-              position={position}
-              color="#fff48b"
-              opacity={0.36 * qualityProfile.hintPulseOpacityScale}
-              speed={Math.max(2.1, qualityProfile.hintPulseSpeed)}
-              phase={index * 0.55}
-            />
-          ))}
-
           {opponentMoveBlinkPosition && opponentMoveCue ? (
             <OpponentMoveBlink
               key={`opponent-move-cue-${opponentMoveCue.moveNumber}`}
               position={opponentMoveBlinkPosition}
-            />
-          ) : null}
-
-          {linePoints ? (
-            <Line
-              points={linePoints}
-              color="#fff960"
-              lineWidth={winLineCinematicActive ? 6.8 : 5.5}
-              transparent
-              opacity={winLineCinematicActive ? 1 : 0.95}
             />
           ) : null}
         </group>

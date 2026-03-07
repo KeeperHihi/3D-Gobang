@@ -6,11 +6,33 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          "vendor-react": ["react", "react-dom"],
-          "vendor-three": ["three", "@react-three/fiber", "@react-three/drei"],
-          "vendor-motion": ["framer-motion"],
-          "vendor-socket": ["socket.io-client"]
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return undefined;
+          }
+          if (id.includes("socket.io-client")) {
+            return "vendor-socket";
+          }
+          if (id.includes("framer-motion")) {
+            return "vendor-motion";
+          }
+          if (id.includes("react-dom") || id.includes("/react/")) {
+            return "vendor-react";
+          }
+          if (id.includes("@react-three/drei")) {
+            if (
+              id.includes("/Stars") ||
+              id.includes("/Sparkles") ||
+              id.includes("/Line")
+            ) {
+              return "vendor-drei-vfx";
+            }
+            return "vendor-drei-core";
+          }
+          if (id.includes("@react-three/fiber") || id.includes("/three/")) {
+            return "vendor-three-core";
+          }
+          return undefined;
         }
       }
     }

@@ -22,6 +22,7 @@ import {
   evaluateAdaptiveTick,
   type AdaptiveTickIntervalMs
 } from "../game/interaction/adaptiveTick";
+import { evaluateVfxStage } from "../game/interaction/vfxStage";
 import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatency";
 import {
   createAutoRematchRoundKey,
@@ -372,6 +373,16 @@ export function GameRoomPage({
   const qualityProfile = useMemo(
     () => getQualityProfile(effectiveQualityLevel),
     [effectiveQualityLevel]
+  );
+  const vfxStage = useMemo(
+    () =>
+      evaluateVfxStage({
+        renderBootstrapPhase: renderBootstrapDecision.phase,
+        averageFps,
+        qualityLevel: effectiveQualityLevel,
+        sparklesEnabled: qualityProfile.sparklesEnabled
+      }),
+    [averageFps, effectiveQualityLevel, qualityProfile.sparklesEnabled, renderBootstrapDecision.phase]
   );
   const winLineDirector = useMemo(
     () =>
@@ -1417,6 +1428,7 @@ export function GameRoomPage({
         board={snapshot.board}
         size={snapshot.size}
         canPlace={canPlace}
+        vfxStage={vfxStage}
         ambientEnabled={renderBootstrapDecision.ambientEnabled}
         nonFocusLayerOpacity={nonFocusLayerOpacity}
         qualityProfile={qualityProfile}
