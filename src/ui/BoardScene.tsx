@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Line, OrbitControls, Sparkles, Stars } from "@react-three/drei";
 import { Object3D, type InstancedMesh, type Mesh } from "three";
@@ -265,7 +265,7 @@ function InstancedBoardBucket({
   );
 }
 
-export function BoardScene({
+function BoardSceneComponent({
   layoutMode,
   board,
   size,
@@ -660,3 +660,6 @@ export function BoardScene({
     </div>
   );
 }
+
+export const BoardScene = memo(BoardSceneComponent);
+BoardScene.displayName = "BoardScene";

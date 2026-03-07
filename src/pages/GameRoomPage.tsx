@@ -17,6 +17,11 @@ import {
   clampQualityLevelByCap,
   evaluateRenderBootstrap
 } from "../game/interaction/renderBootstrap";
+import {
+  ADAPTIVE_TICK_FAST_MS,
+  evaluateAdaptiveTick,
+  type AdaptiveTickIntervalMs
+} from "../game/interaction/adaptiveTick";
 import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatency";
 import {
   createAutoRematchRoundKey,
@@ -123,6 +128,7 @@ const WIN_LINE_CINEMATIC_DURATION_MS = 2200;
 const LAYER_NAV_INPUT_THROTTLE_MS = 170;
 const CALM_MODE_ENTER_FPS = 33;
 const CALM_MODE_EXIT_FPS = 48;
+const EMPTY_HINT_MOVES: MoveHint[] = [];
 
 export function GameRoomPage({
   snapshot,
@@ -194,6 +200,9 @@ export function GameRoomPage({
   const [roomEnteredAtMs, setRoomEnteredAtMs] = useState<number>(() => Date.now());
   const [averageFps, setAverageFps] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [tickIntervalMs, setTickIntervalMs] = useState<AdaptiveTickIntervalMs>(ADAPTIVE_TICK_FAST_MS);
+  const tickIntervalStartedAtMsRef = useRef<number>(Date.now());
+  const tickIntervalSwitchCountRef = useRef(0);
   const [pageVisible, setPageVisible] = useState<boolean>(() =>
     typeof document === "undefined" ? true : document.visibilityState === "visible"
   );
@@ -253,7 +262,7 @@ export function GameRoomPage({
   }, [assistEnabled, boardCells, canPlace, hintsWinLinesIndex, myMark, snapshot.connect, snapshot.size]);
 
   const primaryHint = hintResult.recommendedMoves[0] ?? null;
-  const hintMovesForBoard = assistEnabled && canPlace ? hintResult.recommendedMoves : [];
+  const hintMovesForBoard = assistEnabled && canPlace ? hintResult.recommendedMoves : EMPTY_HINT_MOVES;
   const autoFocusLayer = useMemo(() => {
     if (primaryHint) {
       return primaryHint.coordinate.z;
@@ -569,6 +578,26 @@ export function GameRoomPage({
     }
     return Math.max(0, opponentReconnectDeadlineAt - nowMs);
   }, [nowMs, opponentReconnectDeadlineAt, snapshot.winner]);
+  const adaptiveTickDecision = useMemo(
+    () =>
+      evaluateAdaptiveTick({
+        nowMs,
+        renderBootstrapPhase: renderBootstrapDecision.phase,
+        turnRemainingMs,
+        opponentReconnectRemainingMs,
+        timeoutAssistThresholdMs,
+        currentIntervalMs: tickIntervalMs,
+        currentIntervalStartedAtMs: tickIntervalStartedAtMsRef.current
+      }),
+    [
+      nowMs,
+      renderBootstrapDecision.phase,
+      turnRemainingMs,
+      opponentReconnectRemainingMs,
+      timeoutAssistThresholdMs,
+      tickIntervalMs
+    ]
+  );
   const showTurnCountdown = !snapshot.winner && turnRemainingMs !== null;
   const showTimeoutAssistHint = !snapshot.winner && snapshot.turn === myMark;
   const showWinLineSummary = Boolean(snapshot.winner && snapshot.winner !== "draw" && winLineDirector);
@@ -1287,11 +1316,27 @@ export function GameRoomPage({
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
+    const syncNowMs = () => {
       setNowMs(Date.now());
-    }, 250);
+    };
+    syncNowMs();
+    const timer = window.setInterval(syncNowMs, tickIntervalMs);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [tickIntervalMs]);
+
+  useEffect(() => {
+    if (!adaptiveTickDecision.switched || adaptiveTickDecision.intervalMs === tickIntervalMs) {
+      return;
+    }
+    tickIntervalStartedAtMsRef.current = nowMs;
+    setTickIntervalMs(adaptiveTickDecision.intervalMs);
+    if (import.meta.env.DEV) {
+      tickIntervalSwitchCountRef.current += 1;
+      console.debug(
+        `[adaptiveTick] switch #${tickIntervalSwitchCountRef.current}: ${tickIntervalMs}ms -> ${adaptiveTickDecision.intervalMs}ms (${adaptiveTickDecision.reason})`
+      );
+    }
+  }, [adaptiveTickDecision, nowMs, tickIntervalMs]);
 
   useEffect(() => {
     if (qualityMode === "auto" && renderBootstrapDecision.phase === "boot") {
