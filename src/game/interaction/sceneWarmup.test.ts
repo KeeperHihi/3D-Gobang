@@ -6,6 +6,10 @@ describe("sceneWarmupHint", () => {
     expect(sceneWarmupHint("idle")).toContain("尚未预热");
   });
 
+  it("returns intent-only idle guidance on constrained network", () => {
+    expect(sceneWarmupHint("idle", { intentOnlyMode: true })).toContain("操作后再预热");
+  });
+
   it("returns warming guidance", () => {
     expect(sceneWarmupHint("warming")).toContain("预热 3D 战场");
   });
@@ -16,6 +20,10 @@ describe("sceneWarmupHint", () => {
 
   it("returns failure fallback guidance", () => {
     expect(sceneWarmupHint("failed")).toContain("可一键重试");
+  });
+
+  it("returns auto-retrying guidance in queue retry window", () => {
+    expect(sceneWarmupHint("failed", { autoRetrying: true })).toContain("自动重试预热");
   });
 });
 

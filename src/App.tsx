@@ -18,6 +18,11 @@ import {
   type SceneWarmupStatus
 } from "./game/interaction/sceneWarmup";
 import {
+  evaluateWarmupPolicy,
+  normalizeWarmupEffectiveType,
+  type WarmupEffectiveType
+} from "./game/interaction/warmupPolicy";
+import {
   createInitialNetworkLatencyProfile,
   deriveTimeoutAssistThresholdMs,
   updateLatencySamples
@@ -52,6 +57,11 @@ interface ContinueMatchBackup {
   roomEntryMode: RoomEntryMode;
 }
 
+interface WarmupNetworkSnapshot {
+  effectiveType: WarmupEffectiveType;
+  saveData: boolean;
+}
+
 const SESSION_STORAGE_KEY = "nebula-cube-session";
 const QUALITY_MODE_STORAGE_KEY = "nebula-cube-quality-mode";
 const ONBOARDING_STORAGE_KEY = "nebula-cube-onboarding-v1";
@@ -60,6 +70,14 @@ const AUTO_REMATCH_STORAGE_KEY = "nebula-cube-auto-rematch-v1";
 const TURN_NUDGE_STORAGE_KEY = "nebula-cube-turn-nudge-v1";
 const TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY = "nebula-cube-turn-nudge-permission-hint-v1";
 const TURN_NUDGE_PERMISSION_SNOOZE_STORAGE_KEY = "nebula-cube-turn-nudge-permission-snooze-v2";
+const WARMUP_IDLE_AUTOSTART_DELAY_MS = 900;
+
+interface NavigatorConnectionLike {
+  effectiveType?: string;
+  saveData?: boolean;
+  addEventListener?: (type: "change", listener: () => void) => void;
+  removeEventListener?: (type: "change", listener: () => void) => void;
+}
 
 function loadGameRoomPageModule() {
   return import("./pages/GameRoomPage");
@@ -184,6 +202,27 @@ function persistTurnNudgePermissionSnoozedUntilMsToStorage(snoozedUntilMs: numbe
   localStorage.removeItem(TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY);
 }
 
+function getNavigatorConnection(): NavigatorConnectionLike | null {
+  if (typeof navigator === "undefined") {
+    return null;
+  }
+  const maybeNavigator = navigator as Navigator & {
+    connection?: NavigatorConnectionLike;
+    mozConnection?: NavigatorConnectionLike;
+    webkitConnection?: NavigatorConnectionLike;
+  };
+  return maybeNavigator.connection ?? maybeNavigator.mozConnection ?? maybeNavigator.webkitConnection ?? null;
+}
+
+function readWarmupNetworkSnapshot(): WarmupNetworkSnapshot {
+  const maybeConnection = getNavigatorConnection();
+
+  return {
+    effectiveType: normalizeWarmupEffectiveType(maybeConnection?.effectiveType),
+    saveData: maybeConnection?.saveData === true
+  };
+}
+
 export default function App() {
   const socket = useMemo(() => createSocketClient(), []);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
@@ -221,12 +260,24 @@ export default function App() {
     createInitialNetworkLatencyProfile()
   );
   const [sceneWarmupStatus, setSceneWarmupStatus] = useState<SceneWarmupStatus>("idle");
+  const [warmupNetworkSnapshot, setWarmupNetworkSnapshot] = useState<WarmupNetworkSnapshot>(() =>
+    readWarmupNetworkSnapshot()
+  );
+  const [pageVisible, setPageVisible] = useState<boolean>(() =>
+    typeof document === "undefined" ? true : document.visibilityState === "visible"
+  );
+  const [warmupIntentVersion, setWarmupIntentVersion] = useState(0);
+  const [warmupRetryCount, setWarmupRetryCount] = useState(0);
+  const [warmupRetryScheduledAtMs, setWarmupRetryScheduledAtMs] = useState<number | null>(null);
 
   const sessionRef = useRef<RoomSession | null>(session);
   const snapshotRef = useRef<RoomSnapshot | null>(snapshot);
   const matchPhaseRef = useRef<MatchPhase>(matchPhase);
   const sceneWarmupStatusRef = useRef<SceneWarmupStatus>(sceneWarmupStatus);
   const sceneWarmupPromiseRef = useRef<Promise<void> | null>(null);
+  const consumedWarmupIntentVersionRef = useRef(0);
+  const warmupRetryTimerRef = useRef<number | null>(null);
+  const warmupRetryScheduledAttemptRef = useRef<number | null>(null);
   const pendingMoveSubmittedAtRef = useRef<Map<string, number>>(new Map());
   const continueTransitionRef = useRef(continueTransition);
   const continueMatchBackupRef = useRef<ContinueMatchBackup | null>(null);
@@ -260,6 +311,22 @@ export default function App() {
     });
   };
 
+  const clearWarmupRetryTimer = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (warmupRetryTimerRef.current !== null) {
+      window.clearTimeout(warmupRetryTimerRef.current);
+      warmupRetryTimerRef.current = null;
+    }
+    warmupRetryScheduledAttemptRef.current = null;
+    setWarmupRetryScheduledAtMs(null);
+  }, []);
+
+  const markWarmupIntent = useCallback(() => {
+    setWarmupIntentVersion((current) => current + 1);
+  }, []);
+
   const prepareArena = useCallback((options?: { forceRetry?: boolean }) => {
     const forceRetry = options?.forceRetry ?? false;
     const currentStatus = sceneWarmupStatusRef.current;
@@ -291,6 +358,31 @@ export default function App() {
     sceneWarmupPromiseRef.current = warmupPromise;
   }, []);
 
+  const hasWarmupIntent = warmupIntentVersion !== consumedWarmupIntentVersionRef.current;
+  const warmupPolicyDecision = useMemo(
+    () =>
+      evaluateWarmupPolicy({
+        connectionStatus,
+        matchPhase,
+        sceneWarmupStatus,
+        effectiveType: warmupNetworkSnapshot.effectiveType,
+        saveData: warmupNetworkSnapshot.saveData,
+        pageVisible,
+        hasUserIntent: hasWarmupIntent,
+        retryCount: warmupRetryCount
+      }),
+    [
+      connectionStatus,
+      hasWarmupIntent,
+      matchPhase,
+      pageVisible,
+      sceneWarmupStatus,
+      warmupNetworkSnapshot.effectiveType,
+      warmupNetworkSnapshot.saveData,
+      warmupRetryCount
+    ]
+  );
+
   useEffect(() => {
     persistQualityMode(qualityMode);
   }, [qualityMode]);
@@ -316,6 +408,34 @@ export default function App() {
   }, [turnNudgePermissionSnoozedUntilMs]);
 
   useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    const handleVisibilityChange = () => {
+      setPageVisible(document.visibilityState === "visible");
+    };
+    handleVisibilityChange();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  useEffect(() => {
+    const connection = getNavigatorConnection();
+    if (!connection || typeof connection.addEventListener !== "function") {
+      return;
+    }
+
+    const handleConnectionChange = () => {
+      setWarmupNetworkSnapshot(readWarmupNetworkSnapshot());
+    };
+    handleConnectionChange();
+    connection.addEventListener("change", handleConnectionChange);
+    return () => {
+      connection.removeEventListener?.("change", handleConnectionChange);
+    };
+  }, []);
+
+  useEffect(() => {
     if (matchPhase !== "queuing" || queueStartedAtMs === null) {
       setQueueElapsedSeconds(0);
       return;
@@ -332,37 +452,115 @@ export default function App() {
   }, [matchPhase, queueStartedAtMs]);
 
   useEffect(() => {
-    if (connectionState !== "online") {
-      return;
-    }
-    if (snapshot !== null) {
-      return;
-    }
-    if (sceneWarmupStatusRef.current !== "idle") {
+    if (snapshot !== null || !warmupPolicyDecision.shouldAutoWarmup) {
       return;
     }
 
-    const timer = window.setTimeout(() => {
-      prepareArena();
-    }, 900);
-    return () => window.clearTimeout(timer);
-  }, [connectionState, prepareArena, snapshot]);
-
-  useEffect(() => {
-    if (connectionState !== "online") {
-      return;
-    }
-    if (matchPhase !== "queuing") {
-      return;
-    }
-    if (sceneWarmupStatus === "ready" || sceneWarmupStatus === "warming") {
-      return;
+    const shouldDelayIdleWarmup =
+      !hasWarmupIntent && matchPhase === "idle" && sceneWarmupStatus === "idle";
+    if (shouldDelayIdleWarmup) {
+      const timer = window.setTimeout(() => {
+        prepareArena();
+      }, WARMUP_IDLE_AUTOSTART_DELAY_MS);
+      return () => window.clearTimeout(timer);
     }
 
     prepareArena({
       forceRetry: sceneWarmupStatus === "failed"
     });
-  }, [connectionState, matchPhase, prepareArena, sceneWarmupStatus]);
+    if (hasWarmupIntent) {
+      consumedWarmupIntentVersionRef.current = warmupIntentVersion;
+    }
+  }, [
+    hasWarmupIntent,
+    matchPhase,
+    prepareArena,
+    sceneWarmupStatus,
+    snapshot,
+    warmupIntentVersion,
+    warmupPolicyDecision.shouldAutoWarmup
+  ]);
+
+  useEffect(() => {
+    if (!warmupPolicyDecision.shouldRetryWarmup || warmupPolicyDecision.retryDelayMs === null) {
+      clearWarmupRetryTimer();
+      return;
+    }
+    if (warmupRetryScheduledAttemptRef.current === warmupRetryCount) {
+      return;
+    }
+
+    clearWarmupRetryTimer();
+    warmupRetryScheduledAttemptRef.current = warmupRetryCount;
+    setWarmupRetryScheduledAtMs(Date.now() + warmupPolicyDecision.retryDelayMs);
+    warmupRetryTimerRef.current = window.setTimeout(() => {
+      warmupRetryTimerRef.current = null;
+      warmupRetryScheduledAttemptRef.current = null;
+      setWarmupRetryScheduledAtMs(null);
+      setWarmupRetryCount((current) => current + 1);
+      prepareArena({
+        forceRetry: true
+      });
+    }, warmupPolicyDecision.retryDelayMs);
+
+    return () => {
+      if (warmupRetryTimerRef.current !== null) {
+        window.clearTimeout(warmupRetryTimerRef.current);
+        warmupRetryTimerRef.current = null;
+      }
+    };
+  }, [
+    clearWarmupRetryTimer,
+    prepareArena,
+    warmupPolicyDecision.retryDelayMs,
+    warmupPolicyDecision.shouldRetryWarmup,
+    warmupRetryCount
+  ]);
+
+  useEffect(() => {
+    if (matchPhase !== "queuing") {
+      clearWarmupRetryTimer();
+      setWarmupRetryCount((current) => (current === 0 ? current : 0));
+      return;
+    }
+
+    if (sceneWarmupStatus === "ready") {
+      clearWarmupRetryTimer();
+      setWarmupRetryCount((current) => (current === 0 ? current : 0));
+      return;
+    }
+
+    if (sceneWarmupStatus === "warming") {
+      clearWarmupRetryTimer();
+    }
+  }, [clearWarmupRetryTimer, matchPhase, sceneWarmupStatus]);
+
+  useEffect(() => () => clearWarmupRetryTimer(), [clearWarmupRetryTimer]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+    console.info("[warmup-policy]", {
+      effectiveType: warmupNetworkSnapshot.effectiveType,
+      saveData: warmupNetworkSnapshot.saveData,
+      matchPhase,
+      sceneWarmupStatus,
+      pageVisible,
+      hasWarmupIntent,
+      retryCount: warmupRetryCount,
+      decision: warmupPolicyDecision
+    });
+  }, [
+    hasWarmupIntent,
+    matchPhase,
+    pageVisible,
+    sceneWarmupStatus,
+    warmupNetworkSnapshot.effectiveType,
+    warmupNetworkSnapshot.saveData,
+    warmupPolicyDecision,
+    warmupRetryCount
+  ]);
 
   useEffect(() => {
     const resetQueueState = () => {
@@ -668,7 +866,7 @@ export default function App() {
       setErrorMessage("正在连接服务器，请稍后重试");
       return;
     }
-    prepareArena();
+    markWarmupIntent();
     setMatchPhase("queuing");
     setQueueSize((current) => (current > 0 ? current : 1));
     setQueueStartedAtMs(Date.now());
@@ -823,8 +1021,10 @@ export default function App() {
         isRecoveringSession={isRecoveringSession}
         onStartMatch={startMatch}
         onCancelMatch={cancelMatch}
-        onPrepareArena={() => prepareArena()}
-        onRetryWarmup={() => prepareArena({ forceRetry: true })}
+        warmupIntentOnlyMode={warmupPolicyDecision.intentOnlyMode}
+        isWarmupAutoRetrying={warmupRetryScheduledAtMs !== null}
+        onPrepareArena={markWarmupIntent}
+        onRetryWarmup={markWarmupIntent}
       />
     );
   }

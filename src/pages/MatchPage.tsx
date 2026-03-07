@@ -7,6 +7,8 @@ interface MatchPageProps {
   queueSize: number;
   queueElapsedSeconds: number;
   sceneWarmupStatus: SceneWarmupStatus;
+  warmupIntentOnlyMode: boolean;
+  isWarmupAutoRetrying: boolean;
   isRecoveringSession: boolean;
   onStartMatch: () => void;
   onCancelMatch: () => void;
@@ -26,6 +28,8 @@ export function MatchPage({
   queueSize,
   queueElapsedSeconds,
   sceneWarmupStatus,
+  warmupIntentOnlyMode,
+  isWarmupAutoRetrying,
   isRecoveringSession,
   onStartMatch,
   onCancelMatch,
@@ -44,7 +48,10 @@ export function MatchPage({
   const cancelDisabled = connectionStatus !== "online" || !isQueuing || isRecoveringSession;
   const retryWarmupDisabled =
     connectionStatus !== "online" || sceneWarmupStatus !== "failed" || isRecoveringSession;
-  const warmupHint = sceneWarmupHint(sceneWarmupStatus);
+  const warmupHint = sceneWarmupHint(sceneWarmupStatus, {
+    intentOnlyMode: warmupIntentOnlyMode,
+    autoRetrying: isWarmupAutoRetrying
+  });
 
   return (
     <main className="match-page">
@@ -92,6 +99,9 @@ export function MatchPage({
               一键重试预热
             </button>
           </div>
+        ) : null}
+        {isWarmupAutoRetrying ? (
+          <p className="match-warmup-retrying">正在自动重试预热...</p>
         ) : null}
         {isQueuing ? (
           <button
