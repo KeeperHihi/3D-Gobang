@@ -99,6 +99,10 @@ function clampLayer(layer: number, size: number): number {
   return Math.max(0, Math.min(size - 1, layer));
 }
 
+function clampOpacity(opacity: number): number {
+  return Math.max(0.02, Math.min(1, opacity));
+}
+
 function initialQualityLevelFromMode(mode: QualityMode): QualityLevel {
   if (mode === "quality") {
     return "ultra";
@@ -169,12 +173,13 @@ export function GameRoomPage({
   const baseDocumentTitleRef = useRef(
     typeof document === "undefined" ? "NEBULA CUBE" : document.title
   );
-  const [assistEnabled, setAssistEnabled] = useState(true);
+  const [assistEnabled, setAssistEnabled] = useState(false);
   const [onboardingProgress, setOnboardingProgress] = useState(() =>
     createDefaultOnboardingProgress()
   );
   const [focusMode, setFocusMode] = useState<"auto" | "manual">("auto");
   const [focusLayer, setFocusLayer] = useState(Math.floor(snapshot.size / 2));
+  const [nonFocusLayerOpacity, setNonFocusLayerOpacity] = useState(0.22);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
     if (typeof window === "undefined") {
@@ -209,6 +214,10 @@ export function GameRoomPage({
     number | null
   >(null);
   const [layerTapLock, setLayerTapLock] = useState<LayerTapLock | null>(null);
+  const [opponentMoveCue, setOpponentMoveCue] = useState<{
+    coordinate: Coordinate3D;
+    moveNumber: number;
+  } | null>(null);
   const opponentMark: PlayerMark = myMark === "X" ? "O" : "X";
   const opponentConnected = snapshot.players[opponentMark].connected;
   const opponentReconnectDeadlineAt = snapshot.players[opponentMark].reconnectDeadlineAt;
@@ -868,6 +877,9 @@ export function GameRoomPage({
     setAssistEnabled((current) => !current);
     setFocusMode("auto");
   }, []);
+  const handleNonFocusLayerOpacityChange = useCallback((nextOpacity: number) => {
+    setNonFocusLayerOpacity(clampOpacity(nextOpacity));
+  }, []);
 
   const handleToggleAdvanced = () => {
     setAdvancedOpen((current) => !current);
@@ -890,12 +902,30 @@ export function GameRoomPage({
   }, []);
 
   useEffect(() => {
-    const moveNumber = snapshot.lastMove?.moveNumber ?? 0;
-    if (moveNumber > lastMoveNumberRef.current) {
-      playDropSfx();
-      lastMoveNumberRef.current = moveNumber;
+    if (!snapshot.lastMove) {
+      lastMoveNumberRef.current = 0;
+      setOpponentMoveCue(null);
+      return;
     }
-  }, [snapshot.lastMove]);
+
+    const moveNumber = snapshot.lastMove.moveNumber;
+    if (moveNumber <= lastMoveNumberRef.current) {
+      return;
+    }
+
+    playDropSfx();
+    if (snapshot.lastMove.player === opponentMark) {
+      setOpponentMoveCue({
+        coordinate: {
+          x: snapshot.lastMove.x,
+          y: snapshot.lastMove.y,
+          z: snapshot.lastMove.z
+        },
+        moveNumber
+      });
+    }
+    lastMoveNumberRef.current = moveNumber;
+  }, [opponentMark, snapshot.lastMove]);
 
   useEffect(() => {
     if (snapshot.winner && snapshot.winner !== winnerRef.current) {
@@ -945,6 +975,7 @@ export function GameRoomPage({
   useEffect(() => {
     onboardingCompletionSentRef.current = false;
     onboardingActivatedRef.current = false;
+    lastMoveNumberRef.current = 0;
     timeoutAssistTurnKeyRef.current = null;
     autoRematchTriggeredRoundKeyRef.current = null;
     autoRematchCancelledRoundKeyRef.current = null;
@@ -964,6 +995,7 @@ export function GameRoomPage({
     setSettlementStartedAtMs(null);
     setAutoRematchCountdownStartedAtMs(null);
     setAutoContinueCountdownStartedAtMs(null);
+    setOpponentMoveCue(null);
     if (typeof document !== "undefined") {
       setPageVisible(document.visibilityState === "visible");
       setWindowFocused(document.hasFocus());
@@ -1349,17 +1381,16 @@ export function GameRoomPage({
         board={snapshot.board}
         size={snapshot.size}
         canPlace={canPlace}
+        nonFocusLayerOpacity={nonFocusLayerOpacity}
         qualityProfile={qualityProfile}
-        lastMove={snapshot.lastMove}
+        opponentMoveCue={opponentMoveCue}
         winningLine={snapshot.winningLine}
         winLineCinematicActive={winLineCinematicActive}
-        winLineFocusCoordinate={winLineCinematicActive ? winLineDirector?.focusCoordinate ?? null : null}
         focusLayer={focusLayer}
         tapLockCoordinate={activeLayerTapLock?.coordinate ?? null}
         hintMoves={hintMovesForBoard}
         pendingMove={pendingMove}
         onPlace={onPlace}
-        onRequestFocusLayer={handleRequestFocusLayer}
         onLayerWheel={handleLayerWheel}
         onLayerSwipe={handleLayerSwipe}
         onUserRotate={handleBoardRotate}
@@ -1375,6 +1406,7 @@ export function GameRoomPage({
         winLineSummary={winLineDirector?.lineLabel ?? null}
         winLineCinematicActive={winLineCinematicActive}
         assistEnabled={assistEnabled}
+        nonFocusLayerOpacity={nonFocusLayerOpacity}
         focusLayer={focusLayer}
         focusMode={focusMode}
         layerQuickNav={layerQuickNav}
@@ -1430,6 +1462,7 @@ export function GameRoomPage({
         onCancelTapLock={handleClearTapLock}
         onAutoFocus={handleAutoFocus}
         onToggleAssist={handleAssistToggle}
+        onNonFocusLayerOpacityChange={handleNonFocusLayerOpacityChange}
         onQualityModeChange={onQualityModeChange}
         onRematch={handleRematchAction}
         onLeave={onLeave}

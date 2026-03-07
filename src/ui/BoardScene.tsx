@@ -2,12 +2,11 @@ import { useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Line, OrbitControls, Sparkles, Stars } from "@react-three/drei";
 import type { Mesh } from "three";
-import type { Coordinate3D, MoveRecord, PlayerMark } from "../network/protocol";
+import type { Coordinate3D, PlayerMark } from "../network/protocol";
 import { fromLinearIndex } from "../game/engine/board";
 import type { HintPriority, MoveHint } from "../game/engine/moveHints";
 import type { LayoutMode } from "../game/interaction/deviceMode";
 import type { QualityProfile } from "../game/interaction/qualityProfile";
-import { createCameraTarget, useCameraAssist } from "../game/interaction/cameraAssist";
 import { evaluateLayerTapAssist } from "../game/interaction/layerTapAssist";
 import { pickCell } from "../game/interaction/pickCell";
 
@@ -18,11 +17,11 @@ interface BoardSceneProps {
   board: number[];
   size: number;
   canPlace: boolean;
+  nonFocusLayerOpacity: number;
   qualityProfile: QualityProfile;
-  lastMove: MoveRecord | null;
+  opponentMoveCue: OpponentMoveCue | null;
   winningLine: number[] | null;
   winLineCinematicActive: boolean;
-  winLineFocusCoordinate: Coordinate3D | null;
   focusLayer: number | null;
   tapLockCoordinate: Coordinate3D | null;
   hintMoves: MoveHint[];
@@ -31,19 +30,14 @@ interface BoardSceneProps {
     player: PlayerMark;
   } | null;
   onPlace: (coordinate: Coordinate3D) => void;
-  onRequestFocusLayer: (coordinate: Coordinate3D) => void;
   onLayerWheel?: (deltaY: number) => boolean;
   onLayerSwipe?: (deltaY: number) => void;
   onUserRotate?: () => void;
 }
 
-interface CameraAssistControllerProps {
-  size: number;
-  lastMove: MoveRecord | null;
-  canPlace: boolean;
-  hintFocus: Coordinate3D | null;
-  winLineCinematicActive: boolean;
-  winLineFocusCoordinate: Coordinate3D | null;
+interface OpponentMoveCue {
+  coordinate: Coordinate3D;
+  moveNumber: number;
 }
 
 interface HintMeta {
@@ -90,33 +84,71 @@ function HintPulse({ position, color, opacity, speed, phase }: HintPulseProps) {
   );
 }
 
+interface OpponentMoveBlinkProps {
+  position: [number, number, number];
+}
+
+function OpponentMoveBlink({ position }: OpponentMoveBlinkProps) {
+  const ringRef = useRef<Mesh>(null);
+  const glowRef = useRef<Mesh>(null);
+  const startedAtSecondsRef = useRef<number | null>(null);
+
+  useFrame(({ clock }) => {
+    const ringMesh = ringRef.current;
+    const glowMesh = glowRef.current;
+    if (!ringMesh || !glowMesh) {
+      return;
+    }
+
+    if (startedAtSecondsRef.current === null) {
+      startedAtSecondsRef.current = clock.getElapsedTime();
+    }
+    const elapsed = clock.getElapsedTime() - startedAtSecondsRef.current;
+    const flashPeriodSeconds = 0.28;
+    const flashCount = 6;
+    const maxDurationSeconds = flashPeriodSeconds * flashCount;
+
+    if (elapsed >= maxDurationSeconds) {
+      ringMesh.visible = false;
+      glowMesh.visible = false;
+      return;
+    }
+
+    const cycleProgress = (elapsed % flashPeriodSeconds) / flashPeriodSeconds;
+    const cycleOn = cycleProgress < 0.52;
+    const pulse = cycleOn ? 0.68 + (1 - cycleProgress / 0.52) * 0.32 : 0.1;
+    ringMesh.visible = cycleOn;
+    glowMesh.visible = true;
+    ringMesh.scale.setScalar(1 + (1 - pulse) * 0.38);
+    glowMesh.scale.setScalar(1 + (1 - pulse) * 0.18);
+
+    const ringMaterial = ringMesh.material;
+    const glowMaterial = glowMesh.material;
+    if ("opacity" in ringMaterial) {
+      ringMaterial.opacity = 0.18 + pulse * 0.72;
+    }
+    if ("opacity" in glowMaterial) {
+      glowMaterial.opacity = 0.06 + pulse * 0.25;
+    }
+  });
+
+  return (
+    <group position={position}>
+      <mesh ref={glowRef} scale={1.12}>
+        <sphereGeometry args={[0.38, 28, 28]} />
+        <meshBasicMaterial color="#ffe6a5" transparent opacity={0} />
+      </mesh>
+      <mesh ref={ringRef} scale={1.15}>
+        <torusGeometry args={[0.48, 0.05, 18, 46]} />
+        <meshBasicMaterial color="#fff19b" transparent opacity={0} />
+      </mesh>
+    </group>
+  );
+}
+
 function layerToWorldZ(size: number, layer: number): number {
   const centerOffset = (size - 1) / 2;
   return (layer - centerOffset) * BOARD_SPACING;
-}
-
-function CameraAssistController({
-  size,
-  lastMove,
-  canPlace,
-  hintFocus,
-  winLineCinematicActive,
-  winLineFocusCoordinate
-}: CameraAssistControllerProps) {
-  const focusedCoordinate = winLineCinematicActive
-    ? winLineFocusCoordinate
-    : canPlace
-      ? hintFocus ?? (lastMove ? { x: lastMove.x, y: lastMove.y, z: lastMove.z } : null)
-      : lastMove
-        ? { x: lastMove.x, y: lastMove.y, z: lastMove.z }
-        : null;
-
-  const target = useMemo(
-    () => createCameraTarget(size, focusedCoordinate),
-    [focusedCoordinate, size]
-  );
-  useCameraAssist(target);
-  return null;
 }
 
 function toWorldPosition(size: number, coordinate: Coordinate3D): [number, number, number] {
@@ -133,17 +165,16 @@ export function BoardScene({
   board,
   size,
   canPlace,
+  nonFocusLayerOpacity,
   qualityProfile,
-  lastMove,
+  opponentMoveCue,
   winningLine,
   winLineCinematicActive,
-  winLineFocusCoordinate,
   focusLayer,
   tapLockCoordinate,
   hintMoves,
   pendingMove,
   onPlace,
-  onRequestFocusLayer,
   onLayerWheel,
   onLayerSwipe,
   onUserRotate
@@ -208,6 +239,13 @@ export function BoardScene({
       return toWorldPosition(size, coordinate);
     });
   }, [size, winLineCinematicActive, winningLine]);
+  const opponentMoveBlinkPosition = useMemo(() => {
+    if (!opponentMoveCue) {
+      return null;
+    }
+    return toWorldPosition(size, opponentMoveCue.coordinate);
+  }, [opponentMoveCue, size]);
+  const otherLayerOpacity = Math.max(0.02, Math.min(1, nonFocusLayerOpacity));
 
   return (
     <div
@@ -268,15 +306,6 @@ export function BoardScene({
           size={qualityProfile.sparklesSize}
           color="#5fe9ff"
         />
-
-        <CameraAssistController
-          size={size}
-          lastMove={lastMove}
-          canPlace={canPlace}
-          hintFocus={hintMoves[0]?.coordinate ?? null}
-          winLineCinematicActive={winLineCinematicActive}
-          winLineFocusCoordinate={winLineFocusCoordinate}
-        />
         <OrbitControls
           enablePan={false}
           minDistance={isMobileLayout ? 9.5 : 8}
@@ -293,23 +322,6 @@ export function BoardScene({
               <meshBasicMaterial color="#52dbff" transparent opacity={0.08} />
             </mesh>
           ) : null}
-          <mesh>
-            <boxGeometry
-              args={[
-                size * BOARD_SPACING + 0.9,
-                size * BOARD_SPACING + 0.9,
-                size * BOARD_SPACING + 0.9
-              ]}
-            />
-            <meshStandardMaterial
-              color="#5a90ff"
-              emissive="#4f9fff"
-              emissiveIntensity={0.35}
-              wireframe
-              transparent
-              opacity={0.42}
-            />
-          </mesh>
 
           {board.map((value, index) => {
             const coordinate = fromLinearIndex(index, size);
@@ -320,7 +332,7 @@ export function BoardScene({
             const interactive = canPlace && isEmpty && inFocusLayer;
             const hint = isEmpty ? hintMap.get(index) : undefined;
             const hintColor = hint ? colorForHintPriority(hint.priority) : null;
-            const layerOpacityFactor = focusLayer === null ? 1 : inFocusLayer ? 1 : 0.22;
+            const layerOpacityFactor = focusLayer === null ? 1 : inFocusLayer ? 1 : otherLayerOpacity;
             const color = value === 1 ? "#64f6ff" : value === 2 ? "#ff69d0" : "#182850";
             const emissiveBaseColor = value === 1 ? "#48ffff" : value === 2 ? "#ff52da" : "#4f8eff";
             const emissive = hintColor ?? emissiveBaseColor;
@@ -350,11 +362,21 @@ export function BoardScene({
                 position={toWorldPosition(size, coordinate)}
                 userData={{ cell: coordinate }}
                 scale={scale}
-                onPointerOver={(event) => {
+                onPointerEnter={(event) => {
                   event.stopPropagation();
+                  if (!interactive) {
+                    return;
+                  }
                   setHoveredIndex(index);
                 }}
-                onPointerOut={(event) => {
+                onPointerMove={(event) => {
+                  event.stopPropagation();
+                  if (!interactive) {
+                    return;
+                  }
+                  setHoveredIndex(index);
+                }}
+                onPointerLeave={(event) => {
                   event.stopPropagation();
                   setHoveredIndex((current) => (current === index ? null : current));
                 }}
@@ -375,14 +397,6 @@ export function BoardScene({
                   });
                   if (tapAssistDecision.action === "place") {
                     onPlace(coordinateFromHit);
-                    return;
-                  }
-                  if (tapAssistDecision.action === "focus" && tapAssistDecision.nextFocusLayer !== null) {
-                    onRequestFocusLayer({
-                      x: coordinateFromHit.x,
-                      y: coordinateFromHit.y,
-                      z: tapAssistDecision.nextFocusLayer
-                    });
                   }
                 }}
               >
@@ -452,6 +466,13 @@ export function BoardScene({
               phase={index * 0.55}
             />
           ))}
+
+          {opponentMoveBlinkPosition && opponentMoveCue ? (
+            <OpponentMoveBlink
+              key={`opponent-move-cue-${opponentMoveCue.moveNumber}`}
+              position={opponentMoveBlinkPosition}
+            />
+          ) : null}
 
           {linePoints ? (
             <Line

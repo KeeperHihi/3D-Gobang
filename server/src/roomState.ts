@@ -31,9 +31,7 @@ export interface RecordedMoveAck {
 }
 
 const CLIENT_MOVE_ACK_HISTORY_LIMIT = 80;
-const OPENING_MOVE_COUNT_LIMIT = 4;
-const OPENING_TURN_LIMIT_MS = 30_000;
-const STANDARD_TURN_LIMIT_MS = 20_000;
+const DEFAULT_TURN_LIMIT_MS = 300_000;
 
 export interface RoomState {
   roomId: string;
@@ -180,11 +178,8 @@ function clearReconnectDeadlines(room: RoomState): void {
   room.players.O.reconnectDeadlineAt = null;
 }
 
-function currentTurnTimeLimitMs(room: RoomState): number {
-  if (room.moveCount < OPENING_MOVE_COUNT_LIMIT) {
-    return OPENING_TURN_LIMIT_MS;
-  }
-  return STANDARD_TURN_LIMIT_MS;
+function currentTurnTimeLimitMs(): number {
+  return DEFAULT_TURN_LIMIT_MS;
 }
 
 export function startTurnDeadline(room: RoomState, nowMs: number): number | null {
@@ -193,7 +188,7 @@ export function startTurnDeadline(room: RoomState, nowMs: number): number | null
     return null;
   }
 
-  const deadlineAt = nowMs + currentTurnTimeLimitMs(room);
+  const deadlineAt = nowMs + currentTurnTimeLimitMs();
   room.turnDeadlineAt = deadlineAt;
   return deadlineAt;
 }

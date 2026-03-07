@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_BOARD_SIZE } from "../../shared/game/board";
 import {
   applyMoveToRoom,
   applyDisconnectForfeitIfExpired,
@@ -25,6 +26,13 @@ function createFixtureRoom() {
 }
 
 describe("requestRematch", () => {
+  it("uses 8x8x8 board by default", () => {
+    const room = createFixtureRoom();
+
+    expect(room.size).toBe(DEFAULT_BOARD_SIZE);
+    expect(room.board).toHaveLength(DEFAULT_BOARD_SIZE ** 3);
+  });
+
   it("stores and reuses client move ack by seat", () => {
     const room = createFixtureRoom();
     const ack = {
@@ -193,7 +201,7 @@ describe("turn deadline and timeout forfeit", () => {
     const room = createFixtureRoom();
 
     expect(room.turn).toBe("X");
-    expect(room.turnDeadlineAt).toBe(31_000);
+    expect(room.turnDeadlineAt).toBe(301_000);
     nowSpy.mockRestore();
   });
 
@@ -207,7 +215,7 @@ describe("turn deadline and timeout forfeit", () => {
 
     expect(result.accepted).toBe(true);
     expect(room.turn).toBe("O");
-    expect(room.turnDeadlineAt).toBe(38_000);
+    expect(room.turnDeadlineAt).toBe(308_000);
     nowSpy.mockRestore();
   });
 
@@ -235,7 +243,7 @@ describe("turn deadline and timeout forfeit", () => {
     const room = createFixtureRoom();
     const originalBoard = [...room.board];
 
-    nowSpy.mockReturnValue(31_001);
+    nowSpy.mockReturnValue(301_001);
     const result = applyMoveToRoom(room, "X", { x: 0, y: 0, z: 0 });
 
     expect(result).toEqual({

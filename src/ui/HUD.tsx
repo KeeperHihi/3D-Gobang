@@ -32,6 +32,7 @@ interface HUDProps {
   winLineSummary: string | null;
   winLineCinematicActive: boolean;
   assistEnabled: boolean;
+  nonFocusLayerOpacity: number;
   focusLayer: number;
   focusMode: "auto" | "manual";
   layerQuickNav: LayerQuickNavDecision;
@@ -87,6 +88,7 @@ interface HUDProps {
   onCancelTapLock: () => void;
   onAutoFocus: () => void;
   onToggleAssist: () => void;
+  onNonFocusLayerOpacityChange: (opacity: number) => void;
   onQualityModeChange: (mode: QualityMode) => void;
   onRematch: () => void;
   onLeave: () => void;
@@ -163,6 +165,7 @@ export function HUD({
   winLineSummary,
   winLineCinematicActive,
   assistEnabled,
+  nonFocusLayerOpacity,
   focusLayer,
   focusMode,
   layerQuickNav,
@@ -218,6 +221,7 @@ export function HUD({
   onCancelTapLock,
   onAutoFocus,
   onToggleAssist,
+  onNonFocusLayerOpacityChange,
   onQualityModeChange,
   onRematch,
   onLeave
@@ -254,6 +258,7 @@ export function HUD({
     rematchWaitRemainingMs === null ? null : Math.max(0, Math.ceil(rematchWaitRemainingMs / 1000));
   const tapLockSecondsLeft =
     tapLockRemainingMs === null ? null : Math.max(0, Math.ceil(tapLockRemainingMs / 1000));
+  const nonFocusOpacityPercent = Math.round(Math.max(2, Math.min(100, nonFocusLayerOpacity * 100)));
   const primaryCardId = hudSpotlight.primaryCard?.id ?? null;
   const showTurnCountdown = primaryCardId === "turn-clock" && !winner && turnRemainingSeconds !== null;
   const showTimeoutAssistHint = primaryCardId === "timeout-assist" && !winner && turn === myMark;
@@ -702,35 +707,94 @@ export function HUD({
               <span>{qualityLevelLabel(qualityLevel)}</span>
             </div>
             <div className="hud-row">
-              <span>渲染模式</span>
-              <span>{qualityModeLabel(qualityMode)}</span>
-            </div>
-            <div className="hud-row">
               <span>实时帧率</span>
               <span>{averageFps === null ? "采样中..." : `${Math.round(averageFps)} FPS`}</span>
             </div>
-            <div className="hud-actions">
-              <button
-                className={`hud-mini-button ${qualityMode === "auto" ? "active" : ""}`}
-                type="button"
-                onClick={() => onQualityModeChange("auto")}
+            <div className="hud-setting-row">
+              <label className="hud-setting-label" htmlFor="hud-quality-mode">
+                渲染模式
+              </label>
+              <select
+                id="hud-quality-mode"
+                className="hud-select"
+                value={qualityMode}
+                onChange={(event) => onQualityModeChange(event.target.value as QualityMode)}
               >
-                自动
-              </button>
-              <button
-                className={`hud-mini-button ${qualityMode === "quality" ? "active" : ""}`}
-                type="button"
-                onClick={() => onQualityModeChange("quality")}
-              >
-                画质优先
-              </button>
-              <button
-                className={`hud-mini-button ${qualityMode === "smooth" ? "active" : ""}`}
-                type="button"
-                onClick={() => onQualityModeChange("smooth")}
-              >
-                流畅优先
-              </button>
+                <option value="auto">{qualityModeLabel("auto")}</option>
+                <option value="quality">{qualityModeLabel("quality")}</option>
+                <option value="smooth">{qualityModeLabel("smooth")}</option>
+              </select>
+            </div>
+            <div className="hud-slider-group">
+              <div className="hud-slider-head">
+                <span>未聚焦层清晰度</span>
+                <strong>{nonFocusOpacityPercent}%</strong>
+              </div>
+              <input
+                className="hud-slider"
+                type="range"
+                min={2}
+                max={100}
+                step={1}
+                value={nonFocusOpacityPercent}
+                onChange={(event) => onNonFocusLayerOpacityChange(Number(event.target.value) / 100)}
+              />
+            </div>
+            <div className="hud-setting-list">
+              <div className="hud-setting-row">
+                <span className="hud-setting-label">战术辅助提示</span>
+                <button
+                  className={`hud-mini-button ${assistEnabled ? "active" : ""}`}
+                  type="button"
+                  onClick={onToggleAssist}
+                >
+                  {assistEnabled ? "已开启" : "已关闭"}
+                </button>
+              </div>
+              <div className="hud-setting-row">
+                <span className="hud-setting-label">连战模式</span>
+                <button
+                  className={`hud-mini-button ${autoRematchEnabled ? "active" : ""}`}
+                  type="button"
+                  onClick={onToggleAutoRematch}
+                >
+                  {autoRematchEnabled ? "已开启" : "已关闭"}
+                </button>
+              </div>
+              <div className="hud-setting-row">
+                <span className="hud-setting-label">超时护航</span>
+                <button
+                  className={`hud-mini-button ${timeoutAssistEnabled ? "active" : ""}`}
+                  type="button"
+                  onClick={onToggleTimeoutAssist}
+                >
+                  {timeoutAssistEnabled ? "已开启" : "已关闭"}
+                </button>
+              </div>
+              <div className="hud-setting-row">
+                <span className="hud-setting-label">回合唤醒</span>
+                <button
+                  className={`hud-mini-button ${turnNudgeEnabled ? "active" : ""}`}
+                  type="button"
+                  onClick={onToggleTurnNudge}
+                >
+                  {turnNudgeEnabled ? "已开启" : "已关闭"}
+                </button>
+              </div>
+              {canRematch ? (
+                <div className="hud-setting-row">
+                  <span className="hud-setting-label">结算操作</span>
+                  <button className="hud-mini-button active" type="button" onClick={onRematch}>
+                    再来一局
+                  </button>
+                </div>
+              ) : null}
+              <div className="hud-setting-row">
+                <span className="hud-setting-label">离开房间</span>
+                <button className="hud-mini-button danger" type="button" onClick={onLeave}>
+                  离开
+                </button>
+              </div>
             </div>
             <div className="hud-actions">
               <button
@@ -756,40 +820,6 @@ export function HUD({
                 disabled={focusMode === "auto"}
               >
                 自动聚焦
-              </button>
-            </div>
-            <div className="hud-actions">
-              <button
-                className={`hud-mini-button ${autoRematchEnabled ? "active" : ""}`}
-                type="button"
-                onClick={onToggleAutoRematch}
-              >
-                连战模式：{autoRematchEnabled ? "开" : "关"}
-              </button>
-              <button
-                className={`hud-mini-button ${timeoutAssistEnabled ? "active" : ""}`}
-                type="button"
-                onClick={onToggleTimeoutAssist}
-              >
-                超时护航：{timeoutAssistEnabled ? "开" : "关"}
-              </button>
-              <button
-                className={`hud-mini-button ${turnNudgeEnabled ? "active" : ""}`}
-                type="button"
-                onClick={onToggleTurnNudge}
-              >
-                回合唤醒：{turnNudgeEnabled ? "开" : "关"}
-              </button>
-              <button className="hud-button ghost" type="button" onClick={onToggleAssist}>
-                战术辅助：{assistEnabled ? "开" : "关"}
-              </button>
-              <button className="hud-button" type="button" onClick={onRematch} disabled={!canRematch}>
-                再来一局
-              </button>
-            </div>
-            <div className="hud-actions">
-              <button className="hud-button ghost" type="button" onClick={onLeave}>
-                离开
               </button>
             </div>
           </div>

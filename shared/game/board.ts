@@ -1,6 +1,6 @@
 import type { Coordinate3D, PlayerMark } from "../network/protocol";
 
-export const DEFAULT_BOARD_SIZE = 5;
+export const DEFAULT_BOARD_SIZE = 8;
 export const DEFAULT_CONNECT_COUNT = 5;
 
 export type BoardCell = 0 | 1 | 2;
