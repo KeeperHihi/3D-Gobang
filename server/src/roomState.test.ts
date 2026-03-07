@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyDisconnectForfeitIfExpired,
+  clearReconnectDeadline,
   createRoomState,
   getRecordedMoveAck,
   recordMoveAck,
-  requestRematch
+  requestRematch,
+  setPlayerConnection,
+  startReconnectDeadline
 } from "./roomState";
 
 function createFixtureRoom() {
@@ -65,5 +69,42 @@ describe("requestRematch", () => {
     expect(room.winner).toBeNull();
     expect(room.moveCount).toBe(0);
     expect(getRecordedMoveAck(room, "X", "move-x-1")).toBeNull();
+  });
+});
+
+describe("reconnect deadline and disconnect forfeit", () => {
+  it("starts reconnect deadline when a seat disconnects", () => {
+    const room = createFixtureRoom();
+    setPlayerConnection(room, "O", null, false);
+
+    const deadlineAt = startReconnectDeadline(room, "O", 10_000, 30_000);
+
+    expect(deadlineAt).toBe(40_000);
+    expect(room.players.O.reconnectDeadlineAt).toBe(40_000);
+  });
+
+  it("clears reconnect deadline after successful reconnect", () => {
+    const room = createFixtureRoom();
+    setPlayerConnection(room, "O", null, false);
+    startReconnectDeadline(room, "O", 10_000, 30_000);
+
+    setPlayerConnection(room, "O", "socket-o-new", true);
+    clearReconnectDeadline(room, "O");
+
+    expect(room.players.O.reconnectDeadlineAt).toBeNull();
+  });
+
+  it("forfeits disconnected player when deadline is expired", () => {
+    const room = createFixtureRoom();
+    setPlayerConnection(room, "O", null, false);
+    startReconnectDeadline(room, "O", 10_000, 30_000);
+
+    const forfeited = applyDisconnectForfeitIfExpired(room, "O", 40_001);
+
+    expect(forfeited).toBe(true);
+    expect(room.winner).toBe("X");
+    expect(room.winningLine).toBeNull();
+    expect(room.players.O.reconnectDeadlineAt).toBeNull();
+    expect(room.players.X.reconnectDeadlineAt).toBeNull();
   });
 });

@@ -18,6 +18,7 @@ function createStateFixture(params?: {
   hints?: MoveHint[];
   assistEnabled?: boolean;
   hasPendingMove?: boolean;
+  canContinueMatch?: boolean;
   connectionStatus?: "connecting" | "online" | "reconnecting" | "offline";
 }) {
   return createSmartActionState({
@@ -29,6 +30,7 @@ function createStateFixture(params?: {
     hints: params?.hints ?? [createHint("best")],
     assistEnabled: params?.assistEnabled ?? true,
     hasPendingMove: params?.hasPendingMove ?? false,
+    canContinueMatch: params?.canContinueMatch ?? false,
     connectionStatus: params?.connectionStatus ?? "online"
   });
 }
@@ -93,6 +95,17 @@ describe("createSmartActionState", () => {
 
     expect(state.actionType).toBe("rematch");
     expect(state.label).toBe("再来一局");
+    expect(state.enabled).toBe(true);
+  });
+
+  it("returns continue match action when settlement supports quick continuation", () => {
+    const state = createStateFixture({
+      winner: "X",
+      canContinueMatch: true
+    });
+
+    expect(state.actionType).toBe("continueMatch");
+    expect(state.label).toBe("继续匹配");
     expect(state.enabled).toBe(true);
   });
 

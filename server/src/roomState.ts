@@ -21,6 +21,7 @@ interface PlayerSeatState {
   seatToken: string;
   socketId: string | null;
   connected: boolean;
+  reconnectDeadlineAt: number | null;
 }
 
 export interface RecordedMoveAck {
@@ -94,12 +95,14 @@ export function createRoomState(options: RoomCreateOptions): RoomState {
       X: {
         seatToken: options.playerXSeatToken,
         socketId: options.playerXSocketId,
-        connected: true
+        connected: true,
+        reconnectDeadlineAt: null
       },
       O: {
         seatToken: options.playerOSeatToken,
         socketId: options.playerOSocketId,
-        connected: true
+        connected: true,
+        reconnectDeadlineAt: null
       }
     },
     clientMoveAcks: {
@@ -157,6 +160,11 @@ function clearRecordedMoveAcks(room: RoomState): void {
   room.clientMoveAckOrder.O = [];
 }
 
+function clearReconnectDeadlines(room: RoomState): void {
+  room.players.X.reconnectDeadlineAt = null;
+  room.players.O.reconnectDeadlineAt = null;
+}
+
 export function snapshotFromRoomState(room: RoomState): RoomSnapshot {
   return {
     roomId: room.roomId,
@@ -169,10 +177,12 @@ export function snapshotFromRoomState(room: RoomState): RoomSnapshot {
     winningLine: room.winningLine,
     players: {
       X: {
-        connected: room.players.X.connected
+        connected: room.players.X.connected,
+        reconnectDeadlineAt: room.players.X.reconnectDeadlineAt
       },
       O: {
-        connected: room.players.O.connected
+        connected: room.players.O.connected,
+        reconnectDeadlineAt: room.players.O.reconnectDeadlineAt
       }
     }
   };
@@ -196,6 +206,50 @@ export function setPlayerConnection(
 ): void {
   room.players[mark].socketId = socketId;
   room.players[mark].connected = connected;
+  if (connected) {
+    room.players[mark].reconnectDeadlineAt = null;
+  }
+}
+
+export function startReconnectDeadline(
+  room: RoomState,
+  mark: PlayerMark,
+  nowMs: number,
+  timeoutMs: number
+): number | null {
+  if (room.winner || room.players[mark].connected) {
+    return null;
+  }
+
+  const deadlineAt = nowMs + timeoutMs;
+  room.players[mark].reconnectDeadlineAt = deadlineAt;
+  return deadlineAt;
+}
+
+export function clearReconnectDeadline(room: RoomState, mark: PlayerMark): void {
+  room.players[mark].reconnectDeadlineAt = null;
+}
+
+export function applyDisconnectForfeitIfExpired(
+  room: RoomState,
+  disconnectedMark: PlayerMark,
+  nowMs: number
+): boolean {
+  if (room.winner) {
+    return false;
+  }
+
+  const disconnectedSeat = room.players[disconnectedMark];
+  const deadlineAt = disconnectedSeat.reconnectDeadlineAt;
+  if (disconnectedSeat.connected || deadlineAt === null || deadlineAt > nowMs) {
+    return false;
+  }
+
+  room.winner = disconnectedMark === "X" ? "O" : "X";
+  room.winningLine = null;
+  room.rematchVotes.clear();
+  clearReconnectDeadlines(room);
+  return true;
 }
 
 export function markForSocket(room: RoomState, socketId: string): PlayerMark | null {
@@ -251,12 +305,14 @@ export function applyMoveToRoom(
   if (winResult.winner) {
     room.winner = winResult.winner;
     room.winningLine = winResult.winningLine;
+    clearReconnectDeadlines(room);
     return { accepted: true };
   }
 
   if (boardIsFull(room.board)) {
     room.winner = "draw";
     room.winningLine = null;
+    clearReconnectDeadlines(room);
     return { accepted: true };
   }
 
@@ -288,6 +344,7 @@ export function requestRematch(room: RoomState, mark: PlayerMark): RematchReques
   room.winningLine = null;
   room.moveCount = 0;
   room.rematchVotes.clear();
+  clearReconnectDeadlines(room);
   clearRecordedMoveAcks(room);
 
   return {

@@ -26,6 +26,7 @@ interface HUDProps {
   averageFps: number | null;
   myConnected: boolean;
   opponentConnected: boolean;
+  opponentReconnectRemainingMs: number | null;
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
   onPrimaryAction: () => void;
   onToggleAdvanced: () => void;
@@ -80,6 +81,7 @@ export function HUD({
   averageFps,
   myConnected,
   opponentConnected,
+  opponentReconnectRemainingMs,
   connectionStatus,
   onPrimaryAction,
   onToggleAdvanced,
@@ -91,12 +93,16 @@ export function HUD({
   onLeave
 }: HUDProps) {
   const isMobileLayout = layoutMode === "mobile";
-  const canRematch = Boolean(winner);
+  const canRematch = Boolean(winner) && opponentConnected;
   const turnText = winner
     ? winnerText(winner, myMark)
     : turn === myMark
       ? "轮到你落子"
       : "等待对手落子";
+  const reconnectDeadlineSeconds =
+    opponentReconnectRemainingMs === null ? null : Math.max(0, Math.ceil(opponentReconnectRemainingMs / 1000));
+  const showReconnectDeadline = !winner && reconnectDeadlineSeconds !== null && !opponentConnected;
+  const reconnectUrgent = reconnectDeadlineSeconds !== null && reconnectDeadlineSeconds <= 10;
   const advancedToggleLabel = advancedOpen
     ? "收起操作面板"
     : isMobileLayout
@@ -132,6 +138,11 @@ export function HUD({
           </>
         ) : null}
         <div className="hud-turn">{turnText}</div>
+        {showReconnectDeadline ? (
+          <div className={`hud-reconnect-banner ${reconnectUrgent ? "urgent" : ""}`}>
+            对手掉线，{reconnectDeadlineSeconds}s 内重连，否则自动判负
+          </div>
+        ) : null}
         <SmartActionBar action={smartAction} onAction={onPrimaryAction} layoutMode={layoutMode} />
         <div className="hud-actions">
           <button className="hud-button ghost" type="button" onClick={onToggleAdvanced}>

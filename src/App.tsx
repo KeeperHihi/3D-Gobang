@@ -12,6 +12,7 @@ import {
   DEFAULT_QUALITY_MODE,
   type QualityMode
 } from "./game/interaction/qualityProfile";
+import { validateContinueMatchRequest } from "./game/interaction/continueMatch";
 import type {
   Coordinate3D,
   MoveAckPayload,
@@ -182,6 +183,7 @@ export default function App() {
     });
 
     socket.on("game:error", ({ message }) => {
+      setIsMatching(false);
       setErrorMessage(message);
       setPendingMove(null);
     });
@@ -293,6 +295,38 @@ export default function App() {
     });
   };
 
+  const requestContinueMatch = () => {
+    const validation = validateContinueMatchRequest({
+      hasSession: session !== null,
+      hasSnapshot: snapshot !== null,
+      isConnected: socket.connected
+    });
+
+    if (!validation.ok) {
+      if (validation.reason === "offline") {
+        setErrorMessage("正在连接服务器，请稍后重试");
+      }
+      return;
+    }
+
+    if (!session || !snapshot) {
+      return;
+    }
+
+    setPendingMove(null);
+    setErrorMessage(null);
+    setSession(null);
+    setSnapshot(null);
+    setIsMatching(true);
+    sessionRef.current = null;
+    persistSession(null);
+
+    socket.emit("queue:continue", {
+      roomId: session.roomId,
+      seatToken: session.seatToken
+    });
+  };
+
   const leaveRoom = () => {
     sessionRef.current = null;
     persistSession(null);
@@ -333,6 +367,7 @@ export default function App() {
       errorMessage={errorMessage}
       onPlace={placePiece}
       onRematch={requestRematch}
+      onContinueMatch={requestContinueMatch}
       onLeave={leaveRoom}
     />
   );

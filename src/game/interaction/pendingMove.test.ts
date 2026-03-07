@@ -18,10 +18,12 @@ function createSnapshot(partial?: Partial<RoomSnapshot>): RoomSnapshot {
     winningLine: null,
     players: {
       X: {
-        connected: true
+        connected: true,
+        reconnectDeadlineAt: null
       },
       O: {
-        connected: true
+        connected: true,
+        reconnectDeadlineAt: null
       }
     },
     ...partial

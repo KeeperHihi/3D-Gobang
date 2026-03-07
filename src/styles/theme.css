@@ -196,6 +196,32 @@ body {
   font-weight: 600;
 }
 
+.hud-reconnect-banner {
+  margin-bottom: 10px;
+  border-radius: 12px;
+  padding: 9px 11px;
+  font-size: 12px;
+  color: #ffeec9;
+  border: 1px solid rgba(255, 194, 99, 0.45);
+  background: linear-gradient(90deg, rgba(116, 67, 25, 0.34), rgba(161, 85, 31, 0.22));
+}
+
+.hud-reconnect-banner.urgent {
+  color: #fff4de;
+  border-color: rgba(255, 148, 148, 0.68);
+  background: linear-gradient(90deg, rgba(154, 35, 35, 0.44), rgba(161, 81, 30, 0.32));
+  animation: reconnect-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes reconnect-pulse {
+  from {
+    filter: saturate(0.95) brightness(0.98);
+  }
+  to {
+    filter: saturate(1.1) brightness(1.1);
+  }
+}
+
 .smart-action-bar {
   margin-bottom: 10px;
 }
@@ -249,6 +275,14 @@ body {
 .smart-action-button.rematch {
   color: #0a1a2d;
   background: linear-gradient(90deg, #7df4ff, #a7d5ff);
+}
+
+.smart-action-button.continue-match {
+  color: #03192d;
+  background: linear-gradient(90deg, #8ff7ff, #80c6ff 52%, #98a8ff);
+  box-shadow:
+    0 12px 30px rgba(106, 210, 255, 0.36),
+    0 0 22px rgba(100, 191, 255, 0.28);
 }
 
 .smart-action-button.pending {

@@ -17,6 +17,9 @@ function actionClassName(actionType: SmartActionState["actionType"]): string {
   if (actionType === "rematch") {
     return "smart-action-button rematch";
   }
+  if (actionType === "continueMatch") {
+    return "smart-action-button continue-match";
+  }
   if (actionType === "pending") {
     return "smart-action-button pending";
   }

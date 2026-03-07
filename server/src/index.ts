@@ -10,14 +10,16 @@ import type {
   ServerToClientEvents
 } from "../../shared/network/protocol";
 import {
+  applyDisconnectForfeitIfExpired,
   applyMoveToRoom,
+  clearReconnectDeadline,
   createRoomState,
   getRecordedMoveAck,
-  markForSeatToken,
   markForSocket,
   recordMoveAck,
   requestRematch,
   setPlayerConnection,
+  startReconnectDeadline,
   snapshotFromRoomState,
   type RoomState
 } from "./roomState";
@@ -53,9 +55,30 @@ const matchmaker = new Matchmaker();
 const rooms = new Map<string, RoomState>();
 const seatTokenMap = new Map<string, { roomId: string; mark: PlayerMark }>();
 const socketRoomMap = new Map<string, string>();
+const reconnectForfeitTimers = new Map<string, NodeJS.Timeout>();
+const RECONNECT_GRACE_PERIOD_MS = 30_000;
 
 function createRoomId(): string {
   return randomUUID().slice(0, 8);
+}
+
+function reconnectTimerKey(roomId: string, mark: PlayerMark): string {
+  return `${roomId}:${mark}`;
+}
+
+function clearReconnectForfeitTimer(roomId: string, mark: PlayerMark): void {
+  const key = reconnectTimerKey(roomId, mark);
+  const timer = reconnectForfeitTimers.get(key);
+  if (!timer) {
+    return;
+  }
+  clearTimeout(timer);
+  reconnectForfeitTimers.delete(key);
+}
+
+function clearReconnectForfeitTimersForRoom(roomId: string): void {
+  clearReconnectForfeitTimer(roomId, "X");
+  clearReconnectForfeitTimer(roomId, "O");
 }
 
 function emitRoomUpdate(roomId: string): void {
@@ -68,6 +91,40 @@ function emitRoomUpdate(roomId: string): void {
   });
 }
 
+function scheduleReconnectForfeit(roomId: string, mark: PlayerMark): void {
+  const room = rooms.get(roomId);
+  if (!room) {
+    return;
+  }
+
+  const nowMs = Date.now();
+  const deadlineAt = startReconnectDeadline(room, mark, nowMs, RECONNECT_GRACE_PERIOD_MS);
+  if (deadlineAt === null) {
+    return;
+  }
+
+  clearReconnectForfeitTimer(roomId, mark);
+
+  const timeout = setTimeout(() => {
+    reconnectForfeitTimers.delete(reconnectTimerKey(roomId, mark));
+
+    const currentRoom = rooms.get(roomId);
+    if (!currentRoom) {
+      return;
+    }
+
+    const forfeited = applyDisconnectForfeitIfExpired(currentRoom, mark, Date.now());
+    if (!forfeited) {
+      return;
+    }
+
+    emitRoomUpdate(roomId);
+    detachRoomIfAbandoned(roomId);
+  }, Math.max(0, deadlineAt - nowMs));
+
+  reconnectForfeitTimers.set(reconnectTimerKey(roomId, mark), timeout);
+}
+
 function detachRoomIfAbandoned(roomId: string): void {
   const room = rooms.get(roomId);
   if (!room) {
@@ -78,6 +135,7 @@ function detachRoomIfAbandoned(roomId: string): void {
   }
   seatTokenMap.delete(room.players.X.seatToken);
   seatTokenMap.delete(room.players.O.seatToken);
+  clearReconnectForfeitTimersForRoom(roomId);
   rooms.delete(roomId);
 }
 
@@ -100,12 +158,17 @@ function resolveRoomAndMark(
   roomId: string,
   seatToken: string
 ): { room: RoomState; mark: PlayerMark } | null {
+  const tokenRecord = seatTokenMap.get(seatToken);
+  if (!tokenRecord || tokenRecord.roomId !== roomId) {
+    return null;
+  }
+
   const room = rooms.get(roomId);
   if (!room) {
     return null;
   }
-  const mark = markForSeatToken(room, seatToken);
-  if (!mark) {
+  const mark = tokenRecord.mark;
+  if (room.players[mark].seatToken !== seatToken) {
     return null;
   }
   return {
@@ -169,6 +232,21 @@ function handleMatchPair(pair: { firstSocketId: string; secondSocketId: string }
   });
 }
 
+function enqueueSocketForMatch(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>
+): void {
+  const pair = matchmaker.enqueue(socket.id);
+  if (!pair) {
+    socket.emit("queue:joined", {
+      waitingForOpponent: true,
+      queueSize: matchmaker.waitingCount
+    });
+    return;
+  }
+
+  handleMatchPair(pair);
+}
+
 io.on("connection", (socket) => {
   socket.on("queue:join", () => {
     if (socketRoomMap.has(socket.id)) {
@@ -176,16 +254,39 @@ io.on("connection", (socket) => {
       return;
     }
 
-    const pair = matchmaker.enqueue(socket.id);
-    if (!pair) {
-      socket.emit("queue:joined", {
-        waitingForOpponent: true,
-        queueSize: matchmaker.waitingCount
-      });
+    enqueueSocketForMatch(socket);
+  });
+
+  socket.on("queue:continue", ({ roomId, seatToken }) => {
+    const resolved = resolveRoomAndMark(roomId, seatToken);
+    if (!resolved) {
+      emitGameError(socket, "无效继续匹配请求");
       return;
     }
 
-    handleMatchPair(pair);
+    if (!resolved.room.winner) {
+      emitGameError(socket, "对局尚未结束，无法继续匹配");
+      return;
+    }
+
+    const assignedSocketId = resolved.room.players[resolved.mark].socketId;
+    if (assignedSocketId && assignedSocketId !== socket.id) {
+      emitGameError(socket, "该席位已在其他设备在线");
+      return;
+    }
+
+    clearReconnectForfeitTimer(roomId, resolved.mark);
+    clearReconnectDeadline(resolved.room, resolved.mark);
+
+    setPlayerConnection(resolved.room, resolved.mark, null, false);
+    socket.leave(roomId);
+    socketRoomMap.delete(socket.id);
+    seatTokenMap.delete(resolved.room.players[resolved.mark].seatToken);
+    emitRoomUpdate(roomId);
+    detachRoomIfAbandoned(roomId);
+
+    matchmaker.remove(socket.id);
+    enqueueSocketForMatch(socket);
   });
 
   socket.on("room:resume", ({ roomId, seatToken }) => {
@@ -216,6 +317,8 @@ io.on("connection", (socket) => {
     }
 
     setPlayerConnection(room, mark, socket.id, true);
+    clearReconnectForfeitTimer(roomId, mark);
+    clearReconnectDeadline(room, mark);
     attachSocketToRoom(socket, roomId);
 
     socket.emit("room:resumed", {
@@ -278,6 +381,8 @@ io.on("connection", (socket) => {
     }
 
     setPlayerConnection(room, mark, socket.id, true);
+    clearReconnectForfeitTimer(roomId, mark);
+    clearReconnectDeadline(room, mark);
     attachSocketToRoom(socket, roomId);
 
     const applyResult = applyMoveToRoom(room, mark, { x, y, z });
@@ -319,6 +424,8 @@ io.on("connection", (socket) => {
     }
 
     setPlayerConnection(resolved.room, resolved.mark, socket.id, true);
+    clearReconnectForfeitTimer(roomId, resolved.mark);
+    clearReconnectDeadline(resolved.room, resolved.mark);
     attachSocketToRoom(socket, roomId);
 
     const rematchResult = requestRematch(resolved.room, resolved.mark);
@@ -349,7 +456,13 @@ io.on("connection", (socket) => {
       return;
     }
 
+    clearReconnectForfeitTimer(roomId, mark);
     setPlayerConnection(room, mark, null, false);
+    if (room.winner) {
+      clearReconnectDeadline(room, mark);
+    } else {
+      scheduleReconnectForfeit(roomId, mark);
+    }
     emitRoomUpdate(roomId);
     detachRoomIfAbandoned(roomId);
   });

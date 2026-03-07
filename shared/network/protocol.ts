@@ -16,9 +16,11 @@ export interface MoveRecord extends Coordinate3D {
 export interface RoomPlayersSnapshot {
   X: {
     connected: boolean;
+    reconnectDeadlineAt: number | null;
   };
   O: {
     connected: boolean;
+    reconnectDeadlineAt: number | null;
   };
 }
 
@@ -69,6 +71,11 @@ export interface QueueJoinPayload {
   displayName?: string;
 }
 
+export interface QueueContinuePayload {
+  roomId: string;
+  seatToken: string;
+}
+
 export interface PlaceMovePayload {
   roomId: string;
   seatToken: string;
@@ -102,6 +109,7 @@ export interface RequestStatePayload {
 
 export interface ClientToServerEvents {
   "queue:join": (payload: QueueJoinPayload) => void;
+  "queue:continue": (payload: QueueContinuePayload) => void;
   "game:place": (payload: PlaceMovePayload) => void;
   "game:rematch": (payload: RematchPayload) => void;
   "room:resume": (payload: ResumePayload) => void;

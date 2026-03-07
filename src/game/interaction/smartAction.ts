@@ -10,6 +10,7 @@ export type SmartActionType =
   | "pending"
   | "manual"
   | "wait"
+  | "continueMatch"
   | "rematch"
   | "connection";
 
@@ -28,6 +29,7 @@ interface SmartActionInput {
   connectionStatus: ConnectionStatus;
   assistEnabled: boolean;
   hasPendingMove: boolean;
+  canContinueMatch: boolean;
 }
 
 function connectionReason(status: ConnectionStatus): string {
@@ -51,7 +53,8 @@ function winnerReason(winner: Winner, myMark: PlayerMark): string {
 }
 
 export function createSmartActionState(input: SmartActionInput): SmartActionState {
-  const { snapshot, myMark, hints, connectionStatus, assistEnabled, hasPendingMove } = input;
+  const { snapshot, myMark, hints, connectionStatus, assistEnabled, hasPendingMove, canContinueMatch } =
+    input;
 
   if (connectionStatus !== "online") {
     return {
@@ -64,6 +67,16 @@ export function createSmartActionState(input: SmartActionInput): SmartActionStat
   }
 
   if (snapshot.winner) {
+    if (canContinueMatch) {
+      return {
+        actionType: "continueMatch",
+        label: "继续匹配",
+        enabled: true,
+        reason: "对手掉线已结算，点击一键继续匹配",
+        target: null
+      };
+    }
+
     return {
       actionType: "rematch",
       label: "再来一局",

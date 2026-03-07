@@ -30,6 +30,7 @@ interface GameRoomPageProps {
   errorMessage: string | null;
   onPlace: (coordinate: Coordinate3D) => void;
   onRematch: () => void;
+  onContinueMatch: () => void;
   onLeave: () => void;
 }
 
@@ -57,6 +58,7 @@ export function GameRoomPage({
   errorMessage,
   onPlace,
   onRematch,
+  onContinueMatch,
   onLeave
 }: GameRoomPageProps) {
   const lastMoveNumberRef = useRef(0);
@@ -76,9 +78,13 @@ export function GameRoomPage({
   );
   const [qualityLastSwitchAtMs, setQualityLastSwitchAtMs] = useState<number>(0);
   const [averageFps, setAverageFps] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const opponentMark: PlayerMark = myMark === "X" ? "O" : "X";
+  const opponentReconnectDeadlineAt = snapshot.players[opponentMark].reconnectDeadlineAt;
   const hasPendingMove = pendingMove !== null;
   const canPlace =
     snapshot.turn === myMark && !snapshot.winner && connectionStatus === "online" && !hasPendingMove;
+  const canContinueMatch = Boolean(snapshot.winner && !snapshot.players[opponentMark].connected);
   const boardCells = snapshot.board as BoardCell[];
   const hintsWinLinesIndex = useMemo(
     () => createWinLinesIndex(snapshot.size, snapshot.connect),
@@ -125,10 +131,12 @@ export function GameRoomPage({
         hints: hintMovesForBoard,
         connectionStatus,
         assistEnabled,
-        hasPendingMove
+        hasPendingMove,
+        canContinueMatch
       }),
     [
       assistEnabled,
+      canContinueMatch,
       connectionStatus,
       hasPendingMove,
       hintMovesForBoard,
@@ -138,9 +146,19 @@ export function GameRoomPage({
     ]
   );
   const qualityProfile = useMemo(() => getQualityProfile(qualityLevel), [qualityLevel]);
+  const opponentReconnectRemainingMs = useMemo(() => {
+    if (snapshot.winner || opponentReconnectDeadlineAt === null) {
+      return null;
+    }
+    return Math.max(0, opponentReconnectDeadlineAt - nowMs);
+  }, [nowMs, opponentReconnectDeadlineAt, snapshot.winner]);
 
   const handlePrimaryAction = useCallback(() => {
     if (!smartAction.enabled) {
+      return;
+    }
+    if (smartAction.actionType === "continueMatch") {
+      onContinueMatch();
       return;
     }
     if (smartAction.actionType === "rematch") {
@@ -157,7 +175,7 @@ export function GameRoomPage({
       }
       onPlace(smartAction.target);
     }
-  }, [onPlace, onRematch, smartAction]);
+  }, [onContinueMatch, onPlace, onRematch, smartAction]);
 
   const handleLayerStep = (step: -1 | 1) => {
     setFocusMode("manual");
@@ -247,6 +265,13 @@ export function GameRoomPage({
   }, []);
 
   useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     const nowMs = Date.now();
     const nextLevel = selectQualityLevel({
       mode: qualityMode,
@@ -318,7 +343,8 @@ export function GameRoomPage({
         qualityLevel={qualityLevel}
         averageFps={averageFps}
         myConnected={snapshot.players[myMark].connected}
-        opponentConnected={snapshot.players[myMark === "X" ? "O" : "X"].connected}
+        opponentConnected={snapshot.players[opponentMark].connected}
+        opponentReconnectRemainingMs={opponentReconnectRemainingMs}
         connectionStatus={connectionStatus}
         onPrimaryAction={handlePrimaryAction}
         onToggleAdvanced={handleToggleAdvanced}
