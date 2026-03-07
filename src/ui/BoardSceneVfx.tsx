@@ -1,4 +1,4 @@
-import { Line, Sparkles, Stars } from "@react-three/drei";
+import { Sparkles, Stars } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import type { Mesh } from "three";
@@ -9,8 +9,6 @@ interface BoardSceneVfxProps {
   vfxStage: BoardSceneVfxStage;
   qualityProfile: QualityProfile;
   ambientMix: number;
-  linePoints: [number, number, number][] | null;
-  winLineCinematicActive: boolean;
   winningPulsePoints: [number, number, number][];
 }
 
@@ -46,8 +44,6 @@ export function BoardSceneVfx({
   vfxStage,
   qualityProfile,
   ambientMix,
-  linePoints,
-  winLineCinematicActive,
   winningPulsePoints
 }: BoardSceneVfxProps) {
   const starsCount = useMemo(
@@ -88,16 +84,6 @@ export function BoardSceneVfx({
             />
           ))
         : null}
-
-      {linePoints ? (
-        <Line
-          points={linePoints}
-          color="#fff960"
-          lineWidth={winLineCinematicActive ? 6.8 : 5.5}
-          transparent
-          opacity={winLineCinematicActive ? 1 : 0.95}
-        />
-      ) : null}
     </>
   );
 }

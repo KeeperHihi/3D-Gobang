@@ -13,6 +13,7 @@ import {
   resolveBoardInstanceCell,
   type BoardInstanceBucket
 } from "../game/interaction/boardInstancing";
+import { createWinningLinePositionBuffer } from "../game/interaction/winningLineGeometry";
 import { evaluateLayerTapAssist } from "../game/interaction/layerTapAssist";
 
 const BOARD_SPACING = 1.4;
@@ -341,6 +342,10 @@ function BoardSceneComponent({
       return toWorldPosition(size, coordinate);
     });
   }, [size, winningLine]);
+  const coreWinningLineBuffer = useMemo(
+    () => createWinningLinePositionBuffer(linePoints),
+    [linePoints]
+  );
   const winningPulsePoints = useMemo(() => {
     if (!winLineCinematicActive || visibleWinningPulseIndexes.length === 0) {
       return [] as [number, number, number][];
@@ -434,7 +439,7 @@ function BoardSceneComponent({
   }, [ambientEnabled]);
 
   const ambientMix = ambientEnabled ? ambientReveal : 0;
-  const shouldMountVfxLayer = vfxStage !== "off" || linePoints !== null;
+  const shouldMountVfxLayer = vfxStage !== "off";
 
   return (
     <div
@@ -493,8 +498,6 @@ function BoardSceneComponent({
               vfxStage={vfxStage}
               qualityProfile={qualityProfile}
               ambientMix={ambientMix}
-              linePoints={linePoints}
-              winLineCinematicActive={winLineCinematicActive}
               winningPulsePoints={winningPulsePoints}
             />
           </Suspense>
@@ -633,6 +636,22 @@ function BoardSceneComponent({
                 metalness={0.26}
               />
             </mesh>
+          ) : null}
+
+          {coreWinningLineBuffer ? (
+            <line>
+              <bufferGeometry>
+                <bufferAttribute
+                  attach="attributes-position"
+                  args={[coreWinningLineBuffer, 3]}
+                />
+              </bufferGeometry>
+              <lineBasicMaterial
+                color="#fff960"
+                transparent
+                opacity={winLineCinematicActive ? 1 : 0.94}
+              />
+            </line>
           ) : null}
 
           {opponentMoveBlinkPosition && opponentMoveCue ? (
