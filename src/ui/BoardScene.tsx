@@ -151,6 +151,40 @@ function OpponentMoveBlink({ position }: OpponentMoveBlinkProps) {
   );
 }
 
+interface HoverCellOverlayProps {
+  position: [number, number, number];
+  color: string;
+  emphasized: boolean;
+}
+
+function HoverCellOverlay({ position, color, emphasized }: HoverCellOverlayProps) {
+  const ringRef = useRef<Mesh>(null);
+  const ringScale = emphasized ? 1.19 : 1.12;
+  const glowScale = emphasized ? 1.13 : 1.08;
+
+  useFrame(({ clock }) => {
+    const ringMesh = ringRef.current;
+    if (!ringMesh) {
+      return;
+    }
+    const pulse = 1 + Math.sin(clock.getElapsedTime() * 6.2) * 0.04;
+    ringMesh.scale.setScalar(ringScale * pulse);
+  });
+
+  return (
+    <group position={position}>
+      <mesh scale={glowScale}>
+        <sphereGeometry args={[0.31, 18, 18]} />
+        <meshBasicMaterial color={color} transparent opacity={0.17} depthWrite={false} />
+      </mesh>
+      <mesh ref={ringRef} scale={ringScale}>
+        <torusGeometry args={[0.44, 0.042, 16, 44]} />
+        <meshBasicMaterial color={color} transparent opacity={0.78} depthWrite={false} />
+      </mesh>
+    </group>
+  );
+}
+
 function layerToWorldZ(size: number, layer: number): number {
   const centerOffset = (size - 1) / 2;
   return (layer - centerOffset) * BOARD_SPACING;
@@ -314,6 +348,24 @@ export function BoardScene({
     }
     return toWorldPosition(size, opponentMoveCue.coordinate);
   }, [opponentMoveCue, size]);
+  const hoveredOverlay = useMemo(() => {
+    if (hoveredIndex === null || !canPlace) {
+      return null;
+    }
+    if (board[hoveredIndex] !== 0) {
+      return null;
+    }
+    const coordinate = fromLinearIndex(hoveredIndex, size);
+    if (focusLayer !== null && coordinate.z !== focusLayer) {
+      return null;
+    }
+    const hint = hintMap.get(hoveredIndex);
+    return {
+      position: toWorldPosition(size, coordinate),
+      color: hint?.color ?? "#66e7ff",
+      emphasized: hint?.rank === 0
+    };
+  }, [board, canPlace, focusLayer, hintMap, hoveredIndex, size]);
   const boardInstanceLayout = useMemo(
     () =>
       buildBoardInstanceLayout({
@@ -321,7 +373,6 @@ export function BoardScene({
         size,
         canPlace,
         focusLayer,
-        hoveredIndex,
         nonFocusLayerOpacity,
         emptyCellOpacityScale: qualityProfile.emptyCellOpacityScale,
         winningIndexes: winningSet,
@@ -333,7 +384,6 @@ export function BoardScene({
       size,
       canPlace,
       focusLayer,
-      hoveredIndex,
       nonFocusLayerOpacity,
       qualityProfile.emptyCellOpacityScale,
       winningSet,
@@ -476,7 +526,9 @@ export function BoardScene({
                         if (!hit) {
                           return;
                         }
-                        setHoveredIndex(hit.boardIndex);
+                        setHoveredIndex((current) =>
+                          current === hit.boardIndex ? current : hit.boardIndex
+                        );
                       }
                     : undefined
                 }
@@ -488,7 +540,9 @@ export function BoardScene({
                         if (!hit) {
                           return;
                         }
-                        setHoveredIndex(hit.boardIndex);
+                        setHoveredIndex((current) =>
+                          current === hit.boardIndex ? current : hit.boardIndex
+                        );
                       }
                     : undefined
                 }
@@ -539,6 +593,14 @@ export function BoardScene({
               />
             );
           })}
+
+          {hoveredOverlay ? (
+            <HoverCellOverlay
+              position={hoveredOverlay.position}
+              color={hoveredOverlay.color}
+              emphasized={hoveredOverlay.emphasized}
+            />
+          ) : null}
 
           {visibleHintMoves.map((hint, rank) => (
             <HintPulse

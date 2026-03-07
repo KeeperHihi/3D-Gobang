@@ -16,7 +16,6 @@ function createInput(overrides?: Partial<BuildBoardInstanceLayoutInput>): BuildB
     size,
     canPlace: true,
     focusLayer: 1,
-    hoveredIndex: 12,
     nonFocusLayerOpacity: 0.4,
     emptyCellOpacityScale: 1,
     winningIndexes: new Set([1, 12]),
@@ -109,7 +108,6 @@ describe("buildBoardInstanceLayout", () => {
         size,
         board: Array.from({ length: size * size * size }, () => 0),
         focusLayer: 2,
-        hoveredIndex: null,
         hintMap: new Map(),
         winningIndexes: new Set()
       })
@@ -121,5 +119,22 @@ describe("buildBoardInstanceLayout", () => {
 
     expect(interactiveEntries).toHaveLength(size * size);
     expect(interactiveEntries.every((entry) => entry.coordinate.z === 2)).toBe(true);
+  });
+
+  it("keeps interactive empty-cell style static without hover amplification", () => {
+    const layout = buildBoardInstanceLayout(
+      createInput({
+        board: Array.from({ length: 8 }, () => 0),
+        size: 2,
+        focusLayer: null,
+        hintMap: new Map(),
+        winningIndexes: new Set()
+      })
+    );
+    const interactiveBucket = layout.buckets.find((bucket) => bucket.style.interactive);
+    expect(interactiveBucket).toBeDefined();
+    expect(interactiveBucket?.style.scale).toBe(1);
+    expect(interactiveBucket?.style.opacity).toBe(0.24);
+    expect(interactiveBucket?.style.emissiveIntensity).toBe(0.4);
   });
 });
