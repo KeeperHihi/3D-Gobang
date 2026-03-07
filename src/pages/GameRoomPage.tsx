@@ -45,6 +45,10 @@ import {
   TURN_NUDGE_PERMISSION_SNOOZE_MS,
   type TurnNudgeNotificationPermission
 } from "../game/interaction/turnNudgePermission";
+import {
+  createFocusGuardTurnKey,
+  evaluateFocusGuard
+} from "../game/interaction/focusGuard";
 import { evaluateHudSpotlight } from "../game/interaction/hudSpotlight";
 import { evaluateLayerQuickNav } from "../game/interaction/layerQuickNav";
 import {
@@ -147,6 +151,8 @@ export function GameRoomPage({
   const autoContinueCancelledRoundKeyRef = useRef<string | null>(null);
   const winLineDirectorTriggeredRoundKeyRef = useRef<string | null>(null);
   const winLineDirectorTimerRef = useRef<number | null>(null);
+  const focusGuardTriggeredTurnKeyRef = useRef<string | null>(null);
+  const focusGuardWasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
   const layerNavLastInputAtMsRef = useRef(0);
   const layerNavLastRotateAtMsRef = useRef(0);
   const turnNudgeTriggeredTurnKeyRef = useRef<string | null>(null);
@@ -342,6 +348,16 @@ export function GameRoomPage({
     }
     return Math.max(0, turnDeadlineAt - nowMs);
   }, [nowMs, snapshot.winner, turnDeadlineAt]);
+  const focusGuardTurnKey = useMemo(
+    () =>
+      createFocusGuardTurnKey({
+        roomId: snapshot.roomId,
+        turn: snapshot.turn,
+        lastMoveNumber: snapshot.lastMove?.moveNumber ?? null,
+        turnDeadlineAt
+      }),
+    [snapshot.lastMove?.moveNumber, snapshot.roomId, snapshot.turn, turnDeadlineAt]
+  );
   const turnNudgeTurnKey = useMemo(
     () =>
       createTurnNudgeTurnKey({
@@ -691,6 +707,7 @@ export function GameRoomPage({
   }, []);
 
   const handleLayerStep = useCallback((step: -1 | 1) => {
+    layerNavLastInputAtMsRef.current = Date.now();
     setFocusMode("manual");
     setFocusLayer((current) => clampLayer(current + step, snapshot.size));
   }, [snapshot.size]);
@@ -704,6 +721,7 @@ export function GameRoomPage({
     if (layerQuickNav.smartJumpLayer === focusLayer) {
       return;
     }
+    layerNavLastInputAtMsRef.current = Date.now();
     setFocusMode("manual");
     setFocusLayer(layerQuickNav.smartJumpLayer);
   }, [focusLayer, layerQuickNav.smartJumpLayer]);
@@ -724,7 +742,6 @@ export function GameRoomPage({
       if ((step === 1 && !layerQuickNav.canGoNext) || (step === -1 && !layerQuickNav.canGoPrev)) {
         return false;
       }
-      layerNavLastInputAtMsRef.current = now;
       handleLayerStep(step);
       return true;
     },
@@ -743,7 +760,6 @@ export function GameRoomPage({
       if (Math.abs(deltaY) < 32) {
         return;
       }
-      layerNavLastInputAtMsRef.current = now;
       handleLayerStep(deltaY < 0 ? 1 : -1);
     },
     [handleLayerStep]
@@ -836,8 +852,10 @@ export function GameRoomPage({
     autoContinueTriggeredRoundKeyRef.current = null;
     autoContinueCancelledRoundKeyRef.current = null;
     winLineDirectorTriggeredRoundKeyRef.current = null;
+    focusGuardTriggeredTurnKeyRef.current = null;
     turnNudgeTriggeredTurnKeyRef.current = null;
     wasMyTurnRef.current = snapshot.turn === myMark && snapshot.winner === null;
+    focusGuardWasMyTurnRef.current = snapshot.turn === myMark && snapshot.winner === null;
     clearTurnNudgeTitle();
     stopWinLineCinematic();
     layerNavLastInputAtMsRef.current = 0;
@@ -975,6 +993,42 @@ export function GameRoomPage({
     setAutoContinueCountdownStartedAtMs(null);
     handleContinueMatchAction();
   }, [autoContinueDecision.shouldAutoContinue, autoContinueRoundKey, handleContinueMatchAction]);
+
+  useEffect(() => {
+    const lastManualInputAtMs = Math.max(
+      layerNavLastInputAtMsRef.current,
+      layerNavLastRotateAtMsRef.current
+    );
+    const focusGuardDecision = evaluateFocusGuard({
+      focusMode,
+      currentLayer: focusLayer,
+      autoFocusLayer,
+      boardSize: snapshot.size,
+      isMyTurn,
+      wasMyTurn: focusGuardWasMyTurnRef.current,
+      turnRemainingMs,
+      lastManualInputAtMs: lastManualInputAtMs > 0 ? lastManualInputAtMs : null,
+      nowMs,
+      alreadyTriggeredThisTurn: focusGuardTriggeredTurnKeyRef.current === focusGuardTurnKey
+    });
+
+    if (focusGuardDecision.shouldRestoreAuto) {
+      focusGuardTriggeredTurnKeyRef.current = focusGuardTurnKey;
+      setFocusMode("auto");
+      setFocusLayer(focusGuardDecision.targetLayer);
+    }
+
+    focusGuardWasMyTurnRef.current = isMyTurn;
+  }, [
+    autoFocusLayer,
+    focusGuardTurnKey,
+    focusLayer,
+    focusMode,
+    isMyTurn,
+    nowMs,
+    snapshot.size,
+    turnRemainingMs
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
