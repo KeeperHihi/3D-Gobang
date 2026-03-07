@@ -204,6 +204,26 @@ body {
   color: rgba(161, 236, 255, 0.9);
 }
 
+.match-warmup-status.idle {
+  color: rgba(173, 226, 255, 0.82);
+}
+
+.match-warmup-status.warming {
+  color: rgba(161, 236, 255, 0.94);
+}
+
+.match-warmup-status.ready {
+  color: rgba(170, 255, 214, 0.92);
+}
+
+.match-warmup-status.failed {
+  color: rgba(255, 214, 171, 0.92);
+}
+
+.match-warmup-actions {
+  margin-top: 2px;
+}
+
 .match-queue-panel {
   display: flex;
   gap: 12px;

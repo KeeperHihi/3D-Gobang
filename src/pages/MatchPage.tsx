@@ -10,6 +10,8 @@ interface MatchPageProps {
   isRecoveringSession: boolean;
   onStartMatch: () => void;
   onCancelMatch: () => void;
+  onPrepareArena: () => void;
+  onRetryWarmup: () => void;
 }
 
 function formatWaitTime(totalSeconds: number): string {
@@ -26,7 +28,9 @@ export function MatchPage({
   sceneWarmupStatus,
   isRecoveringSession,
   onStartMatch,
-  onCancelMatch
+  onCancelMatch,
+  onPrepareArena,
+  onRetryWarmup
 }: MatchPageProps) {
   const isQueuing = matchPhase === "queuing";
   const guide = createMatchQueueGuide({
@@ -38,6 +42,8 @@ export function MatchPage({
   });
   const startDisabled = connectionStatus !== "online" || isQueuing || isRecoveringSession;
   const cancelDisabled = connectionStatus !== "online" || !isQueuing || isRecoveringSession;
+  const retryWarmupDisabled =
+    connectionStatus !== "online" || sceneWarmupStatus !== "failed" || isRecoveringSession;
   const warmupHint = sceneWarmupHint(sceneWarmupStatus);
 
   return (
@@ -63,10 +69,30 @@ export function MatchPage({
             </div>
           </div>
         ) : null}
-        {isQueuing ? <p className="match-warmup-status">{warmupHint}</p> : null}
-        <button className="primary-button" type="button" onClick={onStartMatch} disabled={startDisabled}>
+        <p className={`match-warmup-status ${sceneWarmupStatus}`}>{warmupHint}</p>
+        <button
+          className="primary-button"
+          type="button"
+          onClick={onStartMatch}
+          onPointerEnter={onPrepareArena}
+          onFocus={onPrepareArena}
+          onTouchStart={onPrepareArena}
+          disabled={startDisabled}
+        >
           {isRecoveringSession ? "正在恢复对局..." : isQueuing ? "正在匹配对手..." : "一键开始匹配"}
         </button>
+        {sceneWarmupStatus === "failed" ? (
+          <div className="match-warmup-actions">
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={onRetryWarmup}
+              disabled={retryWarmupDisabled}
+            >
+              一键重试预热
+            </button>
+          </div>
+        ) : null}
         {isQueuing ? (
           <button
             className="secondary-button"

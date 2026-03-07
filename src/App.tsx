@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MatchPage } from "./pages/MatchPage";
 import { createSocketClient } from "./network/socketClient";
 import { LoadingStage } from "./ui/LoadingStage";
@@ -13,7 +13,10 @@ import {
   type QualityMode
 } from "./game/interaction/qualityProfile";
 import { validateContinueMatchRequest } from "./game/interaction/continueMatch";
-import { type SceneWarmupStatus } from "./game/interaction/sceneWarmup";
+import {
+  sceneWarmupLoadingStageDetail,
+  type SceneWarmupStatus
+} from "./game/interaction/sceneWarmup";
 import {
   createInitialNetworkLatencyProfile,
   deriveTimeoutAssistThresholdMs,
@@ -222,7 +225,8 @@ export default function App() {
   const sessionRef = useRef<RoomSession | null>(session);
   const snapshotRef = useRef<RoomSnapshot | null>(snapshot);
   const matchPhaseRef = useRef<MatchPhase>(matchPhase);
-  const sceneWarmupStartedRef = useRef(false);
+  const sceneWarmupStatusRef = useRef<SceneWarmupStatus>(sceneWarmupStatus);
+  const sceneWarmupPromiseRef = useRef<Promise<void> | null>(null);
   const pendingMoveSubmittedAtRef = useRef<Map<string, number>>(new Map());
   const continueTransitionRef = useRef(continueTransition);
   const continueMatchBackupRef = useRef<ContinueMatchBackup | null>(null);
@@ -241,6 +245,10 @@ export default function App() {
   }, [matchPhase]);
 
   useEffect(() => {
+    sceneWarmupStatusRef.current = sceneWarmupStatus;
+  }, [sceneWarmupStatus]);
+
+  useEffect(() => {
     continueTransitionRef.current = continueTransition;
   }, [continueTransition]);
 
@@ -251,6 +259,37 @@ export default function App() {
       return next;
     });
   };
+
+  const prepareArena = useCallback((options?: { forceRetry?: boolean }) => {
+    const forceRetry = options?.forceRetry ?? false;
+    const currentStatus = sceneWarmupStatusRef.current;
+
+    if (
+      !forceRetry &&
+      (currentStatus === "ready" || currentStatus === "warming" || currentStatus === "failed")
+    ) {
+      return;
+    }
+    if (sceneWarmupPromiseRef.current !== null) {
+      return;
+    }
+
+    setSceneWarmupStatus("warming");
+    sceneWarmupStatusRef.current = "warming";
+
+    const warmupPromise = loadGameRoomPageModule()
+      .then(() => {
+        sceneWarmupPromiseRef.current = null;
+        sceneWarmupStatusRef.current = "ready";
+        setSceneWarmupStatus("ready");
+      })
+      .catch(() => {
+        sceneWarmupPromiseRef.current = null;
+        sceneWarmupStatusRef.current = "failed";
+        setSceneWarmupStatus("failed");
+      });
+    sceneWarmupPromiseRef.current = warmupPromise;
+  }, []);
 
   useEffect(() => {
     persistQualityMode(qualityMode);
@@ -293,21 +332,37 @@ export default function App() {
   }, [matchPhase, queueStartedAtMs]);
 
   useEffect(() => {
-    if (matchPhase !== "queuing" || sceneWarmupStartedRef.current) {
+    if (connectionState !== "online") {
+      return;
+    }
+    if (snapshot !== null) {
+      return;
+    }
+    if (sceneWarmupStatusRef.current !== "idle") {
       return;
     }
 
-    sceneWarmupStartedRef.current = true;
-    setSceneWarmupStatus("warming");
-    void loadGameRoomPageModule()
-      .then(() => {
-        setSceneWarmupStatus("ready");
-      })
-      .catch(() => {
-        sceneWarmupStartedRef.current = false;
-        setSceneWarmupStatus("failed");
-      });
-  }, [matchPhase]);
+    const timer = window.setTimeout(() => {
+      prepareArena();
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [connectionState, prepareArena, snapshot]);
+
+  useEffect(() => {
+    if (connectionState !== "online") {
+      return;
+    }
+    if (matchPhase !== "queuing") {
+      return;
+    }
+    if (sceneWarmupStatus === "ready" || sceneWarmupStatus === "warming") {
+      return;
+    }
+
+    prepareArena({
+      forceRetry: sceneWarmupStatus === "failed"
+    });
+  }, [connectionState, matchPhase, prepareArena, sceneWarmupStatus]);
 
   useEffect(() => {
     const resetQueueState = () => {
@@ -613,6 +668,7 @@ export default function App() {
       setErrorMessage("正在连接服务器，请稍后重试");
       return;
     }
+    prepareArena();
     setMatchPhase("queuing");
     setQueueSize((current) => (current > 0 ? current : 1));
     setQueueStartedAtMs(Date.now());
@@ -767,6 +823,8 @@ export default function App() {
         isRecoveringSession={isRecoveringSession}
         onStartMatch={startMatch}
         onCancelMatch={cancelMatch}
+        onPrepareArena={() => prepareArena()}
+        onRetryWarmup={() => prepareArena({ forceRetry: true })}
       />
     );
   }
@@ -783,7 +841,7 @@ export default function App() {
       fallback={
         <LoadingStage
           title="正在部署星云战场"
-          detail="3D 场景加载中，马上进入对局..."
+          detail={sceneWarmupLoadingStageDetail(sceneWarmupStatus)}
         />
       }
     >
