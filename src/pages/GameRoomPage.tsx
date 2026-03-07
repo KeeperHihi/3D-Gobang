@@ -142,6 +142,7 @@ const CALM_MODE_ENTER_FPS = 33;
 const CALM_MODE_EXIT_FPS = 48;
 const RENDER_PROFILE_LEARN_WINDOW_MS = 10_000;
 const RENDER_PROFILE_SAMPLE_INTERVAL_MS = 2_500;
+const RENDER_PROFILE_LOW_FPS_SAMPLE_FPS = 40;
 const EMPTY_HINT_MOVES: MoveHint[] = [];
 
 export function GameRoomPage({
@@ -211,6 +212,9 @@ export function GameRoomPage({
   });
   const renderCapabilityLastPersistAtMsRef = useRef(0);
   const renderCapabilitySampledRoomIdRef = useRef<string | null>(null);
+  const renderCapabilityForegroundLearnedMsRef = useRef(0);
+  const renderCapabilityForegroundStartedAtMsRef = useRef<number | null>(null);
+  const renderCapabilityConsecutiveLowFpsTrustedSamplesRef = useRef(0);
   const [assistEnabled, setAssistEnabled] = useState(false);
   const [onboardingProgress, setOnboardingProgress] = useState(() =>
     createDefaultOnboardingProgress()
@@ -1427,20 +1431,58 @@ export function GameRoomPage({
     }
     renderCapabilitySampledRoomIdRef.current = snapshot.roomId;
     renderCapabilityLastPersistAtMsRef.current = 0;
-  }, [snapshot.roomId]);
+    renderCapabilityForegroundLearnedMsRef.current = 0;
+    renderCapabilityForegroundStartedAtMsRef.current =
+      pageVisible && windowFocused ? nowMs : null;
+    renderCapabilityConsecutiveLowFpsTrustedSamplesRef.current = 0;
+  }, [nowMs, pageVisible, snapshot.roomId, windowFocused]);
+
+  useEffect(() => {
+    const trustedForeground = pageVisible && windowFocused;
+    if (trustedForeground) {
+      if (renderCapabilityForegroundStartedAtMsRef.current === null) {
+        renderCapabilityForegroundStartedAtMsRef.current = nowMs;
+      }
+      return;
+    }
+    if (renderCapabilityForegroundStartedAtMsRef.current === null) {
+      return;
+    }
+    renderCapabilityForegroundLearnedMsRef.current += Math.max(
+      0,
+      nowMs - renderCapabilityForegroundStartedAtMsRef.current
+    );
+    renderCapabilityForegroundStartedAtMsRef.current = null;
+  }, [nowMs, pageVisible, windowFocused]);
 
   useEffect(() => {
     if (qualityMode !== "auto" || renderBootstrapDecision.phase === "boot") {
+      renderCapabilityConsecutiveLowFpsTrustedSamplesRef.current = 0;
+      return;
+    }
+    const sampleTrusted = pageVisible && windowFocused;
+    if (!sampleTrusted) {
+      renderCapabilityConsecutiveLowFpsTrustedSamplesRef.current = 0;
       return;
     }
     if (averageFps === null || !Number.isFinite(averageFps)) {
       return;
     }
-    if (nowMs - roomEnteredAtMs > RENDER_PROFILE_LEARN_WINDOW_MS) {
+    const foregroundElapsedMs =
+      renderCapabilityForegroundLearnedMsRef.current +
+      (renderCapabilityForegroundStartedAtMsRef.current !== null
+        ? Math.max(0, nowMs - renderCapabilityForegroundStartedAtMsRef.current)
+        : 0);
+    if (foregroundElapsedMs > RENDER_PROFILE_LEARN_WINDOW_MS) {
       return;
     }
     if (nowMs - renderCapabilityLastPersistAtMsRef.current < RENDER_PROFILE_SAMPLE_INTERVAL_MS) {
       return;
+    }
+    if (autoCalmMode || averageFps < RENDER_PROFILE_LOW_FPS_SAMPLE_FPS) {
+      renderCapabilityConsecutiveLowFpsTrustedSamplesRef.current += 1;
+    } else {
+      renderCapabilityConsecutiveLowFpsTrustedSamplesRef.current = 0;
     }
 
     const profile = updateRenderCapabilityProfile({
@@ -1450,13 +1492,16 @@ export function GameRoomPage({
       averageFps,
       autoCalmMode,
       qualityLevel: effectiveQualityLevel,
-      vfxStage
+      vfxStage,
+      sampleTrusted,
+      consecutiveLowFpsTrustedSamples:
+        renderCapabilityConsecutiveLowFpsTrustedSamplesRef.current
     });
     renderCapabilityLastPersistAtMsRef.current = nowMs;
 
     if (import.meta.env.DEV && profile) {
       console.debug(
-        `[renderProfile] quality=${profile.recommendedInitialQualityLevel}, vfx=${profile.recommendedInitialVfxStage}, confidence=${profile.confidence.toFixed(2)}, samples=${profile.sampleCount}`
+        `[renderProfile] quality=${profile.recommendedInitialQualityLevel}, vfx=${profile.recommendedInitialVfxStage}, confidence=${profile.confidence.toFixed(2)}, samples=${profile.sampleCount}, trustedMs=${Math.round(foregroundElapsedMs)}`
       );
     }
   }, [
@@ -1464,9 +1509,10 @@ export function GameRoomPage({
     averageFps,
     effectiveQualityLevel,
     nowMs,
+    pageVisible,
     qualityMode,
     renderBootstrapDecision.phase,
-    roomEnteredAtMs,
+    windowFocused,
     vfxStage,
     renderCapabilityEnv
   ]);

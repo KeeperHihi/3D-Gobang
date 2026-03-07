@@ -45,6 +45,8 @@ export interface RenderCapabilityProfileUpdateInput {
   autoCalmMode: boolean;
   qualityLevel: QualityLevel;
   vfxStage: BoardSceneVfxStage;
+  sampleTrusted: boolean;
+  consecutiveLowFpsTrustedSamples: number;
 }
 
 export interface InitialRenderPreset {
@@ -57,6 +59,7 @@ export const RENDER_CAPABILITY_PROFILE_STORAGE_KEY = "nebula-cube-render-capabil
 export const RENDER_CAPABILITY_PROFILE_SCHEMA_VERSION = 1;
 export const RENDER_CAPABILITY_PROFILE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const RENDER_CAPABILITY_PROFILE_MIN_CONFIDENCE = 0.45;
+export const RENDER_CAPABILITY_PROFILE_MIN_TRUSTED_LOW_FPS_SAMPLES = 2;
 
 const QUALITY_LEVEL_ORDER: QualityLevel[] = ["low", "medium", "high", "ultra"];
 const VFX_STAGE_ORDER: BoardSceneVfxStage[] = ["off", "basic", "full"];
@@ -81,6 +84,15 @@ function normalizeVfxStage(value: unknown): BoardSceneVfxStage | null {
 
 function clampConfidence(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function isLowerByOrder<T extends string>(candidate: T, baseline: T, order: T[]): boolean {
+  const candidateIndex = order.indexOf(candidate);
+  const baselineIndex = order.indexOf(baseline);
+  if (candidateIndex < 0 || baselineIndex < 0) {
+    return false;
+  }
+  return candidateIndex < baselineIndex;
 }
 
 function chooseConservative<T extends string>(current: T, target: T, order: T[], confidence: number): T {
@@ -311,6 +323,9 @@ export function updateRenderCapabilityProfile(
   if (!hasUsableFps(input.averageFps)) {
     return current;
   }
+  if (!input.sampleTrusted) {
+    return current;
+  }
 
   const recommendation = deriveRecommendationFromSample({
     averageFps: input.averageFps,
@@ -319,13 +334,31 @@ export function updateRenderCapabilityProfile(
     vfxStage: input.vfxStage
   });
 
+  const lowFpsTrustedReadyForDowngrade =
+    input.consecutiveLowFpsTrustedSamples >= RENDER_CAPABILITY_PROFILE_MIN_TRUSTED_LOW_FPS_SAMPLES;
+
+  const baselineQualityLevel = current?.recommendedInitialQualityLevel ?? input.qualityLevel;
+  const baselineVfxStage = current?.recommendedInitialVfxStage ?? input.vfxStage;
+  const guardedRecommendation = {
+    qualityLevel:
+      !lowFpsTrustedReadyForDowngrade &&
+      isLowerByOrder(recommendation.qualityLevel, baselineQualityLevel, QUALITY_LEVEL_ORDER)
+        ? baselineQualityLevel
+        : recommendation.qualityLevel,
+    vfxStage:
+      !lowFpsTrustedReadyForDowngrade &&
+      isLowerByOrder(recommendation.vfxStage, baselineVfxStage, VFX_STAGE_ORDER)
+        ? baselineVfxStage
+        : recommendation.vfxStage
+  };
+
   let next: RenderCapabilityProfile;
   if (!current) {
     next = {
       schemaVersion: RENDER_CAPABILITY_PROFILE_SCHEMA_VERSION,
       deviceKey: input.deviceKey,
-      recommendedInitialQualityLevel: recommendation.qualityLevel,
-      recommendedInitialVfxStage: recommendation.vfxStage,
+      recommendedInitialQualityLevel: guardedRecommendation.qualityLevel,
+      recommendedInitialVfxStage: guardedRecommendation.vfxStage,
       confidence: 0.5,
       updatedAtMs: input.nowMs,
       sampleCount: 1
@@ -342,13 +375,13 @@ export function updateRenderCapabilityProfile(
       deviceKey: current.deviceKey,
       recommendedInitialQualityLevel: chooseConservative(
         current.recommendedInitialQualityLevel,
-        recommendation.qualityLevel,
+        guardedRecommendation.qualityLevel,
         QUALITY_LEVEL_ORDER,
         nextConfidence
       ),
       recommendedInitialVfxStage: chooseConservative(
         current.recommendedInitialVfxStage,
-        recommendation.vfxStage,
+        guardedRecommendation.vfxStage,
         VFX_STAGE_ORDER,
         nextConfidence
       ),

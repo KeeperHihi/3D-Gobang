@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  RENDER_CAPABILITY_PROFILE_MIN_TRUSTED_LOW_FPS_SAMPLES,
   RENDER_CAPABILITY_PROFILE_SCHEMA_VERSION,
   RENDER_CAPABILITY_PROFILE_STORAGE_KEY,
   RENDER_CAPABILITY_PROFILE_TTL_MS,
@@ -111,10 +112,26 @@ describe("renderCapabilityProfile", () => {
       averageFps: 24,
       autoCalmMode: false,
       qualityLevel: "high",
-      vfxStage: "basic"
+      vfxStage: "basic",
+      sampleTrusted: true,
+      consecutiveLowFpsTrustedSamples: RENDER_CAPABILITY_PROFILE_MIN_TRUSTED_LOW_FPS_SAMPLES - 1
     });
-    expect(low?.recommendedInitialQualityLevel).toBe("low");
-    expect(low?.recommendedInitialVfxStage).toBe("off");
+    expect(low?.recommendedInitialQualityLevel).toBe("high");
+    expect(low?.recommendedInitialVfxStage).toBe("basic");
+
+    const lowConfirmed = updateRenderCapabilityProfile({
+      storage,
+      nowMs: 1500,
+      deviceKey,
+      averageFps: 24,
+      autoCalmMode: false,
+      qualityLevel: "high",
+      vfxStage: "basic",
+      sampleTrusted: true,
+      consecutiveLowFpsTrustedSamples: RENDER_CAPABILITY_PROFILE_MIN_TRUSTED_LOW_FPS_SAMPLES
+    });
+    expect(lowConfirmed?.recommendedInitialQualityLevel).toBe("low");
+    expect(lowConfirmed?.recommendedInitialVfxStage).toBe("off");
 
     const mid = updateRenderCapabilityProfile({
       storage,
@@ -123,10 +140,12 @@ describe("renderCapabilityProfile", () => {
       averageFps: 38,
       autoCalmMode: false,
       qualityLevel: "medium",
-      vfxStage: "basic"
+      vfxStage: "basic",
+      sampleTrusted: true,
+      consecutiveLowFpsTrustedSamples: 0
     });
-    expect(mid?.recommendedInitialQualityLevel).toBe("low");
-    expect(mid?.recommendedInitialVfxStage).toBe("off");
+    expect(mid?.recommendedInitialQualityLevel).toBe("medium");
+    expect(mid?.recommendedInitialVfxStage).toBe("basic");
 
     updateRenderCapabilityProfile({
       storage,
@@ -135,7 +154,9 @@ describe("renderCapabilityProfile", () => {
       averageFps: 60,
       autoCalmMode: false,
       qualityLevel: "high",
-      vfxStage: "full"
+      vfxStage: "full",
+      sampleTrusted: true,
+      consecutiveLowFpsTrustedSamples: 0
     });
     const high = updateRenderCapabilityProfile({
       storage,
@@ -144,7 +165,9 @@ describe("renderCapabilityProfile", () => {
       averageFps: 60,
       autoCalmMode: false,
       qualityLevel: "high",
-      vfxStage: "full"
+      vfxStage: "full",
+      sampleTrusted: true,
+      consecutiveLowFpsTrustedSamples: 0
     });
 
     expect(high?.recommendedInitialQualityLevel).toBe("high");
@@ -212,6 +235,36 @@ describe("renderCapabilityProfile", () => {
     });
 
     expect(key).toBe("hc:12|dm:7.7|dpr:2.4|pf:mac_os_x");
+  });
+
+  it("ignores noisy samples that are not trusted", () => {
+    const storage = createMemoryStorage();
+    const deviceKey = "device-noisy";
+    const baseline = updateRenderCapabilityProfile({
+      storage,
+      nowMs: 1000,
+      deviceKey,
+      averageFps: 58,
+      autoCalmMode: false,
+      qualityLevel: "high",
+      vfxStage: "full",
+      sampleTrusted: true,
+      consecutiveLowFpsTrustedSamples: 0
+    });
+
+    const noisy = updateRenderCapabilityProfile({
+      storage,
+      nowMs: 2000,
+      deviceKey,
+      averageFps: 10,
+      autoCalmMode: true,
+      qualityLevel: "low",
+      vfxStage: "off",
+      sampleTrusted: false,
+      consecutiveLowFpsTrustedSamples: 10
+    });
+
+    expect(noisy).toEqual(baseline);
   });
 
   it("returns null when localStorage access throws", () => {
