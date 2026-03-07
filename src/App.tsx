@@ -22,6 +22,7 @@ import type {
 
 type ConnectionState = "connecting" | "online" | "reconnecting" | "offline";
 type MatchPhase = "idle" | "queuing" | "matched";
+type RoomEntryMode = "fresh" | "resumed";
 
 interface RoomSession {
   roomId: string;
@@ -31,6 +32,7 @@ interface RoomSession {
 
 const SESSION_STORAGE_KEY = "nebula-cube-session";
 const QUALITY_MODE_STORAGE_KEY = "nebula-cube-quality-mode";
+const ONBOARDING_STORAGE_KEY = "nebula-cube-onboarding-v1";
 
 function createClientMoveId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -75,6 +77,17 @@ function persistQualityMode(mode: QualityMode): void {
   localStorage.setItem(QUALITY_MODE_STORAGE_KEY, mode);
 }
 
+function readOnboardingCompletedFromStorage(): boolean {
+  return localStorage.getItem(ONBOARDING_STORAGE_KEY) === "done";
+}
+
+function persistOnboardingCompleted(completed: boolean): void {
+  if (!completed) {
+    return;
+  }
+  localStorage.setItem(ONBOARDING_STORAGE_KEY, "done");
+}
+
 export default function App() {
   const socket = useMemo(() => createSocketClient(), []);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
@@ -87,6 +100,12 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pendingMove, setPendingMove] = useState<PendingMoveState | null>(null);
   const [qualityMode, setQualityMode] = useState<QualityMode>(() => readQualityModeFromStorage());
+  const [roomEntryMode, setRoomEntryMode] = useState<RoomEntryMode>(() =>
+    session ? "resumed" : "fresh"
+  );
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(() =>
+    readOnboardingCompletedFromStorage()
+  );
 
   const sessionRef = useRef<RoomSession | null>(session);
   const matchPhaseRef = useRef<MatchPhase>(matchPhase);
@@ -103,6 +122,10 @@ export default function App() {
   useEffect(() => {
     persistQualityMode(qualityMode);
   }, [qualityMode]);
+
+  useEffect(() => {
+    persistOnboardingCompleted(onboardingCompleted);
+  }, [onboardingCompleted]);
 
   useEffect(() => {
     if (matchPhase !== "queuing" || queueStartedAtMs === null) {
@@ -188,6 +211,7 @@ export default function App() {
       setSession({ roomId, mark, seatToken });
       setSnapshot(nextSnapshot);
       setMatchPhase("matched");
+      setRoomEntryMode("fresh");
       resetQueueState();
       setErrorMessage(null);
       setPendingMove(null);
@@ -197,6 +221,7 @@ export default function App() {
       setSession({ roomId, mark, seatToken });
       setSnapshot(nextSnapshot);
       setMatchPhase("matched");
+      setRoomEntryMode("resumed");
       resetQueueState();
       setErrorMessage(null);
       setPendingMove(null);
@@ -221,6 +246,7 @@ export default function App() {
       setSession(null);
       setSnapshot(null);
       setMatchPhase("idle");
+      setRoomEntryMode("fresh");
       resetQueueState();
       setErrorMessage(reason);
       setPendingMove(null);
@@ -420,6 +446,7 @@ export default function App() {
     setSession(null);
     setSnapshot(null);
     setMatchPhase("idle");
+    setRoomEntryMode("fresh");
     setQueueSize(0);
     setQueueStartedAtMs(null);
     setQueueElapsedSeconds(0);
@@ -444,11 +471,18 @@ export default function App() {
     );
   }
 
+  const shouldShowOnboarding =
+    !onboardingCompleted &&
+    roomEntryMode === "fresh" &&
+    !snapshot.winner &&
+    snapshot.board.every((cell) => cell === 0);
+
   return (
     <GameRoomPage
       snapshot={snapshot}
       myMark={session.mark}
       connectionStatus={connectionState}
+      shouldShowOnboarding={shouldShowOnboarding}
       qualityMode={qualityMode}
       onQualityModeChange={setQualityMode}
       pendingMove={
@@ -463,6 +497,7 @@ export default function App() {
       onPlace={placePiece}
       onRematch={requestRematch}
       onContinueMatch={requestContinueMatch}
+      onCompleteOnboarding={() => setOnboardingCompleted(true)}
       onLeave={leaveRoom}
     />
   );

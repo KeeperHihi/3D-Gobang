@@ -6,6 +6,7 @@ import {
   type QualityLevel,
   type QualityMode
 } from "../game/interaction/qualityProfile";
+import type { OnboardingGuideState } from "../game/interaction/onboardingGuide";
 import type { SmartActionState } from "../game/interaction/smartAction";
 import { SmartActionBar } from "./SmartActionBar";
 
@@ -20,6 +21,7 @@ interface HUDProps {
   focusLayer: number;
   focusMode: "auto" | "manual";
   smartAction: SmartActionState;
+  onboardingGuide: OnboardingGuideState | null;
   advancedOpen: boolean;
   qualityMode: QualityMode;
   qualityLevel: QualityLevel;
@@ -31,6 +33,8 @@ interface HUDProps {
   opponentReconnectRemainingMs: number | null;
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
   onPrimaryAction: () => void;
+  onOnboardingPrimaryAction: () => void;
+  onOnboardingSkip: () => void;
   onToggleAdvanced: () => void;
   onLayerStep: (step: -1 | 1) => void;
   onAutoFocus: () => void;
@@ -77,6 +81,7 @@ export function HUD({
   focusLayer,
   focusMode,
   smartAction,
+  onboardingGuide,
   advancedOpen,
   qualityMode,
   qualityLevel,
@@ -88,6 +93,8 @@ export function HUD({
   opponentReconnectRemainingMs,
   connectionStatus,
   onPrimaryAction,
+  onOnboardingPrimaryAction,
+  onOnboardingSkip,
   onToggleAdvanced,
   onLayerStep,
   onAutoFocus,
@@ -143,6 +150,32 @@ export function HUD({
           </>
         ) : null}
         <div className="hud-turn">{turnText}</div>
+        {onboardingGuide ? (
+          <div className="hud-coach-card">
+            <div className="hud-coach-header">
+              <span>新手引导</span>
+              <span>
+                {onboardingGuide.stepIndex}/{onboardingGuide.totalSteps}
+              </span>
+            </div>
+            <div className="hud-coach-title">{onboardingGuide.title}</div>
+            <div className="hud-coach-detail">{onboardingGuide.detail}</div>
+            <div className="hud-actions">
+              {onboardingGuide.primaryActionLabel ? (
+                <button
+                  className="hud-mini-button active"
+                  type="button"
+                  onClick={onOnboardingPrimaryAction}
+                >
+                  {onboardingGuide.primaryActionLabel}
+                </button>
+              ) : null}
+              <button className="hud-mini-button" type="button" onClick={onOnboardingSkip}>
+                跳过引导
+              </button>
+            </div>
+          </div>
+        ) : null}
         {showRematchReadyCheck ? (
           <div className="hud-ready-check">
             <div className={`hud-ready-row ${myRematchReady ? "ready" : "waiting"}`}>

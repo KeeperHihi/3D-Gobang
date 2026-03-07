@@ -27,6 +27,7 @@ interface BoardSceneProps {
     player: PlayerMark;
   } | null;
   onPlace: (coordinate: Coordinate3D) => void;
+  onUserRotate?: () => void;
 }
 
 interface CameraAssistControllerProps {
@@ -120,7 +121,8 @@ export function BoardScene({
   focusLayer,
   hintMoves,
   pendingMove,
-  onPlace
+  onPlace,
+  onUserRotate
 }: BoardSceneProps) {
   const isMobileLayout = layoutMode === "mobile";
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -188,6 +190,7 @@ export function BoardScene({
           maxDistance={isMobileLayout ? 22 : 20}
           dampingFactor={0.09}
           rotateSpeed={isMobileLayout ? 0.42 : 0.58}
+          onStart={onUserRotate}
         />
 
         <group>

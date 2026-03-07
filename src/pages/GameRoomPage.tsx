@@ -13,6 +13,11 @@ import {
   type QualityLevel,
   type QualityMode
 } from "../game/interaction/qualityProfile";
+import {
+  createDefaultOnboardingProgress,
+  createOnboardingGuideState,
+  isOnboardingCompletedByPlayer
+} from "../game/interaction/onboardingGuide";
 import { createSmartActionState } from "../game/interaction/smartAction";
 import { BoardScene } from "../ui/BoardScene";
 import { HUD } from "../ui/HUD";
@@ -21,6 +26,7 @@ interface GameRoomPageProps {
   snapshot: RoomSnapshot;
   myMark: PlayerMark;
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
+  shouldShowOnboarding: boolean;
   qualityMode: QualityMode;
   onQualityModeChange: (mode: QualityMode) => void;
   pendingMove: {
@@ -31,6 +37,7 @@ interface GameRoomPageProps {
   onPlace: (coordinate: Coordinate3D) => void;
   onRematch: () => void;
   onContinueMatch: () => void;
+  onCompleteOnboarding: () => void;
   onLeave: () => void;
 }
 
@@ -52,6 +59,7 @@ export function GameRoomPage({
   snapshot,
   myMark,
   connectionStatus,
+  shouldShowOnboarding,
   qualityMode,
   onQualityModeChange,
   pendingMove,
@@ -59,11 +67,17 @@ export function GameRoomPage({
   onPlace,
   onRematch,
   onContinueMatch,
+  onCompleteOnboarding,
   onLeave
 }: GameRoomPageProps) {
   const lastMoveNumberRef = useRef(0);
   const winnerRef = useRef(snapshot.winner);
+  const onboardingCompletionSentRef = useRef(false);
+  const onboardingActivatedRef = useRef(false);
   const [assistEnabled, setAssistEnabled] = useState(true);
+  const [onboardingProgress, setOnboardingProgress] = useState(() =>
+    createDefaultOnboardingProgress()
+  );
   const [focusMode, setFocusMode] = useState<"auto" | "manual">("auto");
   const [focusLayer, setFocusLayer] = useState(Math.floor(snapshot.size / 2));
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -151,6 +165,15 @@ export function GameRoomPage({
       snapshot.winner
     ]
   );
+  const onboardingGuide = useMemo(
+    () =>
+      createOnboardingGuideState({
+        enabled: shouldShowOnboarding,
+        canUsePrimaryAction: smartAction.enabled,
+        progress: onboardingProgress
+      }),
+    [onboardingProgress, shouldShowOnboarding, smartAction.enabled]
+  );
   const qualityProfile = useMemo(() => getQualityProfile(qualityLevel), [qualityLevel]);
   const opponentReconnectRemainingMs = useMemo(() => {
     if (snapshot.winner || opponentReconnectDeadlineAt === null) {
@@ -182,6 +205,42 @@ export function GameRoomPage({
       onPlace(smartAction.target);
     }
   }, [onContinueMatch, onPlace, onRematch, smartAction]);
+
+  const handleBoardRotate = useCallback(() => {
+    if (!shouldShowOnboarding) {
+      return;
+    }
+    setOnboardingProgress((current) =>
+      current.hasRotated
+        ? current
+        : {
+            ...current,
+            hasRotated: true
+          }
+    );
+  }, [shouldShowOnboarding]);
+
+  const handleOnboardingPrimaryAction = useCallback(() => {
+    setOnboardingProgress((current) =>
+      current.introAcknowledged
+        ? current
+        : {
+            ...current,
+            introAcknowledged: true
+          }
+    );
+  }, []);
+
+  const handleOnboardingSkip = useCallback(() => {
+    setOnboardingProgress((current) =>
+      current.skipped
+        ? current
+        : {
+            ...current,
+            skipped: true
+          }
+    );
+  }, []);
 
   const handleLayerStep = (step: -1 | 1) => {
     setFocusMode("manual");
@@ -222,6 +281,50 @@ export function GameRoomPage({
     setFocusLayer(Math.floor(snapshot.size / 2));
     setAdvancedOpen(false);
   }, [snapshot.roomId, snapshot.size]);
+
+  useEffect(() => {
+    onboardingCompletionSentRef.current = false;
+    onboardingActivatedRef.current = false;
+    setOnboardingProgress(createDefaultOnboardingProgress());
+  }, [snapshot.roomId]);
+
+  useEffect(() => {
+    if (!shouldShowOnboarding || onboardingActivatedRef.current) {
+      return;
+    }
+    onboardingActivatedRef.current = true;
+  }, [shouldShowOnboarding]);
+
+  useEffect(() => {
+    if (!onboardingActivatedRef.current) {
+      return;
+    }
+    if (!snapshot.lastMove || snapshot.lastMove.player !== myMark) {
+      return;
+    }
+    setOnboardingProgress((current) =>
+      current.hasPlaced
+        ? current
+        : {
+            ...current,
+            hasPlaced: true
+          }
+    );
+  }, [myMark, snapshot.lastMove]);
+
+  useEffect(() => {
+    if (!onboardingActivatedRef.current) {
+      return;
+    }
+    if (!isOnboardingCompletedByPlayer(onboardingProgress)) {
+      return;
+    }
+    if (onboardingCompletionSentRef.current) {
+      return;
+    }
+    onboardingCompletionSentRef.current = true;
+    onCompleteOnboarding();
+  }, [onCompleteOnboarding, onboardingProgress]);
 
   useEffect(() => {
     if (focusMode !== "auto") {
@@ -332,6 +435,7 @@ export function GameRoomPage({
         hintMoves={hintMovesForBoard}
         pendingMove={pendingMove}
         onPlace={onPlace}
+        onUserRotate={handleBoardRotate}
       />
       <HUD
         layoutMode={layoutMode}
@@ -344,6 +448,7 @@ export function GameRoomPage({
         focusLayer={focusLayer}
         focusMode={focusMode}
         smartAction={smartAction}
+        onboardingGuide={onboardingGuide.visible ? onboardingGuide : null}
         advancedOpen={advancedOpen}
         qualityMode={qualityMode}
         qualityLevel={qualityLevel}
@@ -355,6 +460,8 @@ export function GameRoomPage({
         opponentReconnectRemainingMs={opponentReconnectRemainingMs}
         connectionStatus={connectionStatus}
         onPrimaryAction={handlePrimaryAction}
+        onOnboardingPrimaryAction={handleOnboardingPrimaryAction}
+        onOnboardingSkip={handleOnboardingSkip}
         onToggleAdvanced={handleToggleAdvanced}
         onLayerStep={handleLayerStep}
         onAutoFocus={handleAutoFocus}
