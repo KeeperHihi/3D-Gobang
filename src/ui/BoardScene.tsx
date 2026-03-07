@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useMemo, useRef, useState } from "react";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { Line, OrbitControls, Sparkles, Stars } from "@react-three/drei";
+import type { Mesh } from "three";
 import type { Coordinate3D, MoveRecord } from "../network/protocol";
 import { fromLinearIndex } from "../game/engine/board";
+import type { HintPriority, MoveHint } from "../game/engine/moveHints";
 import { createCameraTarget, useCameraAssist } from "../game/interaction/cameraAssist";
 import { pickCell } from "../game/interaction/pickCell";
 
@@ -14,28 +16,76 @@ interface BoardSceneProps {
   canPlace: boolean;
   lastMove: MoveRecord | null;
   winningLine: number[] | null;
+  focusLayer: number | null;
+  hintMoves: MoveHint[];
   onPlace: (coordinate: Coordinate3D) => void;
 }
 
 interface CameraAssistControllerProps {
   size: number;
   lastMove: MoveRecord | null;
+  canPlace: boolean;
+  hintFocus: Coordinate3D | null;
 }
 
-function CameraAssistController({ size, lastMove }: CameraAssistControllerProps) {
+interface HintMeta {
+  priority: HintPriority;
+  rank: number;
+}
+
+interface HintPulseProps {
+  position: [number, number, number];
+  color: string;
+  opacity: number;
+  phase: number;
+}
+
+function colorForHintPriority(priority: HintPriority): string {
+  if (priority === "win") {
+    return "#ffe768";
+  }
+  if (priority === "block") {
+    return "#ff8ca4";
+  }
+  return "#5cf0ff";
+}
+
+function HintPulse({ position, color, opacity, phase }: HintPulseProps) {
+  const pulseRef = useRef<Mesh>(null);
+
+  useFrame(({ clock }) => {
+    const pulseMesh = pulseRef.current;
+    if (!pulseMesh) {
+      return;
+    }
+    const progress = clock.getElapsedTime() * 2.7 + phase;
+    const scale = 1 + Math.sin(progress) * 0.22;
+    pulseMesh.scale.set(scale, scale, scale);
+  });
+
+  return (
+    <mesh ref={pulseRef} position={position}>
+      <sphereGeometry args={[0.43, 18, 18]} />
+      <meshBasicMaterial color={color} transparent opacity={opacity} />
+    </mesh>
+  );
+}
+
+function layerToWorldZ(size: number, layer: number): number {
+  const centerOffset = (size - 1) / 2;
+  return (layer - centerOffset) * BOARD_SPACING;
+}
+
+function CameraAssistController({ size, lastMove, canPlace, hintFocus }: CameraAssistControllerProps) {
+  const focusedCoordinate = canPlace
+    ? hintFocus ?? (lastMove ? { x: lastMove.x, y: lastMove.y, z: lastMove.z } : null)
+    : lastMove
+      ? { x: lastMove.x, y: lastMove.y, z: lastMove.z }
+      : null;
+
   const target = useMemo(
-    () =>
-      createCameraTarget(
-        size,
-        lastMove
-          ? {
-              x: lastMove.x,
-              y: lastMove.y,
-              z: lastMove.z
-            }
-          : null
-      ),
-    [size, lastMove]
+    () => createCameraTarget(size, focusedCoordinate),
+    [canPlace, focusedCoordinate, hintFocus, lastMove, size]
   );
   useCameraAssist(target);
   return null;
@@ -56,10 +106,22 @@ export function BoardScene({
   canPlace,
   lastMove,
   winningLine,
+  focusLayer,
+  hintMoves,
   onPlace
 }: BoardSceneProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const winningSet = useMemo(() => new Set(winningLine ?? []), [winningLine]);
+  const hintMap = useMemo(() => {
+    const map = new Map<number, HintMeta>();
+    hintMoves.forEach((hint, rank) => {
+      map.set(hint.index, {
+        priority: hint.priority,
+        rank
+      });
+    });
+    return map;
+  }, [hintMoves]);
   const linePoints = useMemo(() => {
     if (!winningLine) {
       return null;
@@ -81,7 +143,12 @@ export function BoardScene({
         <Stars radius={80} depth={40} count={3000} factor={4.2} fade saturation={0} />
         <Sparkles count={160} scale={[20, 20, 20]} speed={0.35} size={2.2} color="#5fe9ff" />
 
-        <CameraAssistController size={size} lastMove={lastMove} />
+        <CameraAssistController
+          size={size}
+          lastMove={lastMove}
+          canPlace={canPlace}
+          hintFocus={hintMoves[0]?.coordinate ?? null}
+        />
         <OrbitControls
           enablePan={false}
           minDistance={8}
@@ -91,6 +158,12 @@ export function BoardScene({
         />
 
         <group>
+          {focusLayer !== null ? (
+            <mesh position={[0, 0, layerToWorldZ(size, focusLayer)]}>
+              <planeGeometry args={[size * BOARD_SPACING + 0.22, size * BOARD_SPACING + 0.22]} />
+              <meshBasicMaterial color="#52dbff" transparent opacity={0.08} />
+            </mesh>
+          ) : null}
           <mesh>
             <boxGeometry
               args={[
@@ -114,18 +187,29 @@ export function BoardScene({
             const isHovered = hoveredIndex === index;
             const isWinningCell = winningSet.has(index);
             const isEmpty = value === 0;
-            const interactive = canPlace && isEmpty;
-            const color = value === 1 ? "#64f6ff" : value === 2 ? "#ff69d0" : "#152446";
-            const emissive = value === 1 ? "#48ffff" : value === 2 ? "#ff52da" : "#4f8eff";
-            const opacity = isEmpty ? (isHovered ? 0.55 : 0.18) : 0.92;
-            const emissiveIntensity = isWinningCell
+            const inFocusLayer = focusLayer === null || coordinate.z === focusLayer;
+            const interactive = canPlace && isEmpty && inFocusLayer;
+            const hint = isEmpty ? hintMap.get(index) : undefined;
+            const hintColor = hint ? colorForHintPriority(hint.priority) : null;
+            const layerOpacityFactor = focusLayer === null ? 1 : inFocusLayer ? 1 : 0.22;
+            const color = value === 1 ? "#64f6ff" : value === 2 ? "#ff69d0" : "#182850";
+            const emissiveBaseColor = value === 1 ? "#48ffff" : value === 2 ? "#ff52da" : "#4f8eff";
+            const emissive = hintColor ?? emissiveBaseColor;
+            const opacityBase = isEmpty ? (isHovered && interactive ? 0.65 : 0.24) : 0.93;
+            const opacity = opacityBase * layerOpacityFactor;
+            const emissiveIntensityBase = isWinningCell
               ? 2.4
-              : isHovered && interactive
+              : hint
+                ? hint.rank === 0
+                  ? 2.05
+                  : 1.35
+                : isHovered && interactive
                 ? 1.3
                 : value === 0
                   ? 0.4
                   : 0.9;
-            const scale = isHovered && interactive ? 1.12 : 1;
+            const emissiveIntensity = emissiveIntensityBase * (inFocusLayer ? 1 : 0.5);
+            const scale = hint?.rank === 0 ? 1.16 : isHovered && interactive ? 1.12 : 1;
 
             return (
               <mesh
@@ -168,6 +252,16 @@ export function BoardScene({
               </mesh>
             );
           })}
+
+          {hintMoves.map((hint, rank) => (
+            <HintPulse
+              key={hint.index}
+              position={toWorldPosition(size, hint.coordinate)}
+              color={colorForHintPriority(hint.priority)}
+              opacity={rank === 0 ? 0.45 : 0.25}
+              phase={rank * 0.75}
+            />
+          ))}
 
           {linePoints ? (
             <Line points={linePoints} color="#fff960" lineWidth={5.5} transparent opacity={0.95} />

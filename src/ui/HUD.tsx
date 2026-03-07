@@ -2,12 +2,23 @@ import type { PlayerMark, Winner } from "../network/protocol";
 
 interface HUDProps {
   roomId: string;
+  boardSize: number;
   myMark: PlayerMark;
   turn: PlayerMark;
   winner: Winner;
+  assistEnabled: boolean;
+  focusLayer: number;
+  focusMode: "auto" | "manual";
+  guidanceText: string;
+  quickActionLabel: string;
+  canQuickPlace: boolean;
   myConnected: boolean;
   opponentConnected: boolean;
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
+  onQuickPlace: () => void;
+  onLayerStep: (step: -1 | 1) => void;
+  onAutoFocus: () => void;
+  onToggleAssist: () => void;
   onRematch: () => void;
   onLeave: () => void;
 }
@@ -40,12 +51,23 @@ function winnerText(winner: Winner, myMark: PlayerMark): string {
 
 export function HUD({
   roomId,
+  boardSize,
   myMark,
   turn,
   winner,
+  assistEnabled,
+  focusLayer,
+  focusMode,
+  guidanceText,
+  quickActionLabel,
+  canQuickPlace,
   myConnected,
   opponentConnected,
   connectionStatus,
+  onQuickPlace,
+  onLayerStep,
+  onAutoFocus,
+  onToggleAssist,
   onRematch,
   onLeave
 }: HUDProps) {
@@ -80,7 +102,53 @@ export function HUD({
           <span>对手</span>
           <span>{opponentConnected ? "在线" : "掉线"}</span>
         </div>
+        <div className="hud-row">
+          <span>聚焦层</span>
+          <span>
+            L{focusLayer + 1}/{boardSize} · {focusMode === "auto" ? "自动" : "手动"}
+          </span>
+        </div>
         <div className="hud-turn">{turnText}</div>
+        <div className="hud-guide">{guidanceText}</div>
+        <div className="hud-actions">
+          <button
+            className="hud-mini-button"
+            type="button"
+            onClick={() => onLayerStep(-1)}
+            disabled={focusLayer <= 0}
+          >
+            上一层
+          </button>
+          <button
+            className="hud-mini-button"
+            type="button"
+            onClick={() => onLayerStep(1)}
+            disabled={focusLayer >= boardSize - 1}
+          >
+            下一层
+          </button>
+          <button
+            className="hud-mini-button"
+            type="button"
+            onClick={onAutoFocus}
+            disabled={focusMode === "auto"}
+          >
+            自动聚焦
+          </button>
+        </div>
+        <div className="hud-actions">
+          <button
+            className="hud-button accent"
+            type="button"
+            onClick={onQuickPlace}
+            disabled={!canQuickPlace}
+          >
+            {quickActionLabel}
+          </button>
+          <button className="hud-button ghost" type="button" onClick={onToggleAssist}>
+            战术辅助：{assistEnabled ? "开" : "关"}
+          </button>
+        </div>
         <div className="hud-actions">
           <button className="hud-button" type="button" onClick={onRematch} disabled={!canRematch}>
             再来一局
