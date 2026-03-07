@@ -1,4 +1,6 @@
 import type { PlayerMark, Winner } from "../network/protocol";
+import type { SmartActionState } from "../game/interaction/smartAction";
+import { SmartActionBar } from "./SmartActionBar";
 
 interface HUDProps {
   roomId: string;
@@ -9,13 +11,13 @@ interface HUDProps {
   assistEnabled: boolean;
   focusLayer: number;
   focusMode: "auto" | "manual";
-  guidanceText: string;
-  quickActionLabel: string;
-  canQuickPlace: boolean;
+  smartAction: SmartActionState;
+  advancedOpen: boolean;
   myConnected: boolean;
   opponentConnected: boolean;
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
-  onQuickPlace: () => void;
+  onPrimaryAction: () => void;
+  onToggleAdvanced: () => void;
   onLayerStep: (step: -1 | 1) => void;
   onAutoFocus: () => void;
   onToggleAssist: () => void;
@@ -58,13 +60,13 @@ export function HUD({
   assistEnabled,
   focusLayer,
   focusMode,
-  guidanceText,
-  quickActionLabel,
-  canQuickPlace,
+  smartAction,
+  advancedOpen,
   myConnected,
   opponentConnected,
   connectionStatus,
-  onQuickPlace,
+  onPrimaryAction,
+  onToggleAdvanced,
   onLayerStep,
   onAutoFocus,
   onToggleAssist,
@@ -102,61 +104,62 @@ export function HUD({
           <span>对手</span>
           <span>{opponentConnected ? "在线" : "掉线"}</span>
         </div>
-        <div className="hud-row">
-          <span>聚焦层</span>
-          <span>
-            L{focusLayer + 1}/{boardSize} · {focusMode === "auto" ? "自动" : "手动"}
-          </span>
-        </div>
         <div className="hud-turn">{turnText}</div>
-        <div className="hud-guide">{guidanceText}</div>
+        <SmartActionBar action={smartAction} onAction={onPrimaryAction} />
         <div className="hud-actions">
-          <button
-            className="hud-mini-button"
-            type="button"
-            onClick={() => onLayerStep(-1)}
-            disabled={focusLayer <= 0}
-          >
-            上一层
-          </button>
-          <button
-            className="hud-mini-button"
-            type="button"
-            onClick={() => onLayerStep(1)}
-            disabled={focusLayer >= boardSize - 1}
-          >
-            下一层
-          </button>
-          <button
-            className="hud-mini-button"
-            type="button"
-            onClick={onAutoFocus}
-            disabled={focusMode === "auto"}
-          >
-            自动聚焦
+          <button className="hud-button ghost" type="button" onClick={onToggleAdvanced}>
+            {advancedOpen ? "收起高级操作" : "展开高级操作"}
           </button>
         </div>
-        <div className="hud-actions">
-          <button
-            className="hud-button accent"
-            type="button"
-            onClick={onQuickPlace}
-            disabled={!canQuickPlace}
-          >
-            {quickActionLabel}
-          </button>
-          <button className="hud-button ghost" type="button" onClick={onToggleAssist}>
-            战术辅助：{assistEnabled ? "开" : "关"}
-          </button>
-        </div>
-        <div className="hud-actions">
-          <button className="hud-button" type="button" onClick={onRematch} disabled={!canRematch}>
-            再来一局
-          </button>
-          <button className="hud-button ghost" type="button" onClick={onLeave}>
-            离开
-          </button>
-        </div>
+        {advancedOpen ? (
+          <div className="hud-advanced-panel">
+            <div className="hud-row">
+              <span>聚焦层</span>
+              <span>
+                L{focusLayer + 1}/{boardSize} · {focusMode === "auto" ? "自动" : "手动"}
+              </span>
+            </div>
+            <div className="hud-actions">
+              <button
+                className="hud-mini-button"
+                type="button"
+                onClick={() => onLayerStep(-1)}
+                disabled={focusLayer <= 0}
+              >
+                上一层
+              </button>
+              <button
+                className="hud-mini-button"
+                type="button"
+                onClick={() => onLayerStep(1)}
+                disabled={focusLayer >= boardSize - 1}
+              >
+                下一层
+              </button>
+              <button
+                className="hud-mini-button"
+                type="button"
+                onClick={onAutoFocus}
+                disabled={focusMode === "auto"}
+              >
+                自动聚焦
+              </button>
+            </div>
+            <div className="hud-actions">
+              <button className="hud-button ghost" type="button" onClick={onToggleAssist}>
+                战术辅助：{assistEnabled ? "开" : "关"}
+              </button>
+              <button className="hud-button" type="button" onClick={onRematch} disabled={!canRematch}>
+                再来一局
+              </button>
+            </div>
+            <div className="hud-actions">
+              <button className="hud-button ghost" type="button" onClick={onLeave}>
+                离开
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

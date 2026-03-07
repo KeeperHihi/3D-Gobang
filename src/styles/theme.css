@@ -152,7 +152,7 @@ body {
 }
 
 .hud-card {
-  min-width: 230px;
+  min-width: 256px;
   border-radius: 18px;
   padding: 16px;
   background: linear-gradient(155deg, rgba(9, 20, 42, 0.72), rgba(6, 10, 25, 0.62));
@@ -191,14 +191,77 @@ body {
   font-weight: 600;
 }
 
-.hud-guide {
+.smart-action-bar {
   margin-bottom: 10px;
+}
+
+.smart-action-button {
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #041122;
+  background: linear-gradient(90deg, #68e8ff, #8a9eff 52%, #af85ff);
+  box-shadow:
+    0 12px 30px rgba(84, 191, 255, 0.3),
+    0 0 18px rgba(94, 177, 255, 0.22);
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    filter 0.18s ease,
+    box-shadow 0.2s ease;
+}
+
+.smart-action-button.win {
+  color: #2b1a00;
+  background: linear-gradient(90deg, #fff38a, #ffc365);
+  box-shadow:
+    0 12px 30px rgba(255, 214, 120, 0.34),
+    0 0 20px rgba(255, 211, 109, 0.25);
+}
+
+.smart-action-button.block {
+  color: #2a0e1d;
+  background: linear-gradient(90deg, #ffaeac, #ff78ba);
+  box-shadow:
+    0 12px 30px rgba(255, 133, 167, 0.32),
+    0 0 20px rgba(255, 122, 194, 0.24);
+}
+
+.smart-action-button.rematch {
+  color: #0a1a2d;
+  background: linear-gradient(90deg, #7df4ff, #a7d5ff);
+}
+
+.smart-action-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.smart-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
+  filter: saturate(0.68);
+  transform: none;
+}
+
+.smart-action-hint {
+  margin-top: 8px;
   border-radius: 10px;
   padding: 8px 10px;
   font-size: 12px;
-  line-height: 1.45;
   color: #cff5ff;
   background: rgba(103, 196, 255, 0.1);
+}
+
+.smart-action-hotkey {
+  margin-top: 6px;
+  font-size: 11px;
+  color: rgba(177, 226, 255, 0.76);
+  text-align: right;
 }
 
 .hud-actions {
@@ -209,6 +272,24 @@ body {
 
 .hud-actions:last-child {
   margin-bottom: 0;
+}
+
+.hud-advanced-panel {
+  margin-top: 4px;
+  border-top: 1px solid rgba(111, 206, 255, 0.24);
+  padding-top: 10px;
+  animation: hud-panel-in 0.2s ease;
+}
+
+@keyframes hud-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .hud-mini-button {
@@ -264,11 +345,6 @@ body {
   color: #d7eeff;
   border: 1px solid rgba(146, 208, 255, 0.4);
   background: rgba(55, 85, 154, 0.2);
-}
-
-.hud-button.accent {
-  color: #1a071f;
-  background: linear-gradient(90deg, #ffe972, #ffac7b);
 }
 
 .game-toast {

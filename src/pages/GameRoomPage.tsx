@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Coordinate3D, PlayerMark, RoomSnapshot } from "../network/protocol";
 import { playDropSfx, playWinSfx } from "../audio/sfx";
 import type { BoardCell } from "../game/engine/board";
 import { analyzeMoveHints, type MoveHint } from "../game/engine/moveHints";
 import { createWinLinesIndex } from "../game/engine/winLines";
+import { shouldBlockGlobalSpaceHotkey } from "../game/interaction/hotkey";
+import { createSmartActionState } from "../game/interaction/smartAction";
 import { BoardScene } from "../ui/BoardScene";
 import { HUD } from "../ui/HUD";
 
@@ -21,19 +23,6 @@ function clampLayer(layer: number, size: number): number {
   return Math.max(0, Math.min(size - 1, layer));
 }
 
-function quickActionLabel(hint: MoveHint | null): string {
-  if (!hint) {
-    return "一键建议";
-  }
-  if (hint.priority === "win") {
-    return "一键制胜";
-  }
-  if (hint.priority === "block") {
-    return "一键防守";
-  }
-  return "一键建议";
-}
-
 export function GameRoomPage({
   snapshot,
   myMark,
@@ -48,6 +37,7 @@ export function GameRoomPage({
   const [assistEnabled, setAssistEnabled] = useState(true);
   const [focusMode, setFocusMode] = useState<"auto" | "manual">("auto");
   const [focusLayer, setFocusLayer] = useState(Math.floor(snapshot.size / 2));
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const canPlace = snapshot.turn === myMark && !snapshot.winner && connectionStatus === "online";
   const boardCells = snapshot.board as BoardCell[];
   const hintsWinLinesIndex = useMemo(
@@ -74,6 +64,7 @@ export function GameRoomPage({
   }, [assistEnabled, boardCells, canPlace, hintsWinLinesIndex, myMark, snapshot.connect, snapshot.size]);
 
   const primaryHint = hintResult.recommendedMoves[0] ?? null;
+  const hintMovesForBoard = assistEnabled && canPlace ? hintResult.recommendedMoves : [];
   const autoFocusLayer = useMemo(() => {
     if (primaryHint) {
       return primaryHint.coordinate.z;
@@ -83,35 +74,40 @@ export function GameRoomPage({
     }
     return Math.floor(snapshot.size / 2);
   }, [primaryHint, snapshot.lastMove, snapshot.size]);
+  const smartAction = useMemo(
+    () =>
+      createSmartActionState({
+        snapshot: {
+          turn: snapshot.turn,
+          winner: snapshot.winner
+        },
+        myMark,
+        hints: hintMovesForBoard,
+        connectionStatus,
+        assistEnabled
+      }),
+    [assistEnabled, connectionStatus, hintMovesForBoard, myMark, snapshot.turn, snapshot.winner]
+  );
 
-  const guidanceText = useMemo(() => {
-    if (!assistEnabled) {
-      return "战术辅助已关闭，可手动自由对局";
-    }
-    if (!canPlace) {
-      if (snapshot.winner) {
-        return "对局结束，可点击再来一局";
-      }
-      return "等待对手落子，建议会自动刷新";
-    }
-    if (hintResult.winningMoves.length > 0) {
-      return "检测到一步制胜点，建议立即终结对局";
-    }
-    if (hintResult.blockingMoves.length > 0) {
-      return "检测到必须防守点，建议优先封堵";
-    }
-    if (primaryHint) {
-      return "建议点已高亮，可直接一键落子";
-    }
-    return "暂无强制点，保持连线延展";
-  }, [assistEnabled, canPlace, hintResult.blockingMoves.length, hintResult.winningMoves.length, primaryHint, snapshot.winner]);
-
-  const handleQuickPlace = () => {
-    if (!canPlace || !assistEnabled || !primaryHint) {
+  const handlePrimaryAction = useCallback(() => {
+    if (!smartAction.enabled) {
       return;
     }
-    onPlace(primaryHint.coordinate);
-  };
+    if (smartAction.actionType === "rematch") {
+      onRematch();
+      return;
+    }
+    if (
+      smartAction.actionType === "win" ||
+      smartAction.actionType === "block" ||
+      smartAction.actionType === "suggest"
+    ) {
+      if (!smartAction.target) {
+        return;
+      }
+      onPlace(smartAction.target);
+    }
+  }, [onPlace, onRematch, smartAction]);
 
   const handleLayerStep = (step: -1 | 1) => {
     setFocusMode("manual");
@@ -126,6 +122,10 @@ export function GameRoomPage({
   const handleAssistToggle = () => {
     setAssistEnabled((current) => !current);
     setFocusMode("auto");
+  };
+
+  const handleToggleAdvanced = () => {
+    setAdvancedOpen((current) => !current);
   };
 
   useEffect(() => {
@@ -146,6 +146,7 @@ export function GameRoomPage({
   useEffect(() => {
     setFocusMode("auto");
     setFocusLayer(Math.floor(snapshot.size / 2));
+    setAdvancedOpen(false);
   }, [snapshot.roomId, snapshot.size]);
 
   useEffect(() => {
@@ -154,6 +155,27 @@ export function GameRoomPage({
     }
     setFocusLayer(clampLayer(autoFocusLayer, snapshot.size));
   }, [autoFocusLayer, focusMode, snapshot.size]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || event.repeat) {
+        return;
+      }
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
+        return;
+      }
+      if (shouldBlockGlobalSpaceHotkey(event.target)) {
+        return;
+      }
+      if (!smartAction.enabled) {
+        return;
+      }
+      event.preventDefault();
+      handlePrimaryAction();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handlePrimaryAction, smartAction.enabled]);
 
   return (
     <main className="game-page">
@@ -164,7 +186,7 @@ export function GameRoomPage({
         lastMove={snapshot.lastMove}
         winningLine={snapshot.winningLine}
         focusLayer={focusLayer}
-        hintMoves={assistEnabled ? hintResult.recommendedMoves : []}
+        hintMoves={hintMovesForBoard}
         onPlace={onPlace}
       />
       <HUD
@@ -176,13 +198,13 @@ export function GameRoomPage({
         assistEnabled={assistEnabled}
         focusLayer={focusLayer}
         focusMode={focusMode}
-        guidanceText={guidanceText}
-        quickActionLabel={quickActionLabel(primaryHint)}
-        canQuickPlace={Boolean(assistEnabled && canPlace && primaryHint)}
+        smartAction={smartAction}
+        advancedOpen={advancedOpen}
         myConnected={snapshot.players[myMark].connected}
         opponentConnected={snapshot.players[myMark === "X" ? "O" : "X"].connected}
         connectionStatus={connectionStatus}
-        onQuickPlace={handleQuickPlace}
+        onPrimaryAction={handlePrimaryAction}
+        onToggleAdvanced={handleToggleAdvanced}
         onLayerStep={handleLayerStep}
         onAutoFocus={handleAutoFocus}
         onToggleAssist={handleAssistToggle}
