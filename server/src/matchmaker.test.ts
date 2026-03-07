@@ -41,4 +41,67 @@ describe("Matchmaker", () => {
     expect(matchmaker.has("socket-a")).toBe(true);
     expect(matchmaker.has("socket-b")).toBe(false);
   });
+
+  it("avoids immediately rematching the same opponent during cooldown", () => {
+    let nowMs = 10_000;
+    const matchmaker = new Matchmaker(() => nowMs);
+
+    matchmaker.enqueue("socket-a", {
+      avoidSocketId: "socket-b",
+      avoidUntilMs: nowMs + 20_000
+    });
+    const blockedByAvoid = matchmaker.enqueue("socket-b");
+    const matchedWithAlternative = matchmaker.enqueue("socket-c");
+
+    expect(blockedByAvoid).toBeNull();
+    expect(matchedWithAlternative).toEqual({
+      firstSocketId: "socket-a",
+      secondSocketId: "socket-c"
+    });
+    expect(matchmaker.waitingCount).toBe(1);
+    expect(matchmaker.has("socket-b")).toBe(true);
+  });
+
+  it("allows fallback rematch after cooldown expires", () => {
+    let nowMs = 10_000;
+    const matchmaker = new Matchmaker(() => nowMs);
+
+    matchmaker.enqueue("socket-a", {
+      avoidSocketId: "socket-b",
+      avoidUntilMs: nowMs + 2_000
+    });
+    const blockedByAvoid = matchmaker.enqueue("socket-b");
+
+    nowMs += 2_100;
+    const pairAfterCooldown = matchmaker.enqueue("socket-c");
+
+    expect(blockedByAvoid).toBeNull();
+    expect(pairAfterCooldown).toEqual({
+      firstSocketId: "socket-a",
+      secondSocketId: "socket-b"
+    });
+    expect(matchmaker.waitingCount).toBe(1);
+    expect(matchmaker.has("socket-c")).toBe(true);
+  });
+
+  it("can rematch after cooldown expires without new enqueue", () => {
+    let nowMs = 10_000;
+    const matchmaker = new Matchmaker(() => nowMs);
+
+    matchmaker.enqueue("socket-a", {
+      avoidSocketId: "socket-b",
+      avoidUntilMs: nowMs + 2_000
+    });
+    const blockedByAvoid = matchmaker.enqueue("socket-b");
+
+    nowMs += 2_100;
+    const pairAfterCooldown = matchmaker.tryMatch();
+
+    expect(blockedByAvoid).toBeNull();
+    expect(pairAfterCooldown).toEqual({
+      firstSocketId: "socket-a",
+      secondSocketId: "socket-b"
+    });
+    expect(matchmaker.waitingCount).toBe(0);
+  });
 });

@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import cors from "cors";
 import express from "express";
 import { Server, type Socket } from "socket.io";
-import { Matchmaker } from "./matchmaker";
+import { Matchmaker, type MatchEnqueueOptions } from "./matchmaker";
 import type {
   ClientToServerEvents,
   PlayerMark,
@@ -60,7 +60,9 @@ const seatTokenMap = new Map<string, { roomId: string; mark: PlayerMark }>();
 const socketRoomMap = new Map<string, string>();
 const reconnectForfeitTimers = new Map<string, NodeJS.Timeout>();
 const turnForfeitTimers = new Map<string, NodeJS.Timeout>();
+const continueAvoidRetryTimers = new Map<string, NodeJS.Timeout>();
 const RECONNECT_GRACE_PERIOD_MS = 30_000;
+const CONTINUE_AVOID_OPPONENT_MS = 20_000;
 
 function createRoomId(): string {
   return randomUUID().slice(0, 8);
@@ -92,6 +94,15 @@ function clearTurnForfeitTimer(roomId: string): void {
   }
   clearTimeout(timer);
   turnForfeitTimers.delete(roomId);
+}
+
+function clearContinueAvoidRetryTimer(socketId: string): void {
+  const timer = continueAvoidRetryTimers.get(socketId);
+  if (!timer) {
+    return;
+  }
+  clearTimeout(timer);
+  continueAvoidRetryTimers.delete(socketId);
 }
 
 function emitRoomUpdate(roomId: string): void {
@@ -227,6 +238,9 @@ function resolveRoomAndMark(
 }
 
 function handleMatchPair(pair: { firstSocketId: string; secondSocketId: string }): void {
+  clearContinueAvoidRetryTimer(pair.firstSocketId);
+  clearContinueAvoidRetryTimer(pair.secondSocketId);
+
   const firstSocket = io.sockets.sockets.get(pair.firstSocketId);
   const secondSocket = io.sockets.sockets.get(pair.secondSocketId);
 
@@ -282,11 +296,38 @@ function handleMatchPair(pair: { firstSocketId: string; secondSocketId: string }
   });
 }
 
-function enqueueSocketForMatch(
-  socket: Socket<ClientToServerEvents, ServerToClientEvents>
-): void {
-  const pair = matchmaker.enqueue(socket.id);
+function tryMatchQueuedSockets(): void {
+  const pair = matchmaker.tryMatch();
   if (!pair) {
+    return;
+  }
+  handleMatchPair(pair);
+}
+
+function scheduleContinueAvoidRetry(socketId: string, avoidUntilMs: number): void {
+  clearContinueAvoidRetryTimer(socketId);
+  const timeout = setTimeout(() => {
+    continueAvoidRetryTimers.delete(socketId);
+    if (!matchmaker.has(socketId)) {
+      return;
+    }
+    tryMatchQueuedSockets();
+  }, Math.max(0, avoidUntilMs - Date.now()));
+  continueAvoidRetryTimers.set(socketId, timeout);
+}
+
+function enqueueSocketForMatch(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  options?: MatchEnqueueOptions
+): void {
+  const pair = matchmaker.enqueue(socket.id, options);
+  if (!pair) {
+    if (options?.avoidUntilMs !== null && options?.avoidUntilMs !== undefined) {
+      scheduleContinueAvoidRetry(socket.id, options.avoidUntilMs);
+    } else {
+      clearContinueAvoidRetryTimer(socket.id);
+    }
+
     socket.emit("queue:joined", {
       waitingForOpponent: true,
       queueSize: matchmaker.waitingCount
@@ -313,6 +354,7 @@ io.on("connection", (socket) => {
       return;
     }
 
+    clearContinueAvoidRetryTimer(socket.id);
     matchmaker.remove(socket.id);
     socket.emit("queue:left", {
       queueSize: matchmaker.waitingCount
@@ -336,6 +378,14 @@ io.on("connection", (socket) => {
       emitGameError(socket, "该席位已在其他设备在线");
       return;
     }
+    const opponentMark: PlayerMark = resolved.mark === "X" ? "O" : "X";
+    const opponentSocketId = resolved.room.players[opponentMark].socketId;
+    const continueEnqueueOptions: MatchEnqueueOptions | undefined = opponentSocketId
+      ? {
+          avoidSocketId: opponentSocketId,
+          avoidUntilMs: Date.now() + CONTINUE_AVOID_OPPONENT_MS
+        }
+      : undefined;
 
     clearReconnectForfeitTimer(roomId, resolved.mark);
     clearReconnectDeadline(resolved.room, resolved.mark);
@@ -348,7 +398,7 @@ io.on("connection", (socket) => {
     detachRoomIfAbandoned(roomId);
 
     matchmaker.remove(socket.id);
-    enqueueSocketForMatch(socket);
+    enqueueSocketForMatch(socket, continueEnqueueOptions);
   });
 
   socket.on("room:resume", ({ roomId, seatToken }) => {
@@ -534,6 +584,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    clearContinueAvoidRetryTimer(socket.id);
     matchmaker.remove(socket.id);
 
     const roomId = socketRoomMap.get(socket.id);
