@@ -50,7 +50,6 @@ import {
   evaluateFocusGuard
 } from "../game/interaction/focusGuard";
 import {
-  createLayerTapLock,
   evaluateLayerTapLock,
   type LayerTapLock
 } from "../game/interaction/layerTapLock";
@@ -122,7 +121,6 @@ function resolveTurnNudgeNotificationPermission(): TurnNudgeNotificationPermissi
 
 const WIN_LINE_CINEMATIC_DURATION_MS = 2200;
 const LAYER_NAV_INPUT_THROTTLE_MS = 170;
-const LAYER_TAP_LOCK_TTL_MS = 3500;
 const CALM_MODE_ENTER_FPS = 33;
 const CALM_MODE_EXIT_FPS = 48;
 
@@ -754,27 +752,6 @@ export function GameRoomPage({
     setFocusMode("manual");
     setFocusLayer(layerQuickNav.smartJumpLayer);
   }, [focusLayer, layerQuickNav.smartJumpLayer]);
-  const handleRequestFocusLayer = useCallback(
-    (targetCoordinate: Coordinate3D) => {
-      const clampedLayer = clampLayer(targetCoordinate.z, snapshot.size);
-      const now = Date.now();
-      layerNavLastInputAtMsRef.current = now;
-      setFocusMode("manual");
-      setFocusLayer(clampedLayer);
-      setLayerTapLock(
-        createLayerTapLock({
-          coordinate: {
-            x: targetCoordinate.x,
-            y: targetCoordinate.y,
-            z: clampedLayer
-          },
-          nowMs: now,
-          ttlMs: LAYER_TAP_LOCK_TTL_MS
-        })
-      );
-    },
-    [snapshot.size]
-  );
   const handleClearTapLock = useCallback(() => {
     setLayerTapLock(null);
   }, []);
@@ -811,6 +788,11 @@ export function GameRoomPage({
     }
     if (primaryIntent.source === "tap-lock") {
       handleConfirmTapLock();
+      return;
+    }
+    if (primaryIntent.actionType === "enableAssist") {
+      setAssistEnabled(true);
+      setFocusMode("auto");
       return;
     }
     if (primaryIntent.actionType === "continueMatch") {

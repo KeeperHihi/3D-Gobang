@@ -8,6 +8,7 @@ export type SmartActionType =
   | "win"
   | "block"
   | "suggest"
+  | "enableAssist"
   | "pending"
   | "continuePending"
   | "manual"
@@ -169,10 +170,10 @@ export function createSmartActionState(input: SmartActionInput): SmartActionStat
 
   if (!assistEnabled) {
     return {
-      actionType: "manual",
-      label: "请在棋盘落子",
-      enabled: false,
-      reason: "战术辅助已关闭，支持手动落子",
+      actionType: "enableAssist",
+      label: "开启提示并推荐",
+      enabled: true,
+      reason: "点击后开启战术辅助；也可以直接在棋盘手动落子",
       target: null
     };
   }

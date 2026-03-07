@@ -23,6 +23,9 @@ function actionClassName(actionType: SmartActionState["actionType"]): string {
   if (actionType === "continuePending") {
     return "smart-action-button pending";
   }
+  if (actionType === "enableAssist") {
+    return "smart-action-button enable-assist";
+  }
   if (actionType === "readyWaiting") {
     return "smart-action-button ready-waiting";
   }

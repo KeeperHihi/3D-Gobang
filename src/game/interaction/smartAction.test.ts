@@ -17,13 +17,13 @@ function createStateFixture(params?: {
   winner?: Winner;
   hints?: MoveHint[];
   assistEnabled?: boolean;
-    hasPendingMove?: boolean;
-    canContinueMatch?: boolean;
-    continueMatchReason?: "opponentOffline" | "readyTimeout";
-    continueSubmitting?: boolean;
-    myRematchReady?: boolean;
-    opponentRematchReady?: boolean;
-    connectionStatus?: "connecting" | "online" | "reconnecting" | "offline";
+  hasPendingMove?: boolean;
+  canContinueMatch?: boolean;
+  continueMatchReason?: "opponentOffline" | "readyTimeout";
+  continueSubmitting?: boolean;
+  myRematchReady?: boolean;
+  opponentRematchReady?: boolean;
+  connectionStatus?: "connecting" | "online" | "reconnecting" | "offline";
 }) {
   return createSmartActionState({
     snapshot: {
@@ -75,6 +75,18 @@ describe("createSmartActionState", () => {
     expect(state.enabled).toBe(true);
   });
 
+  it("returns enable-assist action when assist is disabled on my turn", () => {
+    const state = createStateFixture({
+      assistEnabled: false,
+      hints: [createHint("win")]
+    });
+
+    expect(state.actionType).toBe("enableAssist");
+    expect(state.enabled).toBe(true);
+    expect(state.target).toBeNull();
+    expect(state.label).toContain("开启提示");
+  });
+
   it("returns waiting action when not my turn", () => {
     const state = createStateFixture({
       turn: "O"
@@ -82,6 +94,16 @@ describe("createSmartActionState", () => {
 
     expect(state.actionType).toBe("wait");
     expect(state.label).toBe("等待对手");
+    expect(state.enabled).toBe(false);
+  });
+
+  it("still returns wait when assist is disabled but not my turn", () => {
+    const state = createStateFixture({
+      assistEnabled: false,
+      turn: "O"
+    });
+
+    expect(state.actionType).toBe("wait");
     expect(state.enabled).toBe(false);
   });
 
