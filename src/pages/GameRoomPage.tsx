@@ -27,6 +27,13 @@ import {
   evaluateVfxStageTransition,
   type BoardSceneVfxStage
 } from "../game/interaction/vfxStage";
+import {
+  readRenderCapabilityProfile,
+  resolveInitialRenderPreset,
+  resolveRenderCapabilityStorage,
+  resolveRenderDeviceKey,
+  updateRenderCapabilityProfile
+} from "../game/interaction/renderCapabilityProfile";
 import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatency";
 import {
   createAutoRematchRoundKey,
@@ -133,6 +140,8 @@ const WIN_LINE_CINEMATIC_DURATION_MS = 2200;
 const LAYER_NAV_INPUT_THROTTLE_MS = 170;
 const CALM_MODE_ENTER_FPS = 33;
 const CALM_MODE_EXIT_FPS = 48;
+const RENDER_PROFILE_LEARN_WINDOW_MS = 10_000;
+const RENDER_PROFILE_SAMPLE_INTERVAL_MS = 2_500;
 const EMPTY_HINT_MOVES: MoveHint[] = [];
 
 export function GameRoomPage({
@@ -183,6 +192,25 @@ export function GameRoomPage({
   const baseDocumentTitleRef = useRef(
     typeof document === "undefined" ? "NEBULA CUBE" : document.title
   );
+  const [renderCapabilityEnv] = useState(() => ({
+    storage: resolveRenderCapabilityStorage(),
+    deviceKey: resolveRenderDeviceKey()
+  }));
+  const [initialRenderPreset] = useState(() => {
+    const profile = readRenderCapabilityProfile({
+      storage: renderCapabilityEnv.storage,
+      nowMs: Date.now(),
+      deviceKey: renderCapabilityEnv.deviceKey
+    });
+    return resolveInitialRenderPreset({
+      qualityMode,
+      fallbackQualityLevel: initialQualityLevelFromMode(qualityMode),
+      fallbackVfxStage: "basic",
+      profile
+    });
+  });
+  const renderCapabilityLastPersistAtMsRef = useRef(0);
+  const renderCapabilitySampledRoomIdRef = useRef<string | null>(null);
   const [assistEnabled, setAssistEnabled] = useState(false);
   const [onboardingProgress, setOnboardingProgress] = useState(() =>
     createDefaultOnboardingProgress()
@@ -197,8 +225,8 @@ export function GameRoomPage({
     }
     return detectLayoutMode(window);
   });
-  const [qualityLevel, setQualityLevel] = useState<QualityLevel>(() =>
-    initialQualityLevelFromMode(qualityMode)
+  const [qualityLevel, setQualityLevel] = useState<QualityLevel>(
+    () => initialRenderPreset.initialQualityLevel
   );
   const [autoCalmMode, setAutoCalmMode] = useState(false);
   const [qualityLastSwitchAtMs, setQualityLastSwitchAtMs] = useState<number>(0);
@@ -378,7 +406,7 @@ export function GameRoomPage({
     () => getQualityProfile(effectiveQualityLevel),
     [effectiveQualityLevel]
   );
-  const targetVfxStage = useMemo(
+  const evaluatedVfxStage = useMemo(
     () =>
       evaluateVfxStage({
         renderBootstrapPhase: renderBootstrapDecision.phase,
@@ -388,6 +416,22 @@ export function GameRoomPage({
       }),
     [averageFps, effectiveQualityLevel, qualityProfile.sparklesEnabled, renderBootstrapDecision.phase]
   );
+  const targetVfxStage = useMemo(() => {
+    if (
+      qualityMode === "auto" &&
+      renderBootstrapDecision.phase !== "boot" &&
+      (averageFps === null || !Number.isFinite(averageFps))
+    ) {
+      return initialRenderPreset.initialVfxStage;
+    }
+    return evaluatedVfxStage;
+  }, [
+    averageFps,
+    evaluatedVfxStage,
+    initialRenderPreset.initialVfxStage,
+    qualityMode,
+    renderBootstrapDecision.phase
+  ]);
   const [vfxStage, setVfxStage] = useState<BoardSceneVfxStage>(targetVfxStage);
   const [vfxStageStartedAtMs, setVfxStageStartedAtMs] = useState<number>(() => nowMs);
   const winLineDirector = useMemo(
@@ -1376,6 +1420,56 @@ export function GameRoomPage({
     setVfxStage(transition.nextStage);
     setVfxStageStartedAtMs(nowMs);
   }, [averageFps, nowMs, targetVfxStage, vfxStage, vfxStageStartedAtMs]);
+
+  useEffect(() => {
+    if (renderCapabilitySampledRoomIdRef.current === snapshot.roomId) {
+      return;
+    }
+    renderCapabilitySampledRoomIdRef.current = snapshot.roomId;
+    renderCapabilityLastPersistAtMsRef.current = 0;
+  }, [snapshot.roomId]);
+
+  useEffect(() => {
+    if (qualityMode !== "auto" || renderBootstrapDecision.phase === "boot") {
+      return;
+    }
+    if (averageFps === null || !Number.isFinite(averageFps)) {
+      return;
+    }
+    if (nowMs - roomEnteredAtMs > RENDER_PROFILE_LEARN_WINDOW_MS) {
+      return;
+    }
+    if (nowMs - renderCapabilityLastPersistAtMsRef.current < RENDER_PROFILE_SAMPLE_INTERVAL_MS) {
+      return;
+    }
+
+    const profile = updateRenderCapabilityProfile({
+      storage: renderCapabilityEnv.storage,
+      nowMs,
+      deviceKey: renderCapabilityEnv.deviceKey,
+      averageFps,
+      autoCalmMode,
+      qualityLevel: effectiveQualityLevel,
+      vfxStage
+    });
+    renderCapabilityLastPersistAtMsRef.current = nowMs;
+
+    if (import.meta.env.DEV && profile) {
+      console.debug(
+        `[renderProfile] quality=${profile.recommendedInitialQualityLevel}, vfx=${profile.recommendedInitialVfxStage}, confidence=${profile.confidence.toFixed(2)}, samples=${profile.sampleCount}`
+      );
+    }
+  }, [
+    autoCalmMode,
+    averageFps,
+    effectiveQualityLevel,
+    nowMs,
+    qualityMode,
+    renderBootstrapDecision.phase,
+    roomEnteredAtMs,
+    vfxStage,
+    renderCapabilityEnv
+  ]);
 
   useEffect(() => {
     if (qualityMode === "auto" && renderBootstrapDecision.phase === "boot") {
