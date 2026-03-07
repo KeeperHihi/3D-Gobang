@@ -6,6 +6,7 @@ import {
   type QualityLevel,
   type QualityMode
 } from "../game/interaction/qualityProfile";
+import type { RenderBootstrapPhase } from "../game/interaction/renderBootstrap";
 import type { OnboardingGuideState } from "../game/interaction/onboardingGuide";
 import type { PrimaryIntentState } from "../game/interaction/primaryIntent";
 import type {
@@ -42,6 +43,7 @@ interface HUDProps {
   qualityMode: QualityMode;
   qualityLevel: QualityLevel;
   calmModeActive: boolean;
+  renderBootstrapPhase: RenderBootstrapPhase;
   averageFps: number | null;
   myConnected: boolean;
   opponentConnected: boolean;
@@ -171,6 +173,7 @@ export function HUD({
   qualityMode,
   qualityLevel,
   calmModeActive,
+  renderBootstrapPhase,
   averageFps,
   myConnected,
   opponentConnected,
@@ -722,6 +725,10 @@ export function HUD({
             <div className="hud-row">
               <span>冷静模式</span>
               <span>{calmModeActive ? "已触发" : "未触发"}</span>
+            </div>
+            <div className="hud-row">
+              <span>启动渲染</span>
+              <span>{renderBootstrapPhase === "boot" ? "稳帧启动中" : "完整特效"}</span>
             </div>
             <div className="hud-row">
               <span>实时帧率</span>

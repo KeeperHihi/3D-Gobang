@@ -17,6 +17,7 @@ interface BoardSceneProps {
   board: number[];
   size: number;
   canPlace: boolean;
+  ambientEnabled: boolean;
   nonFocusLayerOpacity: number;
   qualityProfile: QualityProfile;
   opponentMoveCue: OpponentMoveCue | null;
@@ -164,6 +165,7 @@ export function BoardScene({
   board,
   size,
   canPlace,
+  ambientEnabled,
   nonFocusLayerOpacity,
   qualityProfile,
   opponentMoveCue,
@@ -179,6 +181,7 @@ export function BoardScene({
 }: BoardSceneProps) {
   const isMobileLayout = layoutMode === "mobile";
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [ambientReveal, setAmbientReveal] = useState(ambientEnabled ? 1 : 0);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const cellSegments = Math.max(10, qualityProfile.cellSegments);
   const visibleHintMoves = useMemo(
@@ -247,6 +250,36 @@ export function BoardScene({
     setHoveredIndex(null);
   }, [canPlace]);
 
+  useEffect(() => {
+    if (!ambientEnabled) {
+      setAmbientReveal(0);
+      return;
+    }
+
+    let rafId = 0;
+    let stopped = false;
+
+    const reveal = () => {
+      setAmbientReveal((current) => {
+        const next = Math.min(1, current + 0.08);
+        if (next < 1 && !stopped) {
+          rafId = window.requestAnimationFrame(reveal);
+        }
+        return next;
+      });
+    };
+
+    rafId = window.requestAnimationFrame(reveal);
+    return () => {
+      stopped = true;
+      window.cancelAnimationFrame(rafId);
+    };
+  }, [ambientEnabled]);
+
+  const ambientMix = ambientEnabled ? ambientReveal : 0;
+  const starsCount = Math.round(qualityProfile.starsCount * ambientMix);
+  const sparklesCount = Math.round(qualityProfile.sparklesCount * ambientMix);
+
   return (
     <div
       className="board-scene"
@@ -295,13 +328,15 @@ export function BoardScene({
       <Canvas camera={{ position: isMobileLayout ? [10.4, 9.3, 10.4] : [9, 8, 9], fov: 42 }}>
         <color attach="background" args={["#040713"]} />
         <fog attach="fog" args={["#040713", 12, qualityProfile.fogFar]} />
-        <ambientLight intensity={0.8} />
-        <pointLight position={[9, 9, 6]} intensity={28} color="#40d9ff" />
-        <pointLight position={[-8, -6, -10]} intensity={20} color="#ff45d4" />
-        <Stars radius={80} depth={40} count={qualityProfile.starsCount} factor={4.2} fade saturation={0} />
-        {qualityProfile.sparklesEnabled && qualityProfile.sparklesCount > 0 ? (
+        <ambientLight intensity={0.72 + ambientMix * 0.08} />
+        <pointLight position={[9, 9, 6]} intensity={16 + ambientMix * 12} color="#40d9ff" />
+        <pointLight position={[-8, -6, -10]} intensity={12 + ambientMix * 8} color="#ff45d4" />
+        {starsCount > 0 ? (
+          <Stars radius={80} depth={40} count={starsCount} factor={4.2} fade saturation={0} />
+        ) : null}
+        {qualityProfile.sparklesEnabled && sparklesCount > 0 ? (
           <Sparkles
-            count={qualityProfile.sparklesCount}
+            count={sparklesCount}
             scale={[20, 20, 20]}
             speed={qualityProfile.sparklesSpeed}
             size={qualityProfile.sparklesSize}

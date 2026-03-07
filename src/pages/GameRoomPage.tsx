@@ -13,6 +13,10 @@ import {
   type QualityLevel,
   type QualityMode
 } from "../game/interaction/qualityProfile";
+import {
+  clampQualityLevelByCap,
+  evaluateRenderBootstrap
+} from "../game/interaction/renderBootstrap";
 import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatency";
 import {
   createAutoRematchRoundKey,
@@ -187,6 +191,7 @@ export function GameRoomPage({
   );
   const [autoCalmMode, setAutoCalmMode] = useState(false);
   const [qualityLastSwitchAtMs, setQualityLastSwitchAtMs] = useState<number>(0);
+  const [roomEnteredAtMs, setRoomEnteredAtMs] = useState<number>(() => Date.now());
   const [averageFps, setAverageFps] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [pageVisible, setPageVisible] = useState<boolean>(() =>
@@ -341,7 +346,20 @@ export function GameRoomPage({
       }),
     [onboardingProgress, primaryIntent.enabled, shouldShowOnboarding]
   );
-  const effectiveQualityLevel: QualityLevel = autoCalmMode ? "low" : qualityLevel;
+  const renderBootstrapDecision = useMemo(
+    () =>
+      evaluateRenderBootstrap({
+        elapsedMs: nowMs - roomEnteredAtMs,
+        averageFps,
+        qualityMode
+      }),
+    [averageFps, nowMs, qualityMode, roomEnteredAtMs]
+  );
+  const baseEffectiveQualityLevel: QualityLevel = autoCalmMode ? "low" : qualityLevel;
+  const effectiveQualityLevel: QualityLevel =
+    qualityMode === "auto"
+      ? clampQualityLevelByCap(baseEffectiveQualityLevel, renderBootstrapDecision.qualityCap)
+      : baseEffectiveQualityLevel;
   const qualityProfile = useMemo(
     () => getQualityProfile(effectiveQualityLevel),
     [effectiveQualityLevel]
@@ -954,6 +972,7 @@ export function GameRoomPage({
     setAutoRematchCountdownStartedAtMs(null);
     setAutoContinueCountdownStartedAtMs(null);
     setAutoCalmMode(false);
+    setRoomEnteredAtMs(Date.now());
     setOpponentMoveCue(null);
     if (typeof document !== "undefined") {
       setPageVisible(document.visibilityState === "visible");
@@ -1275,6 +1294,10 @@ export function GameRoomPage({
   }, []);
 
   useEffect(() => {
+    if (qualityMode === "auto" && renderBootstrapDecision.phase === "boot") {
+      return;
+    }
+
     const nowMs = Date.now();
     const nextLevel = selectQualityLevel({
       mode: qualityMode,
@@ -1288,10 +1311,16 @@ export function GameRoomPage({
     }
     setQualityLevel(nextLevel);
     setQualityLastSwitchAtMs(nowMs);
-  }, [averageFps, qualityLastSwitchAtMs, qualityLevel, qualityMode]);
+  }, [averageFps, qualityLastSwitchAtMs, qualityLevel, qualityMode, renderBootstrapDecision.phase]);
 
   useEffect(() => {
     if (qualityMode !== "auto") {
+      if (autoCalmMode) {
+        setAutoCalmMode(false);
+      }
+      return;
+    }
+    if (renderBootstrapDecision.phase === "boot") {
       if (autoCalmMode) {
         setAutoCalmMode(false);
       }
@@ -1307,7 +1336,7 @@ export function GameRoomPage({
     if (autoCalmMode && averageFps > CALM_MODE_EXIT_FPS) {
       setAutoCalmMode(false);
     }
-  }, [autoCalmMode, averageFps, qualityMode]);
+  }, [autoCalmMode, averageFps, qualityMode, renderBootstrapDecision.phase]);
 
   useEffect(() => {
     if (layoutMode === "mobile") {
@@ -1343,6 +1372,7 @@ export function GameRoomPage({
         board={snapshot.board}
         size={snapshot.size}
         canPlace={canPlace}
+        ambientEnabled={renderBootstrapDecision.ambientEnabled}
         nonFocusLayerOpacity={nonFocusLayerOpacity}
         qualityProfile={qualityProfile}
         opponentMoveCue={opponentMoveCue}
@@ -1377,6 +1407,7 @@ export function GameRoomPage({
         qualityMode={qualityMode}
         qualityLevel={effectiveQualityLevel}
         calmModeActive={autoCalmMode}
+        renderBootstrapPhase={renderBootstrapDecision.phase}
         averageFps={averageFps}
         myConnected={snapshot.players[myMark].connected}
         opponentConnected={opponentConnected}
