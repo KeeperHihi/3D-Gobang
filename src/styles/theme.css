@@ -379,6 +379,13 @@ body {
   color: rgba(146, 235, 255, 0.9) !important;
 }
 
+.board-loading-actions {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .board-loading-pulse-track {
   margin-top: 14px;
   display: flex;
@@ -417,6 +424,18 @@ body {
 
 .board-loading-retry:hover {
   filter: brightness(1.08);
+}
+
+.board-loading-refresh {
+  border-color: rgba(255, 208, 123, 0.58);
+  background: linear-gradient(92deg, rgba(255, 191, 104, 0.26), rgba(255, 132, 94, 0.24));
+  color: #fff0de;
+}
+
+.board-loading-retry-secondary {
+  border-color: rgba(111, 229, 255, 0.32);
+  background: rgba(11, 26, 56, 0.58);
+  color: rgba(216, 240, 255, 0.95);
 }
 
 @keyframes board-loading-dot {

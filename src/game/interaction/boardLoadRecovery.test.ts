@@ -1,10 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
   BOARD_LOAD_AUTO_RETRY_DELAYS_MS,
+  classifyBoardLoadError,
   evaluateBoardLoadRecovery
 } from "./boardLoadRecovery";
 
 describe("evaluateBoardLoadRecovery", () => {
+  it("marks unrecoverable chunk errors as refresh-required", () => {
+    const decision = evaluateBoardLoadRecovery({
+      failedAutoRetryCount: 1,
+      isOnline: true,
+      errorKind: "unrecoverable_chunk"
+    });
+
+    expect(decision.shouldAutoRetry).toBe(false);
+    expect(decision.nextRetryDelayMs).toBeNull();
+    expect(decision.status).toBe("refresh-required");
+  });
+
   it("returns backoff delays by failed count", () => {
     const first = evaluateBoardLoadRecovery({
       failedAutoRetryCount: 0,
@@ -73,5 +86,21 @@ describe("evaluateBoardLoadRecovery", () => {
     expect(reset.shouldAutoRetry).toBe(true);
     expect(reset.nextRetryDelayMs).toBe(1_000);
     expect(reset.nextAttempt).toBe(1);
+  });
+});
+
+describe("classifyBoardLoadError", () => {
+  it("detects unrecoverable dynamic chunk loading errors", () => {
+    expect(classifyBoardLoadError(new Error("ChunkLoadError: Loading chunk 123 failed"))).toBe(
+      "unrecoverable_chunk"
+    );
+    expect(classifyBoardLoadError("Failed to fetch dynamically imported module")).toBe(
+      "unrecoverable_chunk"
+    );
+  });
+
+  it("defaults unknown errors to transient", () => {
+    expect(classifyBoardLoadError(new Error("network timeout"))).toBe("transient");
+    expect(classifyBoardLoadError(null)).toBe("transient");
   });
 });

@@ -86,7 +86,11 @@ import {
   createWinLineDirectorRoundKey,
   evaluateWinLineDirector
 } from "../game/interaction/winLineDirector";
-import { evaluateBoardLoadRecovery } from "../game/interaction/boardLoadRecovery";
+import {
+  classifyBoardLoadError,
+  evaluateBoardLoadRecovery,
+  type BoardLoadErrorKind
+} from "../game/interaction/boardLoadRecovery";
 import { BoardLoadingPanel } from "../ui/BoardLoadingPanel";
 import { createLazyBoardScene } from "../ui/boardSceneLoader";
 import { HUD } from "../ui/HUD";
@@ -150,14 +154,14 @@ function resolveTurnNudgeNotificationPermission(): TurnNudgeNotificationPermissi
 class BoardSceneSlotErrorBoundary extends Component<
   {
     resetKey: number;
-    onError: () => void;
+    onError: (error: unknown) => void;
     children: ReactNode;
   },
   { hasError: boolean }
 > {
   constructor(props: {
     resetKey: number;
-    onError: () => void;
+    onError: (error: unknown) => void;
     children: ReactNode;
   }) {
     super(props);
@@ -168,8 +172,8 @@ class BoardSceneSlotErrorBoundary extends Component<
     return { hasError: true };
   }
 
-  componentDidCatch() {
-    this.props.onError();
+  componentDidCatch(error: Error) {
+    this.props.onError(error);
   }
 
   componentDidUpdate(prevProps: { resetKey: number }) {
@@ -283,6 +287,7 @@ export function GameRoomPage({
   const [boardSceneReloadToken, setBoardSceneReloadToken] = useState(0);
   const [boardSceneReady, setBoardSceneReady] = useState(false);
   const [boardSceneLoadFailed, setBoardSceneLoadFailed] = useState(false);
+  const [boardLoadErrorKind, setBoardLoadErrorKind] = useState<BoardLoadErrorKind>("transient");
   const [boardAutoRetryAttempt, setBoardAutoRetryAttempt] = useState(0);
   const [boardAutoRetryScheduledAtMs, setBoardAutoRetryScheduledAtMs] = useState<number | null>(null);
   const [boardAutoRetrying, setBoardAutoRetrying] = useState(false);
@@ -351,9 +356,10 @@ export function GameRoomPage({
     () =>
       evaluateBoardLoadRecovery({
         failedAutoRetryCount: boardAutoRetryAttempt,
-        isOnline: connectionStatus === "online"
+        isOnline: connectionStatus === "online",
+        errorKind: boardLoadErrorKind
       }),
-    [boardAutoRetryAttempt, connectionStatus]
+    [boardAutoRetryAttempt, boardLoadErrorKind, connectionStatus]
   );
   const boardAutoRetryRemainingMs = useMemo(() => {
     if (boardAutoRetryScheduledAtMs === null) {
@@ -479,7 +485,9 @@ export function GameRoomPage({
     }
 
     const boardStatusReason = boardSceneLoadFailed
-      ? "棋盘加载失败，可点击“重试加载棋盘”后继续操作"
+      ? boardLoadRecoveryDecision.status === "refresh-required"
+        ? "棋盘资源已更新，请点击“立即刷新并恢复战局”"
+        : "棋盘加载失败，可点击“重试加载棋盘”后继续操作"
       : "棋盘加载中，战场就绪后可操作";
 
     return {
@@ -487,7 +495,13 @@ export function GameRoomPage({
       enabled: false,
       reason: boardStatusReason
     };
-  }, [boardSceneLoadFailed, boardSceneReady, primaryIntent, snapshot.winner]);
+  }, [
+    boardLoadRecoveryDecision.status,
+    boardSceneLoadFailed,
+    boardSceneReady,
+    primaryIntent,
+    snapshot.winner
+  ]);
   const onboardingGuide = useMemo(
     () =>
       createOnboardingGuideState({
@@ -998,16 +1012,25 @@ export function GameRoomPage({
     clearBoardAutoRetryTimer();
     setBoardAutoRetrying(false);
     setBoardAutoRetryAttempt(0);
+    setBoardLoadErrorKind("transient");
     triggerBoardSceneReload();
   }, [clearBoardAutoRetryTimer, triggerBoardSceneReload]);
-  const handleBoardSceneLoadError = useCallback(() => {
+  const handleBoardSceneLoadError = useCallback((error: unknown) => {
+    setBoardLoadErrorKind(classifyBoardLoadError(error));
     setBoardSceneLoadFailed(true);
     setBoardSceneReady(false);
+  }, []);
+  const handleRefreshAndResume = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.location.reload();
   }, []);
   const handleBoardSceneReady = useCallback(() => {
     clearBoardAutoRetryTimer();
     setBoardAutoRetrying(false);
     setBoardAutoRetryAttempt(0);
+    setBoardLoadErrorKind("transient");
     setBoardSceneReady(true);
     setBoardSceneLoadFailed(false);
   }, [clearBoardAutoRetryTimer]);
@@ -1583,6 +1606,7 @@ export function GameRoomPage({
     clearBoardAutoRetryTimer();
     setBoardAutoRetrying(false);
     setBoardAutoRetryAttempt(0);
+    setBoardLoadErrorKind("transient");
     setBoardSceneReady(false);
     setBoardSceneLoadFailed(false);
   }, [clearBoardAutoRetryTimer, snapshot.roomId]);
@@ -1780,6 +1804,7 @@ export function GameRoomPage({
           <BoardLoadingPanel
             state="failed"
             onRetry={handleRetryBoardSceneLoad}
+            onRefresh={handleRefreshAndResume}
             autoRetrying={boardAutoRetrying}
             autoRetryNextAttempt={boardLoadRecoveryDecision.nextAttempt}
             autoRetryAttemptedCount={boardAutoRetryAttempt}

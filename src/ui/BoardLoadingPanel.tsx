@@ -3,6 +3,7 @@ import type { BoardLoadRecoveryStatus } from "../game/interaction/boardLoadRecov
 interface BoardLoadingPanelProps {
   state: "loading" | "failed";
   onRetry?: () => void;
+  onRefresh?: () => void;
   autoRetrying?: boolean;
   autoRetryNextAttempt?: number;
   autoRetryAttemptedCount?: number;
@@ -22,6 +23,7 @@ function formatRetryCountdownLabel(remainingMs: number | null | undefined): stri
 export function BoardLoadingPanel({
   state,
   onRetry,
+  onRefresh,
   autoRetrying = false,
   autoRetryNextAttempt = 1,
   autoRetryAttemptedCount = 0,
@@ -41,6 +43,8 @@ export function BoardLoadingPanel({
         <p>
           {loading
             ? "房间状态已就绪，你可以先查看回合与连接信息。棋盘完成后立即可落子。"
+            : recoveryStatus === "refresh-required"
+              ? "检测到资源版本已更新，当前分包不可恢复。刷新后将自动恢复战局。"
             : autoRetrying
               ? `网络波动，系统正在自动恢复（第 ${autoRetryNextAttempt} / ${autoRetryMaxAttempts} 次）。`
               : recoveryStatus === "offline"
@@ -59,6 +63,19 @@ export function BoardLoadingPanel({
             <span className="board-loading-pulse-dot" />
             <span className="board-loading-pulse-dot" />
             <span className="board-loading-pulse-dot" />
+          </div>
+        ) : recoveryStatus === "refresh-required" ? (
+          <div className="board-loading-actions">
+            <button className="board-loading-retry board-loading-refresh" type="button" onClick={onRefresh}>
+              立即刷新并恢复战局
+            </button>
+            <button
+              className="board-loading-retry board-loading-retry-secondary"
+              type="button"
+              onClick={onRetry}
+            >
+              仍然尝试重试
+            </button>
           </div>
         ) : (
           <button className="board-loading-retry" type="button" onClick={onRetry}>
