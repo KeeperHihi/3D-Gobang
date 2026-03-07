@@ -29,6 +29,8 @@ interface BoardSceneProps {
     player: PlayerMark;
   } | null;
   onPlace: (coordinate: Coordinate3D) => void;
+  onLayerWheel?: (deltaY: number) => boolean;
+  onLayerSwipe?: (deltaY: number) => void;
   onUserRotate?: () => void;
 }
 
@@ -137,10 +139,13 @@ export function BoardScene({
   hintMoves,
   pendingMove,
   onPlace,
+  onLayerWheel,
+  onLayerSwipe,
   onUserRotate
 }: BoardSceneProps) {
   const isMobileLayout = layoutMode === "mobile";
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const winningSet = useMemo(() => new Set(winningLine ?? []), [winningLine]);
   const pendingCellPosition = useMemo(() => {
     if (!pendingMove) {
@@ -186,7 +191,50 @@ export function BoardScene({
   }, [size, winLineCinematicActive, winningLine]);
 
   return (
-    <div className="board-scene">
+    <div
+      className="board-scene"
+      onWheel={(event) => {
+        if (!onLayerWheel) {
+          return;
+        }
+        if (event.deltaY === 0) {
+          return;
+        }
+        const handled = onLayerWheel(event.deltaY);
+        if (handled) {
+          event.preventDefault();
+        }
+      }}
+      onTouchStart={(event) => {
+        const touch = event.changedTouches[0];
+        if (!touch) {
+          return;
+        }
+        touchStartRef.current = {
+          x: touch.clientX,
+          y: touch.clientY
+        };
+      }}
+      onTouchEnd={(event) => {
+        if (!onLayerSwipe || !touchStartRef.current) {
+          touchStartRef.current = null;
+          return;
+        }
+        const touch = event.changedTouches[0];
+        if (!touch) {
+          touchStartRef.current = null;
+          return;
+        }
+        const start = touchStartRef.current;
+        const deltaX = touch.clientX - start.x;
+        const deltaY = touch.clientY - start.y;
+        touchStartRef.current = null;
+        if (Math.abs(deltaY) <= Math.abs(deltaX) * 1.1) {
+          return;
+        }
+        onLayerSwipe(deltaY);
+      }}
+    >
       <Canvas camera={{ position: isMobileLayout ? [10.4, 9.3, 10.4] : [9, 8, 9], fov: 42 }}>
         <color attach="background" args={["#040713"]} />
         <fog attach="fog" args={["#040713", 12, qualityProfile.fogFar]} />

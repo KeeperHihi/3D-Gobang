@@ -573,6 +573,59 @@ body {
   margin-top: 6px;
 }
 
+.hud-layer-rail {
+  margin-bottom: 10px;
+  border-radius: 12px;
+  padding: 9px 10px;
+  border: 1px solid rgba(123, 218, 255, 0.36);
+  background: linear-gradient(125deg, rgba(44, 98, 170, 0.28), rgba(64, 71, 162, 0.24));
+}
+
+.hud-layer-rail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: rgba(206, 239, 255, 0.9);
+  margin-bottom: 7px;
+}
+
+.hud-layer-rail-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.hud-layer-rail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hud-layer-tag {
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  border: 1px solid transparent;
+  color: #eaf7ff;
+}
+
+.hud-layer-tag.current {
+  border-color: rgba(152, 240, 255, 0.8);
+  background: rgba(65, 147, 215, 0.4);
+}
+
+.hud-layer-tag.recommended {
+  border-color: rgba(255, 227, 138, 0.82);
+  background: rgba(156, 111, 33, 0.36);
+}
+
+.hud-layer-tag.recent {
+  border-color: rgba(255, 156, 224, 0.75);
+  background: rgba(139, 68, 142, 0.34);
+}
+
 @keyframes turn-clock-pulse {
   from {
     filter: brightness(0.95);
@@ -928,6 +981,10 @@ body {
 
 .hud-root.mobile .hud-coach-card {
   padding: 8px 9px;
+}
+
+.hud-root.mobile .hud-layer-rail-actions {
+  flex-wrap: wrap;
 }
 
 .hud-root.mobile .hud-button,

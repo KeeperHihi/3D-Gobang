@@ -46,6 +46,7 @@ import {
   type TurnNudgeNotificationPermission
 } from "../game/interaction/turnNudgePermission";
 import { evaluateHudSpotlight } from "../game/interaction/hudSpotlight";
+import { evaluateLayerQuickNav } from "../game/interaction/layerQuickNav";
 import {
   createWinLineDirectorRoundKey,
   evaluateWinLineDirector
@@ -106,6 +107,7 @@ function resolveTurnNudgeNotificationPermission(): TurnNudgeNotificationPermissi
 }
 
 const WIN_LINE_CINEMATIC_DURATION_MS = 2200;
+const LAYER_NAV_INPUT_THROTTLE_MS = 170;
 
 export function GameRoomPage({
   snapshot,
@@ -145,6 +147,8 @@ export function GameRoomPage({
   const autoContinueCancelledRoundKeyRef = useRef<string | null>(null);
   const winLineDirectorTriggeredRoundKeyRef = useRef<string | null>(null);
   const winLineDirectorTimerRef = useRef<number | null>(null);
+  const layerNavLastInputAtMsRef = useRef(0);
+  const layerNavLastRotateAtMsRef = useRef(0);
   const turnNudgeTriggeredTurnKeyRef = useRef<string | null>(null);
   const turnNudgeTitleActiveRef = useRef(false);
   const wasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
@@ -235,6 +239,17 @@ export function GameRoomPage({
     }
     return Math.floor(snapshot.size / 2);
   }, [primaryHint, snapshot.lastMove, snapshot.size]);
+  const layerQuickNav = useMemo(
+    () =>
+      evaluateLayerQuickNav({
+        focusLayer,
+        boardSize: snapshot.size,
+        hintMoves: hintMovesForBoard,
+        lastMove: snapshot.lastMove,
+        autoFocusLayer
+      }),
+    [autoFocusLayer, focusLayer, hintMovesForBoard, snapshot.lastMove, snapshot.size]
+  );
   const rematchWaitDecision = useMemo(
     () =>
       evaluateRematchWait({
@@ -638,6 +653,7 @@ export function GameRoomPage({
   ]);
 
   const handleBoardRotate = useCallback(() => {
+    layerNavLastRotateAtMsRef.current = Date.now();
     stopWinLineCinematic();
     if (!shouldShowOnboarding) {
       return;
@@ -674,20 +690,69 @@ export function GameRoomPage({
     );
   }, []);
 
-  const handleLayerStep = (step: -1 | 1) => {
+  const handleLayerStep = useCallback((step: -1 | 1) => {
     setFocusMode("manual");
     setFocusLayer((current) => clampLayer(current + step, snapshot.size));
-  };
+  }, [snapshot.size]);
 
-  const handleAutoFocus = () => {
+  const handleAutoFocus = useCallback(() => {
     setFocusMode("auto");
     setFocusLayer(autoFocusLayer);
-  };
+  }, [autoFocusLayer]);
 
-  const handleAssistToggle = () => {
+  const handleLayerSmartJump = useCallback(() => {
+    if (layerQuickNav.smartJumpLayer === focusLayer) {
+      return;
+    }
+    setFocusMode("manual");
+    setFocusLayer(layerQuickNav.smartJumpLayer);
+  }, [focusLayer, layerQuickNav.smartJumpLayer]);
+
+  const handleLayerWheel = useCallback(
+    (deltaY: number): boolean => {
+      const now = Date.now();
+      if (
+        now - layerNavLastInputAtMsRef.current < LAYER_NAV_INPUT_THROTTLE_MS ||
+        now - layerNavLastRotateAtMsRef.current < LAYER_NAV_INPUT_THROTTLE_MS
+      ) {
+        return false;
+      }
+      if (Math.abs(deltaY) < 18) {
+        return false;
+      }
+      const step: -1 | 1 = deltaY > 0 ? 1 : -1;
+      if ((step === 1 && !layerQuickNav.canGoNext) || (step === -1 && !layerQuickNav.canGoPrev)) {
+        return false;
+      }
+      layerNavLastInputAtMsRef.current = now;
+      handleLayerStep(step);
+      return true;
+    },
+    [handleLayerStep, layerQuickNav.canGoNext, layerQuickNav.canGoPrev]
+  );
+
+  const handleLayerSwipe = useCallback(
+    (deltaY: number) => {
+      const now = Date.now();
+      if (
+        now - layerNavLastInputAtMsRef.current < LAYER_NAV_INPUT_THROTTLE_MS ||
+        now - layerNavLastRotateAtMsRef.current < LAYER_NAV_INPUT_THROTTLE_MS
+      ) {
+        return;
+      }
+      if (Math.abs(deltaY) < 32) {
+        return;
+      }
+      layerNavLastInputAtMsRef.current = now;
+      handleLayerStep(deltaY < 0 ? 1 : -1);
+    },
+    [handleLayerStep]
+  );
+
+  const handleAssistToggle = useCallback(() => {
     setAssistEnabled((current) => !current);
     setFocusMode("auto");
-  };
+  }, []);
 
   const handleToggleAdvanced = () => {
     setAdvancedOpen((current) => !current);
@@ -775,6 +840,8 @@ export function GameRoomPage({
     wasMyTurnRef.current = snapshot.turn === myMark && snapshot.winner === null;
     clearTurnNudgeTitle();
     stopWinLineCinematic();
+    layerNavLastInputAtMsRef.current = 0;
+    layerNavLastRotateAtMsRef.current = 0;
     setSettlementStartedAtMs(null);
     setAutoRematchCountdownStartedAtMs(null);
     setAutoContinueCountdownStartedAtMs(null);
@@ -1100,6 +1167,8 @@ export function GameRoomPage({
         hintMoves={hintMovesForBoard}
         pendingMove={pendingMove}
         onPlace={onPlace}
+        onLayerWheel={handleLayerWheel}
+        onLayerSwipe={handleLayerSwipe}
         onUserRotate={handleBoardRotate}
       />
       <HUD
@@ -1115,6 +1184,7 @@ export function GameRoomPage({
         assistEnabled={assistEnabled}
         focusLayer={focusLayer}
         focusMode={focusMode}
+        layerQuickNav={layerQuickNav}
         smartAction={smartAction}
         onboardingGuide={onboardingGuide.visible ? onboardingGuide : null}
         advancedOpen={advancedOpen}
@@ -1158,6 +1228,7 @@ export function GameRoomPage({
         onOnboardingSkip={handleOnboardingSkip}
         onToggleAdvanced={handleToggleAdvanced}
         onLayerStep={handleLayerStep}
+        onLayerSmartJump={handleLayerSmartJump}
         onAutoFocus={handleAutoFocus}
         onToggleAssist={handleAssistToggle}
         onQualityModeChange={onQualityModeChange}

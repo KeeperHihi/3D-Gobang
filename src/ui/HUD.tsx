@@ -15,6 +15,7 @@ import type { AutoContinueAfterFallbackPhase } from "../game/interaction/autoCon
 import type { RematchWaitPhase } from "../game/interaction/rematchWait";
 import type { TurnNudgePermissionPhase } from "../game/interaction/turnNudgePermission";
 import type { HudSpotlightCardId, HudSpotlightDecision } from "../game/interaction/hudSpotlight";
+import type { LayerQuickNavDecision } from "../game/interaction/layerQuickNav";
 import { SmartActionBar } from "./SmartActionBar";
 
 interface HUDProps {
@@ -30,6 +31,7 @@ interface HUDProps {
   assistEnabled: boolean;
   focusLayer: number;
   focusMode: "auto" | "manual";
+  layerQuickNav: LayerQuickNavDecision;
   smartAction: SmartActionState;
   onboardingGuide: OnboardingGuideState | null;
   advancedOpen: boolean;
@@ -73,6 +75,7 @@ interface HUDProps {
   onOnboardingSkip: () => void;
   onToggleAdvanced: () => void;
   onLayerStep: (step: -1 | 1) => void;
+  onLayerSmartJump: () => void;
   onAutoFocus: () => void;
   onToggleAssist: () => void;
   onQualityModeChange: (mode: QualityMode) => void;
@@ -153,6 +156,7 @@ export function HUD({
   assistEnabled,
   focusLayer,
   focusMode,
+  layerQuickNav,
   smartAction,
   onboardingGuide,
   advancedOpen,
@@ -196,6 +200,7 @@ export function HUD({
   onOnboardingSkip,
   onToggleAdvanced,
   onLayerStep,
+  onLayerSmartJump,
   onAutoFocus,
   onToggleAssist,
   onQualityModeChange,
@@ -351,6 +356,15 @@ export function HUD({
       return null;
     })
     .filter((item): item is string => Boolean(item));
+  const smartJumpDisabled = layerQuickNav.smartJumpLayer === focusLayer;
+  const smartJumpLabel =
+    layerQuickNav.smartJumpSource === "recommended"
+      ? "跳到推荐层"
+      : layerQuickNav.smartJumpSource === "recent"
+        ? "跳到最近层"
+        : layerQuickNav.smartJumpSource === "auto"
+          ? "智能跳层"
+          : "已在目标层";
 
   return (
     <div className={`hud-root ${isMobileLayout ? "mobile" : "desktop"}`}>
@@ -544,6 +558,60 @@ export function HUD({
             ))}
           </div>
         ) : null}
+        <div className="hud-layer-rail">
+          <div className="hud-layer-rail-header">
+            <span>层导航</span>
+            <span>
+              L{focusLayer + 1}/{boardSize} · {focusMode === "auto" ? "自动" : "手动"}
+            </span>
+          </div>
+          <div className="hud-layer-rail-actions">
+            <button
+              className="hud-mini-button"
+              type="button"
+              onClick={() => onLayerStep(-1)}
+              disabled={!layerQuickNav.canGoPrev}
+            >
+              上一层
+            </button>
+            <button
+              className={`hud-mini-button ${!smartJumpDisabled ? "active" : ""}`}
+              type="button"
+              onClick={onLayerSmartJump}
+              disabled={smartJumpDisabled}
+            >
+              {smartJumpLabel}
+            </button>
+            <button
+              className="hud-mini-button"
+              type="button"
+              onClick={() => onLayerStep(1)}
+              disabled={!layerQuickNav.canGoNext}
+            >
+              下一层
+            </button>
+            <button
+              className="hud-mini-button"
+              type="button"
+              onClick={onAutoFocus}
+              disabled={focusMode === "auto"}
+            >
+              自动
+            </button>
+          </div>
+          <div className="hud-layer-rail-tags">
+            {layerQuickNav.keyTags.map((tag) => (
+              <span key={`${tag.kind}-${tag.layer}`} className={`hud-layer-tag ${tag.kind}`}>
+                {tag.kind === "current"
+                  ? "当前"
+                  : tag.kind === "recommended"
+                    ? "推荐"
+                    : "最近"}{" "}
+                L{tag.layer + 1}
+              </span>
+            ))}
+          </div>
+        </div>
         <SmartActionBar action={smartAction} onAction={onPrimaryAction} layoutMode={layoutMode} />
         <div className="hud-actions">
           <button className="hud-button ghost" type="button" onClick={onToggleAdvanced}>
