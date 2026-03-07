@@ -53,6 +53,7 @@ const QUALITY_MODE_STORAGE_KEY = "nebula-cube-quality-mode";
 const ONBOARDING_STORAGE_KEY = "nebula-cube-onboarding-v1";
 const TIMEOUT_ASSIST_STORAGE_KEY = "nebula-cube-timeout-assist-v1";
 const AUTO_REMATCH_STORAGE_KEY = "nebula-cube-auto-rematch-v1";
+const TURN_NUDGE_STORAGE_KEY = "nebula-cube-turn-nudge-v1";
 
 function loadGameRoomPageModule() {
   return import("./pages/GameRoomPage");
@@ -138,6 +139,18 @@ function persistAutoRematchToStorage(enabled: boolean): void {
   localStorage.setItem(AUTO_REMATCH_STORAGE_KEY, enabled ? "on" : "off");
 }
 
+function readTurnNudgeFromStorage(): boolean {
+  const raw = localStorage.getItem(TURN_NUDGE_STORAGE_KEY);
+  if (raw === "off") {
+    return false;
+  }
+  return true;
+}
+
+function persistTurnNudgeToStorage(enabled: boolean): void {
+  localStorage.setItem(TURN_NUDGE_STORAGE_KEY, enabled ? "on" : "off");
+}
+
 export default function App() {
   const socket = useMemo(() => createSocketClient(), []);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
@@ -161,6 +174,9 @@ export default function App() {
   );
   const [autoRematchEnabled, setAutoRematchEnabled] = useState<boolean>(() =>
     readAutoRematchFromStorage()
+  );
+  const [turnNudgeEnabled, setTurnNudgeEnabled] = useState<boolean>(() =>
+    readTurnNudgeFromStorage()
   );
   const [continueTransition, setContinueTransition] = useState(() =>
     createInitialContinueTransitionState()
@@ -218,6 +234,10 @@ export default function App() {
   useEffect(() => {
     persistAutoRematchToStorage(autoRematchEnabled);
   }, [autoRematchEnabled]);
+
+  useEffect(() => {
+    persistTurnNudgeToStorage(turnNudgeEnabled);
+  }, [turnNudgeEnabled]);
 
   useEffect(() => {
     if (matchPhase !== "queuing" || queueStartedAtMs === null) {
@@ -758,6 +778,8 @@ export default function App() {
         timeoutAssistNetworkTier={networkLatencyProfile.networkTier}
         autoRematchEnabled={autoRematchEnabled}
         onAutoRematchEnabledChange={setAutoRematchEnabled}
+        turnNudgeEnabled={turnNudgeEnabled}
+        onTurnNudgeEnabledChange={setTurnNudgeEnabled}
         onLeave={leaveRoom}
       />
     </Suspense>

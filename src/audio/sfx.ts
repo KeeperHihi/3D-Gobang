@@ -33,3 +33,10 @@ export function playWinSfx() {
   setTimeout(() => playTone(840, 0.14, "sine"), 90);
   setTimeout(() => playTone(1120, 0.2, "sine"), 190);
 }
+
+export function playTurnNudgeSfx() {
+  try {
+    playTone(560, 0.08, "sine");
+    setTimeout(() => playTone(740, 0.1, "triangle"), 80);
+  } catch {}
+}

@@ -39,6 +39,7 @@ interface HUDProps {
   timeoutAssistUrgency: TimeoutAssistUrgency;
   timeoutAssistThresholdMs: number;
   timeoutAssistNetworkTier: TimeoutAssistNetworkTier;
+  turnNudgeEnabled: boolean;
   autoRematchEnabled: boolean;
   autoRematchPhase: AutoRematchPhase;
   autoRematchCountdownRemainingMs: number | null;
@@ -54,6 +55,7 @@ interface HUDProps {
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
   onPrimaryAction: () => void;
   onToggleTimeoutAssist: () => void;
+  onToggleTurnNudge: () => void;
   onToggleAutoRematch: () => void;
   onCancelAutoRematch: () => void;
   onCancelAutoContinue: () => void;
@@ -118,6 +120,7 @@ export function HUD({
   timeoutAssistUrgency,
   timeoutAssistThresholdMs,
   timeoutAssistNetworkTier,
+  turnNudgeEnabled,
   autoRematchEnabled,
   autoRematchPhase,
   autoRematchCountdownRemainingMs,
@@ -133,6 +136,7 @@ export function HUD({
   connectionStatus,
   onPrimaryAction,
   onToggleTimeoutAssist,
+  onToggleTurnNudge,
   onToggleAutoRematch,
   onCancelAutoRematch,
   onCancelAutoContinue,
@@ -475,6 +479,13 @@ export function HUD({
                 onClick={onToggleTimeoutAssist}
               >
                 超时护航：{timeoutAssistEnabled ? "开" : "关"}
+              </button>
+              <button
+                className={`hud-mini-button ${turnNudgeEnabled ? "active" : ""}`}
+                type="button"
+                onClick={onToggleTurnNudge}
+              >
+                回合唤醒：{turnNudgeEnabled ? "开" : "关"}
               </button>
               <button className="hud-button ghost" type="button" onClick={onToggleAssist}>
                 战术辅助：{assistEnabled ? "开" : "关"}

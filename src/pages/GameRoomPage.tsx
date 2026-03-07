@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Coordinate3D, PlayerMark, RoomSnapshot } from "../network/protocol";
-import { playDropSfx, playWinSfx } from "../audio/sfx";
+import { playDropSfx, playTurnNudgeSfx, playWinSfx } from "../audio/sfx";
 import type { BoardCell } from "../game/engine/board";
 import { analyzeMoveHints, type MoveHint } from "../game/engine/moveHints";
 import { createWinLinesIndex } from "../game/engine/winLines";
@@ -36,6 +36,10 @@ import {
   createTimeoutAssistTurnKey,
   evaluateTimeoutAssist
 } from "../game/interaction/timeoutAssist";
+import {
+  createTurnNudgeTurnKey,
+  shouldTriggerTurnNudge
+} from "../game/interaction/turnNudge";
 import { BoardScene } from "../ui/BoardScene";
 import { HUD } from "../ui/HUD";
 
@@ -63,6 +67,8 @@ interface GameRoomPageProps {
   timeoutAssistNetworkTier: TimeoutAssistNetworkTier;
   autoRematchEnabled: boolean;
   onAutoRematchEnabledChange: (enabled: boolean) => void;
+  turnNudgeEnabled: boolean;
+  onTurnNudgeEnabledChange: (enabled: boolean) => void;
   onLeave: () => void;
 }
 
@@ -101,6 +107,8 @@ export function GameRoomPage({
   timeoutAssistNetworkTier,
   autoRematchEnabled,
   onAutoRematchEnabledChange,
+  turnNudgeEnabled,
+  onTurnNudgeEnabledChange,
   onLeave
 }: GameRoomPageProps) {
   const lastMoveNumberRef = useRef(0);
@@ -112,6 +120,12 @@ export function GameRoomPage({
   const autoRematchCancelledRoundKeyRef = useRef<string | null>(null);
   const autoContinueTriggeredRoundKeyRef = useRef<string | null>(null);
   const autoContinueCancelledRoundKeyRef = useRef<string | null>(null);
+  const turnNudgeTriggeredTurnKeyRef = useRef<string | null>(null);
+  const turnNudgeTitleActiveRef = useRef(false);
+  const wasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
+  const baseDocumentTitleRef = useRef(
+    typeof document === "undefined" ? "NEBULA CUBE" : document.title
+  );
   const [assistEnabled, setAssistEnabled] = useState(true);
   const [onboardingProgress, setOnboardingProgress] = useState(() =>
     createDefaultOnboardingProgress()
@@ -131,6 +145,12 @@ export function GameRoomPage({
   const [qualityLastSwitchAtMs, setQualityLastSwitchAtMs] = useState<number>(0);
   const [averageFps, setAverageFps] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [pageVisible, setPageVisible] = useState<boolean>(() =>
+    typeof document === "undefined" ? true : document.visibilityState === "visible"
+  );
+  const [windowFocused, setWindowFocused] = useState<boolean>(() =>
+    typeof document === "undefined" ? true : document.hasFocus()
+  );
   const [settlementStartedAtMs, setSettlementStartedAtMs] = useState<number | null>(null);
   const [autoRematchCountdownStartedAtMs, setAutoRematchCountdownStartedAtMs] = useState<number | null>(
     null
@@ -249,12 +269,24 @@ export function GameRoomPage({
     [onboardingProgress, shouldShowOnboarding, smartAction.enabled]
   );
   const qualityProfile = useMemo(() => getQualityProfile(qualityLevel), [qualityLevel]);
+  const isMyTurn = snapshot.turn === myMark && snapshot.winner === null;
   const turnRemainingMs = useMemo(() => {
     if (snapshot.winner || turnDeadlineAt === null) {
       return null;
     }
     return Math.max(0, turnDeadlineAt - nowMs);
   }, [nowMs, snapshot.winner, turnDeadlineAt]);
+  const turnNudgeTurnKey = useMemo(
+    () =>
+      createTurnNudgeTurnKey({
+        roomId: snapshot.roomId,
+        turn: snapshot.turn,
+        winner: snapshot.winner,
+        lastMoveNumber: snapshot.lastMove?.moveNumber ?? null,
+        turnDeadlineAt
+      }),
+    [snapshot.lastMove?.moveNumber, snapshot.roomId, snapshot.turn, snapshot.winner, turnDeadlineAt]
+  );
   const timeoutAssistTurnKey = useMemo(
     () =>
       createTimeoutAssistTurnKey({
@@ -388,6 +420,9 @@ export function GameRoomPage({
   const handleToggleTimeoutAssist = useCallback(() => {
     onTimeoutAssistEnabledChange(!timeoutAssistEnabled);
   }, [onTimeoutAssistEnabledChange, timeoutAssistEnabled]);
+  const handleToggleTurnNudge = useCallback(() => {
+    onTurnNudgeEnabledChange(!turnNudgeEnabled);
+  }, [onTurnNudgeEnabledChange, turnNudgeEnabled]);
   const handleCancelAutoRematch = useCallback(() => {
     if (!snapshot.winner) {
       return;
@@ -471,6 +506,22 @@ export function GameRoomPage({
     setAdvancedOpen((current) => !current);
   };
 
+  const applyTurnNudgeTitle = useCallback(() => {
+    if (typeof document === "undefined" || turnNudgeTitleActiveRef.current) {
+      return;
+    }
+    document.title = `⚡ 轮到你了 · ${baseDocumentTitleRef.current}`;
+    turnNudgeTitleActiveRef.current = true;
+  }, []);
+
+  const clearTurnNudgeTitle = useCallback(() => {
+    if (typeof document === "undefined" || !turnNudgeTitleActiveRef.current) {
+      return;
+    }
+    document.title = baseDocumentTitleRef.current;
+    turnNudgeTitleActiveRef.current = false;
+  }, []);
+
   useEffect(() => {
     const moveNumber = snapshot.lastMove?.moveNumber ?? 0;
     if (moveNumber > lastMoveNumberRef.current) {
@@ -500,11 +551,18 @@ export function GameRoomPage({
     autoRematchCancelledRoundKeyRef.current = null;
     autoContinueTriggeredRoundKeyRef.current = null;
     autoContinueCancelledRoundKeyRef.current = null;
+    turnNudgeTriggeredTurnKeyRef.current = null;
+    wasMyTurnRef.current = snapshot.turn === myMark && snapshot.winner === null;
+    clearTurnNudgeTitle();
     setSettlementStartedAtMs(null);
     setAutoRematchCountdownStartedAtMs(null);
     setAutoContinueCountdownStartedAtMs(null);
+    if (typeof document !== "undefined") {
+      setPageVisible(document.visibilityState === "visible");
+      setWindowFocused(document.hasFocus());
+    }
     setOnboardingProgress(createDefaultOnboardingProgress());
-  }, [snapshot.roomId]);
+  }, [clearTurnNudgeTitle, snapshot.roomId]);
 
   useEffect(() => {
     setSettlementStartedAtMs((current) =>
@@ -629,6 +687,83 @@ export function GameRoomPage({
     setAutoContinueCountdownStartedAtMs(null);
     onContinueMatch();
   }, [autoContinueDecision.shouldAutoContinue, autoContinueRoundKey, onContinueMatch]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleVisibilityChange = () => {
+      setPageVisible(document.visibilityState === "visible");
+    };
+    const handleFocus = () => {
+      setWindowFocused(true);
+    };
+    const handleBlur = () => {
+      setWindowFocused(false);
+    };
+
+    handleVisibilityChange();
+    setWindowFocused(document.hasFocus());
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, []);
+
+  useEffect(() => {
+    const shouldNudge = shouldTriggerTurnNudge({
+      enabled: turnNudgeEnabled,
+      connectionStatus,
+      winner: snapshot.winner,
+      isMyTurn,
+      wasMyTurn: wasMyTurnRef.current,
+      canPlace,
+      pageVisible,
+      windowFocused,
+      alreadyNudgedThisTurn: turnNudgeTriggeredTurnKeyRef.current === turnNudgeTurnKey
+    });
+
+    if (shouldNudge) {
+      turnNudgeTriggeredTurnKeyRef.current = turnNudgeTurnKey;
+      applyTurnNudgeTitle();
+      playTurnNudgeSfx();
+      if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+        try {
+          new Notification("轮到你了", {
+            body: "现在是你的回合，返回战局即可一键落子"
+          });
+        } catch {}
+      }
+    }
+
+    if ((!isMyTurn || (pageVisible && windowFocused) || !turnNudgeEnabled) && turnNudgeTitleActiveRef.current) {
+      clearTurnNudgeTitle();
+    }
+
+    wasMyTurnRef.current = isMyTurn;
+  }, [
+    applyTurnNudgeTitle,
+    canPlace,
+    clearTurnNudgeTitle,
+    connectionStatus,
+    isMyTurn,
+    pageVisible,
+    snapshot.winner,
+    turnNudgeEnabled,
+    turnNudgeTurnKey,
+    windowFocused
+  ]);
+
+  useEffect(() => {
+    return () => {
+      clearTurnNudgeTitle();
+    };
+  }, [clearTurnNudgeTitle]);
 
   useEffect(() => {
     if (focusMode !== "auto") {
@@ -765,6 +900,7 @@ export function GameRoomPage({
         timeoutAssistUrgency={timeoutAssistDecision.urgencyLabel}
         timeoutAssistThresholdMs={timeoutAssistThresholdMs}
         timeoutAssistNetworkTier={timeoutAssistNetworkTier}
+        turnNudgeEnabled={turnNudgeEnabled}
         autoRematchEnabled={autoRematchEnabled}
         autoRematchPhase={autoRematchDecision.phase}
         autoRematchCountdownRemainingMs={autoRematchDecision.countdownRemainingMs}
@@ -780,6 +916,7 @@ export function GameRoomPage({
         connectionStatus={connectionStatus}
         onPrimaryAction={handlePrimaryAction}
         onToggleTimeoutAssist={handleToggleTimeoutAssist}
+        onToggleTurnNudge={handleToggleTurnNudge}
         onToggleAutoRematch={handleToggleAutoRematch}
         onCancelAutoRematch={handleCancelAutoRematch}
         onCancelAutoContinue={handleCancelAutoContinue}
