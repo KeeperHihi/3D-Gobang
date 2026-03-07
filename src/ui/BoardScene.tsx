@@ -1,14 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Canvas, useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Line, OrbitControls, Sparkles, Stars } from "@react-three/drei";
-import type { Mesh } from "three";
+import { Object3D, type InstancedMesh, type Mesh } from "three";
 import type { Coordinate3D, PlayerMark } from "../network/protocol";
 import { fromLinearIndex } from "../game/engine/board";
 import type { HintPriority, MoveHint } from "../game/engine/moveHints";
 import type { LayoutMode } from "../game/interaction/deviceMode";
 import type { QualityProfile } from "../game/interaction/qualityProfile";
+import {
+  buildBoardInstanceLayout,
+  resolveBoardInstanceCell,
+  type BoardInstanceBucket
+} from "../game/interaction/boardInstancing";
 import { evaluateLayerTapAssist } from "../game/interaction/layerTapAssist";
-import { pickCell } from "../game/interaction/pickCell";
 
 const BOARD_SPACING = 1.4;
 
@@ -43,6 +47,7 @@ interface OpponentMoveCue {
 interface HintMeta {
   priority: HintPriority;
   rank: number;
+  color: string;
 }
 
 interface HintPulseProps {
@@ -160,6 +165,72 @@ function toWorldPosition(size: number, coordinate: Coordinate3D): [number, numbe
   ];
 }
 
+interface InstancedBoardBucketProps {
+  bucket: BoardInstanceBucket;
+  size: number;
+  cellSegments: number;
+  onPointerEnter?: (event: ThreeEvent<PointerEvent>) => void;
+  onPointerMove?: (event: ThreeEvent<PointerEvent>) => void;
+  onPointerLeave?: (event: ThreeEvent<PointerEvent>) => void;
+  onClick?: (event: ThreeEvent<MouseEvent>) => void;
+}
+
+function InstancedBoardBucket({
+  bucket,
+  size,
+  cellSegments,
+  onPointerEnter,
+  onPointerMove,
+  onPointerLeave,
+  onClick
+}: InstancedBoardBucketProps) {
+  const meshRef = useRef<InstancedMesh>(null);
+
+  useLayoutEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) {
+      return;
+    }
+
+    const centerOffset = (size - 1) / 2;
+    const dummy = new Object3D();
+    bucket.instances.forEach((instance, instanceId) => {
+      const { x, y, z } = instance.coordinate;
+      dummy.position.set(
+        (x - centerOffset) * BOARD_SPACING,
+        (y - centerOffset) * BOARD_SPACING,
+        (z - centerOffset) * BOARD_SPACING
+      );
+      dummy.scale.setScalar(bucket.style.scale);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(instanceId, dummy.matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+  }, [bucket.instances, bucket.style.scale, size]);
+
+  return (
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined, undefined, bucket.instances.length]}
+      onPointerEnter={onPointerEnter}
+      onPointerMove={onPointerMove}
+      onPointerLeave={onPointerLeave}
+      onClick={onClick}
+    >
+      <sphereGeometry args={[0.29, cellSegments, cellSegments]} />
+      <meshStandardMaterial
+        color={bucket.style.color}
+        emissive={bucket.style.emissive}
+        emissiveIntensity={bucket.style.emissiveIntensity}
+        transparent
+        opacity={bucket.style.opacity}
+        roughness={0.17}
+        metalness={0.3}
+      />
+    </instancedMesh>
+  );
+}
+
 export function BoardScene({
   layoutMode,
   board,
@@ -210,9 +281,11 @@ export function BoardScene({
   const hintMap = useMemo(() => {
     const map = new Map<number, HintMeta>();
     visibleHintMoves.forEach((hint, rank) => {
+      const color = colorForHintPriority(hint.priority);
       map.set(hint.index, {
         priority: hint.priority,
-        rank
+        rank,
+        color
       });
     });
     return map;
@@ -241,7 +314,33 @@ export function BoardScene({
     }
     return toWorldPosition(size, opponentMoveCue.coordinate);
   }, [opponentMoveCue, size]);
-  const otherLayerOpacity = Math.max(0.02, Math.min(1, nonFocusLayerOpacity));
+  const boardInstanceLayout = useMemo(
+    () =>
+      buildBoardInstanceLayout({
+        board,
+        size,
+        canPlace,
+        focusLayer,
+        hoveredIndex,
+        nonFocusLayerOpacity,
+        emptyCellOpacityScale: qualityProfile.emptyCellOpacityScale,
+        winningIndexes: winningSet,
+        hintMap,
+        winLineCinematicActive
+      }),
+    [
+      board,
+      size,
+      canPlace,
+      focusLayer,
+      hoveredIndex,
+      nonFocusLayerOpacity,
+      qualityProfile.emptyCellOpacityScale,
+      winningSet,
+      hintMap,
+      winLineCinematicActive
+    ]
+  );
 
   useEffect(() => {
     if (canPlace) {
@@ -360,100 +459,84 @@ export function BoardScene({
             </mesh>
           ) : null}
 
-          {board.map((value, index) => {
-            const coordinate = fromLinearIndex(index, size);
-            const isHovered = hoveredIndex === index;
-            const isWinningCell = winningSet.has(index);
-            const isEmpty = value === 0;
-            const inFocusLayer = focusLayer === null || coordinate.z === focusLayer;
-            const interactive = canPlace && isEmpty && inFocusLayer;
-            const hint = isEmpty ? hintMap.get(index) : undefined;
-            const hintColor = hint ? colorForHintPriority(hint.priority) : null;
-            const layerOpacityFactor = focusLayer === null ? 1 : inFocusLayer ? 1 : otherLayerOpacity;
-            const color = value === 1 ? "#64f6ff" : value === 2 ? "#ff69d0" : "#182850";
-            const emissiveBaseColor = value === 1 ? "#48ffff" : value === 2 ? "#ff52da" : "#4f8eff";
-            const emissive = hintColor ?? emissiveBaseColor;
-            const opacityBase = isEmpty
-              ? (isHovered && interactive ? 0.65 : 0.24) * qualityProfile.emptyCellOpacityScale
-              : 0.93;
-            const opacity = opacityBase * layerOpacityFactor;
-            const emissiveIntensityBase = isWinningCell
-              ? winLineCinematicActive
-                ? 2.9
-                : 2.3
-              : hint
-                ? hint.rank === 0
-                  ? 2.05
-                  : 1.35
-                : isHovered && interactive
-                ? 1.3
-                : value === 0
-                  ? 0.4
-                  : 0.9;
-            const emissiveIntensity = emissiveIntensityBase * (inFocusLayer ? 1 : 0.5);
-            const scale = hint?.rank === 0 ? 1.16 : isHovered && interactive ? 1.12 : 1;
-
-            const interactiveProps = interactive
-              ? {
-                  onPointerEnter: (event: { stopPropagation: () => void }) => {
-                    event.stopPropagation();
-                    setHoveredIndex(index);
-                  },
-                  onPointerMove: (event: { stopPropagation: () => void }) => {
-                    event.stopPropagation();
-                    setHoveredIndex(index);
-                  },
-                  onPointerLeave: (event: { stopPropagation: () => void }) => {
-                    event.stopPropagation();
-                    setHoveredIndex((current) => (current === index ? null : current));
-                  },
-                  onClick: (event: {
-                    stopPropagation: () => void;
-                    intersections: {
-                      object: unknown;
-                    }[];
-                    object: unknown;
-                  }) => {
-                    event.stopPropagation();
-                    const coordinateFromHit = pickCell(
-                      event.intersections.find((intersection) => intersection.object === event.object)
-                    );
-                    if (!coordinateFromHit) {
-                      return;
-                    }
-                    const tapAssistDecision = evaluateLayerTapAssist({
-                      canPlace,
-                      isEmpty,
-                      inFocusLayer,
-                      targetLayer: coordinateFromHit.z,
-                      currentLayer: focusLayer
-                    });
-                    if (tapAssistDecision.action === "place") {
-                      onPlace(coordinateFromHit);
-                    }
-                  }
-                }
-              : {};
+          {boardInstanceLayout.buckets.map((bucket) => {
+            const interactive = bucket.style.interactive;
 
             return (
-              <mesh
-                key={index}
-                position={toWorldPosition(size, coordinate)}
-                userData={{ cell: coordinate }}
-                scale={scale}
-                {...interactiveProps}
-              >
-                <sphereGeometry args={[0.29, cellSegments, cellSegments]} />
-                <meshStandardMaterial
-                  color={color}
-                  emissive={emissive}
-                  emissiveIntensity={emissiveIntensity}
-                  transparent
-                  opacity={opacity}
-                  roughness={0.17}
-                  metalness={0.3}
-                />
-              </mesh>
+              <InstancedBoardBucket
+                key={bucket.id}
+                bucket={bucket}
+                size={size}
+                cellSegments={cellSegments}
+                onPointerEnter={
+                  interactive
+                    ? (event) => {
+                        event.stopPropagation();
+                        const hit = resolveBoardInstanceCell(bucket, event.instanceId);
+                        if (!hit) {
+                          return;
+                        }
+                        setHoveredIndex(hit.boardIndex);
+                      }
+                    : undefined
+                }
+                onPointerMove={
+                  interactive
+                    ? (event) => {
+                        event.stopPropagation();
+                        const hit = resolveBoardInstanceCell(bucket, event.instanceId);
+                        if (!hit) {
+                          return;
+                        }
+                        setHoveredIndex(hit.boardIndex);
+                      }
+                    : undefined
+                }
+                onPointerLeave={
+                  interactive
+                    ? (event) => {
+                        event.stopPropagation();
+                        setHoveredIndex((current) => {
+                          if (current === null) {
+                            return null;
+                          }
+                          const hit = resolveBoardInstanceCell(bucket, event.instanceId);
+                          if (hit && hit.boardIndex === current) {
+                            return null;
+                          }
+                          const currentLookup = boardInstanceLayout.indexToInstance.get(current);
+                          if (currentLookup?.bucketId === bucket.id) {
+                            return null;
+                          }
+                          return current;
+                        });
+                      }
+                    : undefined
+                }
+                onClick={
+                  interactive
+                    ? (event) => {
+                        event.stopPropagation();
+                        const hit = resolveBoardInstanceCell(bucket, event.instanceId);
+                        if (!hit) {
+                          return;
+                        }
+                        const inFocusLayer = focusLayer === null || hit.coordinate.z === focusLayer;
+                        const isEmpty = board[hit.boardIndex] === 0;
+                        const tapAssistDecision = evaluateLayerTapAssist({
+                          canPlace,
+                          isEmpty,
+                          inFocusLayer,
+                          targetLayer: hit.coordinate.z,
+                          currentLayer: focusLayer
+                        });
+                        if (tapAssistDecision.action === "place") {
+                          onPlace(hit.coordinate);
+                        }
+                      }
+                    : undefined
+                }
+              />
             );
           })}
 
