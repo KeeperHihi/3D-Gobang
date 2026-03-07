@@ -112,6 +112,7 @@ function resolveTurnNudgeNotificationPermission(): TurnNudgeNotificationPermissi
 
 const WIN_LINE_CINEMATIC_DURATION_MS = 2200;
 const LAYER_NAV_INPUT_THROTTLE_MS = 170;
+const LAYER_TAP_ASSIST_TOAST_MS = 1200;
 
 export function GameRoomPage({
   snapshot,
@@ -200,6 +201,10 @@ export function GameRoomPage({
   const [autoContinueCountdownStartedAtMs, setAutoContinueCountdownStartedAtMs] = useState<
     number | null
   >(null);
+  const [layerTapAssistHint, setLayerTapAssistHint] = useState<{
+    layer: number;
+    expiresAtMs: number;
+  } | null>(null);
   const opponentMark: PlayerMark = myMark === "X" ? "O" : "X";
   const opponentConnected = snapshot.players[opponentMark].connected;
   const opponentReconnectDeadlineAt = snapshot.players[opponentMark].reconnectDeadlineAt;
@@ -725,6 +730,23 @@ export function GameRoomPage({
     setFocusMode("manual");
     setFocusLayer(layerQuickNav.smartJumpLayer);
   }, [focusLayer, layerQuickNav.smartJumpLayer]);
+  const handleRequestFocusLayer = useCallback(
+    (targetLayer: number) => {
+      const clampedLayer = clampLayer(targetLayer, snapshot.size);
+      if (clampedLayer === focusLayer) {
+        return;
+      }
+      const now = Date.now();
+      layerNavLastInputAtMsRef.current = now;
+      setFocusMode("manual");
+      setFocusLayer(clampedLayer);
+      setLayerTapAssistHint({
+        layer: clampedLayer,
+        expiresAtMs: now + LAYER_TAP_ASSIST_TOAST_MS
+      });
+    },
+    [focusLayer, snapshot.size]
+  );
 
   const handleLayerWheel = useCallback(
     (deltaY: number): boolean => {
@@ -860,6 +882,7 @@ export function GameRoomPage({
     stopWinLineCinematic();
     layerNavLastInputAtMsRef.current = 0;
     layerNavLastRotateAtMsRef.current = 0;
+    setLayerTapAssistHint(null);
     setSettlementStartedAtMs(null);
     setAutoRematchCountdownStartedAtMs(null);
     setAutoContinueCountdownStartedAtMs(null);
@@ -1165,6 +1188,15 @@ export function GameRoomPage({
   }, []);
 
   useEffect(() => {
+    if (!layerTapAssistHint) {
+      return;
+    }
+    if (nowMs >= layerTapAssistHint.expiresAtMs) {
+      setLayerTapAssistHint(null);
+    }
+  }, [layerTapAssistHint, nowMs]);
+
+  useEffect(() => {
     const nowMs = Date.now();
     const nextLevel = selectQualityLevel({
       mode: qualityMode,
@@ -1205,6 +1237,12 @@ export function GameRoomPage({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handlePrimaryAction, layoutMode, smartAction.enabled]);
 
+  const layerTapAssistMessage =
+    layerTapAssistHint && nowMs < layerTapAssistHint.expiresAtMs
+      ? `已切到 L${layerTapAssistHint.layer + 1}，再点一次即可落子`
+      : null;
+  const gameToastMessage = errorMessage ?? layerTapAssistMessage;
+
   return (
     <main className={`game-page ${layoutMode === "mobile" ? "mobile" : "desktop"}`}>
       <BoardScene
@@ -1221,6 +1259,7 @@ export function GameRoomPage({
         hintMoves={hintMovesForBoard}
         pendingMove={pendingMove}
         onPlace={onPlace}
+        onRequestFocusLayer={handleRequestFocusLayer}
         onLayerWheel={handleLayerWheel}
         onLayerSwipe={handleLayerSwipe}
         onUserRotate={handleBoardRotate}
@@ -1289,7 +1328,7 @@ export function GameRoomPage({
         onRematch={handleRematchAction}
         onLeave={onLeave}
       />
-      {errorMessage ? <div className="game-toast">{errorMessage}</div> : null}
+      {gameToastMessage ? <div className="game-toast">{gameToastMessage}</div> : null}
     </main>
   );
 }

@@ -8,6 +8,7 @@ import type { HintPriority, MoveHint } from "../game/engine/moveHints";
 import type { LayoutMode } from "../game/interaction/deviceMode";
 import type { QualityProfile } from "../game/interaction/qualityProfile";
 import { createCameraTarget, useCameraAssist } from "../game/interaction/cameraAssist";
+import { evaluateLayerTapAssist } from "../game/interaction/layerTapAssist";
 import { pickCell } from "../game/interaction/pickCell";
 
 const BOARD_SPACING = 1.4;
@@ -29,6 +30,7 @@ interface BoardSceneProps {
     player: PlayerMark;
   } | null;
   onPlace: (coordinate: Coordinate3D) => void;
+  onRequestFocusLayer: (layer: number) => void;
   onLayerWheel?: (deltaY: number) => boolean;
   onLayerSwipe?: (deltaY: number) => void;
   onUserRotate?: () => void;
@@ -139,6 +141,7 @@ export function BoardScene({
   hintMoves,
   pendingMove,
   onPlace,
+  onRequestFocusLayer,
   onLayerWheel,
   onLayerSwipe,
   onUserRotate
@@ -341,16 +344,26 @@ export function BoardScene({
                 }}
                 onClick={(event) => {
                   event.stopPropagation();
-                  if (!interactive) {
-                    return;
-                  }
                   const coordinateFromHit = pickCell(
                     event.intersections.find((intersection) => intersection.object === event.object)
                   );
                   if (!coordinateFromHit) {
                     return;
                   }
-                  onPlace(coordinateFromHit);
+                  const tapAssistDecision = evaluateLayerTapAssist({
+                    canPlace,
+                    isEmpty,
+                    inFocusLayer,
+                    targetLayer: coordinateFromHit.z,
+                    currentLayer: focusLayer
+                  });
+                  if (tapAssistDecision.action === "place") {
+                    onPlace(coordinateFromHit);
+                    return;
+                  }
+                  if (tapAssistDecision.action === "focus" && tapAssistDecision.nextFocusLayer !== null) {
+                    onRequestFocusLayer(tapAssistDecision.nextFocusLayer);
+                  }
                 }}
               >
                 <sphereGeometry args={[0.29, 32, 32]} />
