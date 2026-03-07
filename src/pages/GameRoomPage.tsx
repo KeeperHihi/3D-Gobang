@@ -45,6 +45,7 @@ import {
   TURN_NUDGE_PERMISSION_SNOOZE_MS,
   type TurnNudgeNotificationPermission
 } from "../game/interaction/turnNudgePermission";
+import { evaluateHudSpotlight } from "../game/interaction/hudSpotlight";
 import {
   createWinLineDirectorRoundKey,
   evaluateWinLineDirector
@@ -461,6 +462,73 @@ export function GameRoomPage({
     }
     return Math.max(0, opponentReconnectDeadlineAt - nowMs);
   }, [nowMs, opponentReconnectDeadlineAt, snapshot.winner]);
+  const showTurnCountdown = !snapshot.winner && turnRemainingMs !== null;
+  const showTimeoutAssistHint = !snapshot.winner && snapshot.turn === myMark;
+  const showWinLineSummary = Boolean(snapshot.winner && snapshot.winner !== "draw" && winLineDirector);
+  const showAutoRematchHint = Boolean(snapshot.winner) && opponentConnected;
+  const showAutoContinueHint =
+    Boolean(snapshot.winner) && rematchWaitDecision.phase === "fallback-ready" && autoRematchEnabled;
+  const showRematchWaitHint =
+    Boolean(snapshot.winner) &&
+    myRematchReady &&
+    opponentConnected &&
+    !opponentRematchReady &&
+    rematchWaitDecision.phase !== "idle" &&
+    !showAutoContinueHint;
+  const showRematchReadyCheck = Boolean(snapshot.winner) && opponentConnected;
+  const showReconnectDeadline = !snapshot.winner && opponentReconnectRemainingMs !== null && !opponentConnected;
+  const reconnectUrgent =
+    opponentReconnectRemainingMs !== null && Math.ceil(opponentReconnectRemainingMs / 1000) <= 10;
+  const hudSpotlight = useMemo(
+    () =>
+      evaluateHudSpotlight({
+        connectionStatus,
+        showReconnectDeadline,
+        reconnectUrgent,
+        showTurnCountdown,
+        turnUrgent,
+        showTimeoutAssistHint,
+        timeoutAssistUrgency: timeoutAssistDecision.urgencyLabel,
+        showWinLineSummary,
+        winLineCinematicActive,
+        showAutoRematchHint,
+        autoRematchPhase: autoRematchDecision.phase,
+        showAutoContinueHint,
+        autoContinuePhase: autoContinueDecision.phase,
+        showRematchWaitHint,
+        showRematchReadyCheck,
+        turnNudgePermissionPhase: turnNudgePermissionDecision.phase,
+        onboardingVisible: onboardingGuide.visible
+      }),
+    [
+      autoContinueDecision.phase,
+      autoRematchDecision.phase,
+      autoRematchEnabled,
+      connectionStatus,
+      myMark,
+      myRematchReady,
+      onboardingGuide.visible,
+      opponentConnected,
+      opponentReconnectRemainingMs,
+      opponentRematchReady,
+      rematchWaitDecision.phase,
+      showAutoContinueHint,
+      showAutoRematchHint,
+      showReconnectDeadline,
+      showRematchReadyCheck,
+      showRematchWaitHint,
+      showTimeoutAssistHint,
+      showTurnCountdown,
+      showWinLineSummary,
+      snapshot.turn,
+      snapshot.winner,
+      timeoutAssistDecision.urgencyLabel,
+      turnNudgePermissionDecision.phase,
+      turnRemainingMs,
+      turnUrgent,
+      winLineCinematicActive
+    ]
+  );
   const clearWinLineCinematicTimer = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -1041,6 +1109,7 @@ export function GameRoomPage({
         myMark={myMark}
         turn={snapshot.turn}
         winner={snapshot.winner}
+        hudSpotlight={hudSpotlight}
         winLineSummary={winLineDirector?.lineLabel ?? null}
         winLineCinematicActive={winLineCinematicActive}
         assistEnabled={assistEnabled}

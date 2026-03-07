@@ -14,6 +14,7 @@ import type { AutoRematchPhase } from "../game/interaction/autoRematch";
 import type { AutoContinueAfterFallbackPhase } from "../game/interaction/autoContinueAfterFallback";
 import type { RematchWaitPhase } from "../game/interaction/rematchWait";
 import type { TurnNudgePermissionPhase } from "../game/interaction/turnNudgePermission";
+import type { HudSpotlightCardId, HudSpotlightDecision } from "../game/interaction/hudSpotlight";
 import { SmartActionBar } from "./SmartActionBar";
 
 interface HUDProps {
@@ -23,6 +24,7 @@ interface HUDProps {
   myMark: PlayerMark;
   turn: PlayerMark;
   winner: Winner;
+  hudSpotlight: HudSpotlightDecision;
   winLineSummary: string | null;
   winLineCinematicActive: boolean;
   assistEnabled: boolean;
@@ -104,6 +106,40 @@ function winnerText(winner: Winner, myMark: PlayerMark): string {
   return "对手胜利";
 }
 
+function spotlightTitle(cardId: HudSpotlightCardId): string {
+  if (cardId === "connection") {
+    return "连接状态";
+  }
+  if (cardId === "reconnect") {
+    return "掉线结算";
+  }
+  if (cardId === "turn-clock") {
+    return "回合时钟";
+  }
+  if (cardId === "timeout-assist") {
+    return "超时护航";
+  }
+  if (cardId === "win-line") {
+    return "胜线导演";
+  }
+  if (cardId === "auto-rematch") {
+    return "连战模式";
+  }
+  if (cardId === "auto-continue") {
+    return "自动继续";
+  }
+  if (cardId === "rematch-wait") {
+    return "等待熔断";
+  }
+  if (cardId === "ready-check") {
+    return "再战确认";
+  }
+  if (cardId === "turn-nudge-prompt" || cardId === "turn-nudge-denied") {
+    return "回合唤醒";
+  }
+  return "新手引导";
+}
+
 export function HUD({
   layoutMode,
   roomId,
@@ -111,6 +147,7 @@ export function HUD({
   myMark,
   turn,
   winner,
+  hudSpotlight,
   winLineSummary,
   winLineCinematicActive,
   assistEnabled,
@@ -180,8 +217,8 @@ export function HUD({
   const advancedToggleLabel = advancedOpen
     ? "收起操作面板"
     : isMobileLayout
-      ? "更多操作"
-      : "展开高级操作";
+      ? "更多状态"
+      : "展开更多状态";
   const turnRemainingSeconds =
     turnRemainingMs === null ? null : Math.max(0, Math.ceil(turnRemainingMs / 1000));
   const timeoutAssistThresholdSeconds = Math.max(1, Math.ceil(timeoutAssistThresholdMs / 1000));
@@ -195,19 +232,28 @@ export function HUD({
       : Math.max(0, Math.ceil(autoContinueCountdownRemainingMs / 1000));
   const rematchWaitRemainingSeconds =
     rematchWaitRemainingMs === null ? null : Math.max(0, Math.ceil(rematchWaitRemainingMs / 1000));
-  const showTurnCountdown = !winner && turnRemainingSeconds !== null;
-  const showTimeoutAssistHint = !winner && turn === myMark;
-  const showWinLineSummary = Boolean(winner && winner !== "draw" && winLineSummary);
-  const showAutoRematchHint = Boolean(winner) && opponentConnected;
+  const primaryCardId = hudSpotlight.primaryCard?.id ?? null;
+  const showTurnCountdown = primaryCardId === "turn-clock" && !winner && turnRemainingSeconds !== null;
+  const showTimeoutAssistHint = primaryCardId === "timeout-assist" && !winner && turn === myMark;
+  const showWinLineSummary =
+    primaryCardId === "win-line" && Boolean(winner && winner !== "draw" && winLineSummary);
+  const showAutoRematchHint = primaryCardId === "auto-rematch" && Boolean(winner) && opponentConnected;
   const showAutoContinueHint =
-    Boolean(winner) && rematchWaitPhase === "fallback-ready" && autoRematchEnabled;
+    primaryCardId === "auto-continue" &&
+    Boolean(winner) &&
+    rematchWaitPhase === "fallback-ready" &&
+    autoRematchEnabled;
   const showRematchWaitHint =
+    primaryCardId === "rematch-wait" &&
     Boolean(winner) &&
     myRematchReady &&
     opponentConnected &&
     !opponentRematchReady &&
-    rematchWaitPhase !== "idle" &&
-    !showAutoContinueHint;
+    rematchWaitPhase !== "idle";
+  const showConnectionSpotlight = primaryCardId === "connection";
+  const showReconnectSpotlight = primaryCardId === "reconnect" && showReconnectDeadline;
+  const showReadyCheckSpotlight = primaryCardId === "ready-check" && showRematchReadyCheck;
+  const showOnboardingSpotlight = primaryCardId === "onboarding" && Boolean(onboardingGuide);
   const timeoutAssistNetworkHint =
     timeoutAssistNetworkTier === "unstable"
       ? "弱网提前"
@@ -250,8 +296,61 @@ export function HUD({
           : "已开启自动继续匹配";
   const showTurnNudgePermissionPrompt = turnNudgePermissionPhase === "prompt";
   const showTurnNudgePermissionDenied = turnNudgePermissionPhase === "denied";
+  const showTurnNudgePermissionPromptSpotlight =
+    primaryCardId === "turn-nudge-prompt" && showTurnNudgePermissionPrompt;
+  const showTurnNudgePermissionDeniedSpotlight =
+    primaryCardId === "turn-nudge-denied" && showTurnNudgePermissionDenied;
   const turnNudgePermissionPromptText = "启用系统通知后，切后台也能及时收到“轮到你了”提醒";
   const turnNudgePermissionDeniedText = "浏览器已禁用系统通知，可在浏览器设置中手动开启";
+  const spotlightToneClass =
+    hudSpotlight.primaryCard?.tone === "critical"
+      ? "critical"
+      : hudSpotlight.primaryCard?.tone === "action"
+        ? "action"
+        : "info";
+  const secondaryItems = hudSpotlight.secondaryItems
+    .map((item) => {
+      if (item.id === "connection") {
+        return `网络${connectionLabel(connectionStatus)}，暂不可执行主操作`;
+      }
+      if (item.id === "reconnect") {
+        return `对手掉线，${reconnectDeadlineSeconds ?? 0}s 内未重连将自动判负`;
+      }
+      if (item.id === "turn-clock") {
+        return `${turn === myMark ? "你的回合" : "对手回合"} · 剩余 ${turnRemainingSeconds ?? 0}s`;
+      }
+      if (item.id === "timeout-assist") {
+        return timeoutAssistText;
+      }
+      if (item.id === "win-line") {
+        return winLineSummary ? `胜线解析：${winLineSummary}` : null;
+      }
+      if (item.id === "auto-rematch") {
+        return autoRematchText;
+      }
+      if (item.id === "auto-continue") {
+        return autoContinueText;
+      }
+      if (item.id === "rematch-wait") {
+        return rematchWaitText;
+      }
+      if (item.id === "ready-check") {
+        return `再战状态：你${myRematchReady ? "已准备" : "未准备"} · 对手${
+          opponentRematchReady ? "已准备" : "未准备"
+        }`;
+      }
+      if (item.id === "turn-nudge-prompt") {
+        return turnNudgePermissionPromptText;
+      }
+      if (item.id === "turn-nudge-denied") {
+        return turnNudgePermissionDeniedText;
+      }
+      if (item.id === "onboarding") {
+        return onboardingGuide ? `${onboardingGuide.title}：${onboardingGuide.detail}` : null;
+      }
+      return null;
+    })
+    .filter((item): item is string => Boolean(item));
 
   return (
     <div className={`hud-root ${isMobileLayout ? "mobile" : "desktop"}`}>
@@ -282,12 +381,22 @@ export function HUD({
           </>
         ) : null}
         <div className="hud-turn">{turnText}</div>
+        {hudSpotlight.primaryCard ? (
+          <div className={`hud-spotlight-shell ${spotlightToneClass}`}>
+            <div className="hud-spotlight-title">{spotlightTitle(hudSpotlight.primaryCard.id)}</div>
+          </div>
+        ) : null}
         {showWinLineSummary ? (
           <div className={`hud-winline-director ${winLineCinematicActive ? "active" : "static"}`}>
             <div className="hud-winline-director-title">
               {winLineCinematicActive ? "胜线导演模式" : "胜线解析"}
             </div>
             <div className="hud-winline-director-text">{winLineSummary}</div>
+          </div>
+        ) : null}
+        {showConnectionSpotlight ? (
+          <div className="hud-spotlight-note critical">
+            网络{connectionLabel(connectionStatus)}，请稍候恢复后继续操作
           </div>
         ) : null}
         {showTurnCountdown ? (
@@ -328,7 +437,7 @@ export function HUD({
             ) : null}
           </div>
         ) : null}
-        {onboardingGuide ? (
+        {showOnboardingSpotlight && onboardingGuide ? (
           <div className="hud-coach-card">
             <div className="hud-coach-header">
               <span>新手引导</span>
@@ -354,7 +463,7 @@ export function HUD({
             </div>
           </div>
         ) : null}
-        {showRematchReadyCheck ? (
+        {showReadyCheckSpotlight ? (
           <div className="hud-ready-check">
             <div className={`hud-ready-row ${myRematchReady ? "ready" : "waiting"}`}>
               <span>你</span>
@@ -389,12 +498,12 @@ export function HUD({
             ) : null}
           </div>
         ) : null}
-        {showReconnectDeadline ? (
+        {showReconnectSpotlight ? (
           <div className={`hud-reconnect-banner ${reconnectUrgent ? "urgent" : ""}`}>
             对手掉线，{reconnectDeadlineSeconds}s 内重连，否则自动判负
           </div>
         ) : null}
-        {showTurnNudgePermissionPrompt ? (
+        {showTurnNudgePermissionPromptSpotlight ? (
           <div className="hud-turn-nudge-permission prompt">
             <div className="hud-turn-nudge-permission-text">{turnNudgePermissionPromptText}</div>
             <div className="hud-actions">
@@ -416,7 +525,7 @@ export function HUD({
             </div>
           </div>
         ) : null}
-        {showTurnNudgePermissionDenied ? (
+        {showTurnNudgePermissionDeniedSpotlight ? (
           <div className="hud-turn-nudge-permission denied">
             <div className="hud-turn-nudge-permission-text">{turnNudgePermissionDeniedText}</div>
             <div className="hud-actions">
@@ -424,6 +533,15 @@ export function HUD({
                 稍后提醒
               </button>
             </div>
+          </div>
+        ) : null}
+        {secondaryItems.length > 0 ? (
+          <div className="hud-secondary-list">
+            {secondaryItems.map((item, index) => (
+              <div key={`${item}-${index}`} className="hud-secondary-item">
+                {item}
+              </div>
+            ))}
           </div>
         ) : null}
         <SmartActionBar action={smartAction} onAction={onPrimaryAction} layoutMode={layoutMode} />
