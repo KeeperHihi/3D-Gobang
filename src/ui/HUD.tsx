@@ -381,6 +381,38 @@ export function HUD({
             对手掉线，{reconnectDeadlineSeconds}s 内重连，否则自动判负
           </div>
         ) : null}
+        {showTurnNudgePermissionPrompt ? (
+          <div className="hud-turn-nudge-permission prompt">
+            <div className="hud-turn-nudge-permission-text">{turnNudgePermissionPromptText}</div>
+            <div className="hud-actions">
+              <button
+                className="hud-mini-button active"
+                type="button"
+                onClick={onRequestTurnNudgePermission}
+                disabled={!turnNudgePermissionCanRequest || turnNudgePermissionRequestPending}
+              >
+                {turnNudgePermissionRequestPending ? "请求中..." : "启用系统通知"}
+              </button>
+              <button
+                className="hud-mini-button"
+                type="button"
+                onClick={onDismissTurnNudgePermissionHint}
+              >
+                稍后提醒
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {showTurnNudgePermissionDenied ? (
+          <div className="hud-turn-nudge-permission denied">
+            <div className="hud-turn-nudge-permission-text">{turnNudgePermissionDeniedText}</div>
+            <div className="hud-actions">
+              <button className="hud-mini-button" type="button" onClick={onDismissTurnNudgePermissionHint}>
+                稍后提醒
+              </button>
+            </div>
+          </div>
+        ) : null}
         <SmartActionBar action={smartAction} onAction={onPrimaryAction} layoutMode={layoutMode} />
         <div className="hud-actions">
           <button className="hud-button ghost" type="button" onClick={onToggleAdvanced}>
@@ -509,42 +541,6 @@ export function HUD({
                 再来一局
               </button>
             </div>
-            {showTurnNudgePermissionPrompt ? (
-              <div className="hud-turn-nudge-permission prompt">
-                <div className="hud-turn-nudge-permission-text">{turnNudgePermissionPromptText}</div>
-                <div className="hud-actions">
-                  <button
-                    className="hud-mini-button active"
-                    type="button"
-                    onClick={onRequestTurnNudgePermission}
-                    disabled={!turnNudgePermissionCanRequest || turnNudgePermissionRequestPending}
-                  >
-                    {turnNudgePermissionRequestPending ? "请求中..." : "启用系统通知"}
-                  </button>
-                  <button
-                    className="hud-mini-button"
-                    type="button"
-                    onClick={onDismissTurnNudgePermissionHint}
-                  >
-                    暂不提示
-                  </button>
-                </div>
-              </div>
-            ) : null}
-            {showTurnNudgePermissionDenied ? (
-              <div className="hud-turn-nudge-permission denied">
-                <div className="hud-turn-nudge-permission-text">{turnNudgePermissionDeniedText}</div>
-                <div className="hud-actions">
-                  <button
-                    className="hud-mini-button"
-                    type="button"
-                    onClick={onDismissTurnNudgePermissionHint}
-                  >
-                    我知道了
-                  </button>
-                </div>
-              </div>
-            ) : null}
             <div className="hud-actions">
               <button className="hud-button ghost" type="button" onClick={onLeave}>
                 离开

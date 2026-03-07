@@ -5,7 +5,7 @@ function createDecision(overrides?: Partial<Parameters<typeof evaluateTurnNudgeP
   return evaluateTurnNudgePermission({
     enabled: true,
     permission: "default",
-    dismissed: false,
+    snoozedUntilMs: null,
     requestPending: false,
     lastRequestedAtMs: null,
     nowMs: 10_000,
@@ -19,6 +19,7 @@ describe("evaluateTurnNudgePermission", () => {
 
     expect(decision.phase).toBe("prompt");
     expect(decision.showCta).toBe(true);
+    expect(decision.showInlinePrompt).toBe(true);
     expect(decision.canRequest).toBe(true);
   });
 
@@ -53,19 +54,34 @@ describe("evaluateTurnNudgePermission", () => {
 
     expect(decision.phase).toBe("denied");
     expect(decision.showDeniedHint).toBe(true);
+    expect(decision.showInlinePrompt).toBe(true);
     expect(decision.showCta).toBe(false);
+    expect(decision.canRequest).toBe(false);
   });
 
-  it("stays hidden when dismissed or feature disabled", () => {
-    const dismissed = createDecision({
-      dismissed: true
+  it("hides prompt while snooze window is active and restores after expiry", () => {
+    const snoozed = createDecision({
+      snoozedUntilMs: 12_000,
+      nowMs: 10_500
     });
+    const restored = createDecision({
+      snoozedUntilMs: 12_000,
+      nowMs: 12_500
+    });
+
+    expect(snoozed.phase).toBe("hidden");
+    expect(snoozed.showInlinePrompt).toBe(false);
+    expect(restored.phase).toBe("prompt");
+    expect(restored.showInlinePrompt).toBe(true);
+  });
+
+  it("stays hidden when feature is disabled", () => {
     const disabled = createDecision({
       enabled: false
     });
 
-    expect(dismissed.phase).toBe("hidden");
     expect(disabled.phase).toBe("hidden");
+    expect(disabled.showInlinePrompt).toBe(false);
   });
 
   it("does not show prompt when permission is granted or unsupported", () => {
@@ -80,5 +96,7 @@ describe("evaluateTurnNudgePermission", () => {
     expect(unsupported.phase).toBe("unsupported");
     expect(granted.showCta).toBe(false);
     expect(unsupported.showCta).toBe(false);
+    expect(granted.showInlinePrompt).toBe(false);
+    expect(unsupported.showInlinePrompt).toBe(false);
   });
 });

@@ -25,6 +25,7 @@ import {
   shouldRestoreContinueMatchBackup,
   type ContinueTransitionEvent
 } from "./game/interaction/continueTransition";
+import { TURN_NUDGE_PERMISSION_SNOOZE_MS } from "./game/interaction/turnNudgePermission";
 import type {
   Coordinate3D,
   MoveAckPayload,
@@ -55,6 +56,7 @@ const TIMEOUT_ASSIST_STORAGE_KEY = "nebula-cube-timeout-assist-v1";
 const AUTO_REMATCH_STORAGE_KEY = "nebula-cube-auto-rematch-v1";
 const TURN_NUDGE_STORAGE_KEY = "nebula-cube-turn-nudge-v1";
 const TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY = "nebula-cube-turn-nudge-permission-hint-v1";
+const TURN_NUDGE_PERMISSION_SNOOZE_STORAGE_KEY = "nebula-cube-turn-nudge-permission-snooze-v2";
 
 function loadGameRoomPageModule() {
   return import("./pages/GameRoomPage");
@@ -152,15 +154,30 @@ function persistTurnNudgeToStorage(enabled: boolean): void {
   localStorage.setItem(TURN_NUDGE_STORAGE_KEY, enabled ? "on" : "off");
 }
 
-function readTurnNudgePermissionHintDismissedFromStorage(): boolean {
-  return localStorage.getItem(TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY) === "dismissed";
+function readTurnNudgePermissionSnoozedUntilMsFromStorage(nowMs: number): number | null {
+  const snoozeRaw = localStorage.getItem(TURN_NUDGE_PERMISSION_SNOOZE_STORAGE_KEY);
+  if (snoozeRaw !== null) {
+    const parsedSnoozeUntilMs = Number(snoozeRaw);
+    if (Number.isFinite(parsedSnoozeUntilMs) && parsedSnoozeUntilMs > nowMs) {
+      return parsedSnoozeUntilMs;
+    }
+    return null;
+  }
+
+  const legacyDismissed = localStorage.getItem(TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY) === "dismissed";
+  if (!legacyDismissed) {
+    return null;
+  }
+  return nowMs + TURN_NUDGE_PERMISSION_SNOOZE_MS;
 }
 
-function persistTurnNudgePermissionHintDismissedToStorage(dismissed: boolean): void {
-  if (dismissed) {
-    localStorage.setItem(TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY, "dismissed");
+function persistTurnNudgePermissionSnoozedUntilMsToStorage(snoozedUntilMs: number | null): void {
+  if (snoozedUntilMs !== null) {
+    localStorage.setItem(TURN_NUDGE_PERMISSION_SNOOZE_STORAGE_KEY, String(snoozedUntilMs));
+    localStorage.removeItem(TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY);
     return;
   }
+  localStorage.removeItem(TURN_NUDGE_PERMISSION_SNOOZE_STORAGE_KEY);
   localStorage.removeItem(TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY);
 }
 
@@ -191,9 +208,9 @@ export default function App() {
   const [turnNudgeEnabled, setTurnNudgeEnabled] = useState<boolean>(() =>
     readTurnNudgeFromStorage()
   );
-  const [turnNudgePermissionHintDismissed, setTurnNudgePermissionHintDismissed] = useState<boolean>(
-    () => readTurnNudgePermissionHintDismissedFromStorage()
-  );
+  const [turnNudgePermissionSnoozedUntilMs, setTurnNudgePermissionSnoozedUntilMs] = useState<
+    number | null
+  >(() => readTurnNudgePermissionSnoozedUntilMsFromStorage(Date.now()));
   const [continueTransition, setContinueTransition] = useState(() =>
     createInitialContinueTransitionState()
   );
@@ -256,8 +273,8 @@ export default function App() {
   }, [turnNudgeEnabled]);
 
   useEffect(() => {
-    persistTurnNudgePermissionHintDismissedToStorage(turnNudgePermissionHintDismissed);
-  }, [turnNudgePermissionHintDismissed]);
+    persistTurnNudgePermissionSnoozedUntilMsToStorage(turnNudgePermissionSnoozedUntilMs);
+  }, [turnNudgePermissionSnoozedUntilMs]);
 
   useEffect(() => {
     if (matchPhase !== "queuing" || queueStartedAtMs === null) {
@@ -800,8 +817,8 @@ export default function App() {
         onAutoRematchEnabledChange={setAutoRematchEnabled}
         turnNudgeEnabled={turnNudgeEnabled}
         onTurnNudgeEnabledChange={setTurnNudgeEnabled}
-        turnNudgePermissionHintDismissed={turnNudgePermissionHintDismissed}
-        onTurnNudgePermissionHintDismissedChange={setTurnNudgePermissionHintDismissed}
+        turnNudgePermissionSnoozedUntilMs={turnNudgePermissionSnoozedUntilMs}
+        onTurnNudgePermissionSnoozedUntilMsChange={setTurnNudgePermissionSnoozedUntilMs}
         onLeave={leaveRoom}
       />
     </Suspense>

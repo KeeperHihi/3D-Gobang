@@ -42,6 +42,7 @@ import {
 } from "../game/interaction/turnNudge";
 import {
   evaluateTurnNudgePermission,
+  TURN_NUDGE_PERMISSION_SNOOZE_MS,
   type TurnNudgeNotificationPermission
 } from "../game/interaction/turnNudgePermission";
 import { BoardScene } from "../ui/BoardScene";
@@ -73,8 +74,8 @@ interface GameRoomPageProps {
   onAutoRematchEnabledChange: (enabled: boolean) => void;
   turnNudgeEnabled: boolean;
   onTurnNudgeEnabledChange: (enabled: boolean) => void;
-  turnNudgePermissionHintDismissed: boolean;
-  onTurnNudgePermissionHintDismissedChange: (dismissed: boolean) => void;
+  turnNudgePermissionSnoozedUntilMs: number | null;
+  onTurnNudgePermissionSnoozedUntilMsChange: (snoozedUntilMs: number | null) => void;
   onLeave: () => void;
 }
 
@@ -122,8 +123,8 @@ export function GameRoomPage({
   onAutoRematchEnabledChange,
   turnNudgeEnabled,
   onTurnNudgeEnabledChange,
-  turnNudgePermissionHintDismissed,
-  onTurnNudgePermissionHintDismissedChange,
+  turnNudgePermissionSnoozedUntilMs,
+  onTurnNudgePermissionSnoozedUntilMsChange,
   onLeave
 }: GameRoomPageProps) {
   const lastMoveNumberRef = useRef(0);
@@ -313,7 +314,7 @@ export function GameRoomPage({
       evaluateTurnNudgePermission({
         enabled: turnNudgeEnabled,
         permission: turnNudgeNotificationPermission,
-        dismissed: turnNudgePermissionHintDismissed,
+        snoozedUntilMs: turnNudgePermissionSnoozedUntilMs,
         requestPending: turnNudgePermissionRequestPending,
         lastRequestedAtMs: turnNudgePermissionLastRequestedAtMs,
         nowMs
@@ -322,7 +323,7 @@ export function GameRoomPage({
       nowMs,
       turnNudgeEnabled,
       turnNudgeNotificationPermission,
-      turnNudgePermissionHintDismissed,
+      turnNudgePermissionSnoozedUntilMs,
       turnNudgePermissionLastRequestedAtMs,
       turnNudgePermissionRequestPending
     ]
@@ -488,8 +489,8 @@ export function GameRoomPage({
     }
   }, [syncTurnNudgeNotificationPermission, turnNudgePermissionDecision.canRequest]);
   const handleDismissTurnNudgePermissionHint = useCallback(() => {
-    onTurnNudgePermissionHintDismissedChange(true);
-  }, [onTurnNudgePermissionHintDismissedChange]);
+    onTurnNudgePermissionSnoozedUntilMsChange(Date.now() + TURN_NUDGE_PERMISSION_SNOOZE_MS);
+  }, [onTurnNudgePermissionSnoozedUntilMsChange]);
   const handleCancelAutoRematch = useCallback(() => {
     if (!snapshot.winner) {
       return;
