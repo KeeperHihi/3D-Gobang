@@ -23,6 +23,8 @@ interface HUDProps {
   myMark: PlayerMark;
   turn: PlayerMark;
   winner: Winner;
+  winLineSummary: string | null;
+  winLineCinematicActive: boolean;
   assistEnabled: boolean;
   focusLayer: number;
   focusMode: "auto" | "manual";
@@ -109,6 +111,8 @@ export function HUD({
   myMark,
   turn,
   winner,
+  winLineSummary,
+  winLineCinematicActive,
   assistEnabled,
   focusLayer,
   focusMode,
@@ -193,6 +197,7 @@ export function HUD({
     rematchWaitRemainingMs === null ? null : Math.max(0, Math.ceil(rematchWaitRemainingMs / 1000));
   const showTurnCountdown = !winner && turnRemainingSeconds !== null;
   const showTimeoutAssistHint = !winner && turn === myMark;
+  const showWinLineSummary = Boolean(winner && winner !== "draw" && winLineSummary);
   const showAutoRematchHint = Boolean(winner) && opponentConnected;
   const showAutoContinueHint =
     Boolean(winner) && rematchWaitPhase === "fallback-ready" && autoRematchEnabled;
@@ -277,6 +282,14 @@ export function HUD({
           </>
         ) : null}
         <div className="hud-turn">{turnText}</div>
+        {showWinLineSummary ? (
+          <div className={`hud-winline-director ${winLineCinematicActive ? "active" : "static"}`}>
+            <div className="hud-winline-director-title">
+              {winLineCinematicActive ? "胜线导演模式" : "胜线解析"}
+            </div>
+            <div className="hud-winline-director-text">{winLineSummary}</div>
+          </div>
+        ) : null}
         {showTurnCountdown ? (
           <div className={`hud-turn-clock ${turnUrgent ? "urgent" : ""}`}>
             {turn === myMark ? "你的回合" : "对手回合"} · 剩余 {turnRemainingSeconds}s（以服务器结算为准）

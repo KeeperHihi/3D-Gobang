@@ -20,6 +20,8 @@ interface BoardSceneProps {
   qualityProfile: QualityProfile;
   lastMove: MoveRecord | null;
   winningLine: number[] | null;
+  winLineCinematicActive: boolean;
+  winLineFocusCoordinate: Coordinate3D | null;
   focusLayer: number | null;
   hintMoves: MoveHint[];
   pendingMove: {
@@ -35,6 +37,8 @@ interface CameraAssistControllerProps {
   lastMove: MoveRecord | null;
   canPlace: boolean;
   hintFocus: Coordinate3D | null;
+  winLineCinematicActive: boolean;
+  winLineFocusCoordinate: Coordinate3D | null;
 }
 
 interface HintMeta {
@@ -86,16 +90,25 @@ function layerToWorldZ(size: number, layer: number): number {
   return (layer - centerOffset) * BOARD_SPACING;
 }
 
-function CameraAssistController({ size, lastMove, canPlace, hintFocus }: CameraAssistControllerProps) {
-  const focusedCoordinate = canPlace
-    ? hintFocus ?? (lastMove ? { x: lastMove.x, y: lastMove.y, z: lastMove.z } : null)
-    : lastMove
-      ? { x: lastMove.x, y: lastMove.y, z: lastMove.z }
-      : null;
+function CameraAssistController({
+  size,
+  lastMove,
+  canPlace,
+  hintFocus,
+  winLineCinematicActive,
+  winLineFocusCoordinate
+}: CameraAssistControllerProps) {
+  const focusedCoordinate = winLineCinematicActive
+    ? winLineFocusCoordinate
+    : canPlace
+      ? hintFocus ?? (lastMove ? { x: lastMove.x, y: lastMove.y, z: lastMove.z } : null)
+      : lastMove
+        ? { x: lastMove.x, y: lastMove.y, z: lastMove.z }
+        : null;
 
   const target = useMemo(
     () => createCameraTarget(size, focusedCoordinate),
-    [canPlace, focusedCoordinate, hintFocus, lastMove, size]
+    [focusedCoordinate, size]
   );
   useCameraAssist(target);
   return null;
@@ -118,6 +131,8 @@ export function BoardScene({
   qualityProfile,
   lastMove,
   winningLine,
+  winLineCinematicActive,
+  winLineFocusCoordinate,
   focusLayer,
   hintMoves,
   pendingMove,
@@ -160,6 +175,15 @@ export function BoardScene({
       return toWorldPosition(size, coordinate);
     });
   }, [size, winningLine]);
+  const winningPulsePoints = useMemo(() => {
+    if (!winningLine || !winLineCinematicActive) {
+      return [] as [number, number, number][];
+    }
+    return winningLine.map((index) => {
+      const coordinate = fromLinearIndex(index, size);
+      return toWorldPosition(size, coordinate);
+    });
+  }, [size, winLineCinematicActive, winningLine]);
 
   return (
     <div className="board-scene">
@@ -183,6 +207,8 @@ export function BoardScene({
           lastMove={lastMove}
           canPlace={canPlace}
           hintFocus={hintMoves[0]?.coordinate ?? null}
+          winLineCinematicActive={winLineCinematicActive}
+          winLineFocusCoordinate={winLineFocusCoordinate}
         />
         <OrbitControls
           enablePan={false}
@@ -236,7 +262,9 @@ export function BoardScene({
               : 0.93;
             const opacity = opacityBase * layerOpacityFactor;
             const emissiveIntensityBase = isWinningCell
-              ? 2.4
+              ? winLineCinematicActive
+                ? 2.9
+                : 2.3
               : hint
                 ? hint.rank === 0
                   ? 2.05
@@ -317,8 +345,25 @@ export function BoardScene({
             </mesh>
           ) : null}
 
+          {winningPulsePoints.map((position, index) => (
+            <HintPulse
+              key={`win-pulse-${index}`}
+              position={position}
+              color="#fff48b"
+              opacity={0.36 * qualityProfile.hintPulseOpacityScale}
+              speed={Math.max(2.1, qualityProfile.hintPulseSpeed)}
+              phase={index * 0.55}
+            />
+          ))}
+
           {linePoints ? (
-            <Line points={linePoints} color="#fff960" lineWidth={5.5} transparent opacity={0.95} />
+            <Line
+              points={linePoints}
+              color="#fff960"
+              lineWidth={winLineCinematicActive ? 6.8 : 5.5}
+              transparent
+              opacity={winLineCinematicActive ? 1 : 0.95}
+            />
           ) : null}
         </group>
       </Canvas>

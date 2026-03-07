@@ -45,6 +45,10 @@ import {
   TURN_NUDGE_PERMISSION_SNOOZE_MS,
   type TurnNudgeNotificationPermission
 } from "../game/interaction/turnNudgePermission";
+import {
+  createWinLineDirectorRoundKey,
+  evaluateWinLineDirector
+} from "../game/interaction/winLineDirector";
 import { BoardScene } from "../ui/BoardScene";
 import { HUD } from "../ui/HUD";
 
@@ -100,6 +104,8 @@ function resolveTurnNudgeNotificationPermission(): TurnNudgeNotificationPermissi
   return Notification.permission;
 }
 
+const WIN_LINE_CINEMATIC_DURATION_MS = 2200;
+
 export function GameRoomPage({
   snapshot,
   myMark,
@@ -136,6 +142,8 @@ export function GameRoomPage({
   const autoRematchCancelledRoundKeyRef = useRef<string | null>(null);
   const autoContinueTriggeredRoundKeyRef = useRef<string | null>(null);
   const autoContinueCancelledRoundKeyRef = useRef<string | null>(null);
+  const winLineDirectorTriggeredRoundKeyRef = useRef<string | null>(null);
+  const winLineDirectorTimerRef = useRef<number | null>(null);
   const turnNudgeTriggeredTurnKeyRef = useRef<string | null>(null);
   const turnNudgeTitleActiveRef = useRef(false);
   const wasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
@@ -173,6 +181,7 @@ export function GameRoomPage({
   const [turnNudgePermissionLastRequestedAtMs, setTurnNudgePermissionLastRequestedAtMs] = useState<
     number | null
   >(null);
+  const [winLineCinematicActive, setWinLineCinematicActive] = useState(false);
   const [settlementStartedAtMs, setSettlementStartedAtMs] = useState<number | null>(null);
   const [autoRematchCountdownStartedAtMs, setAutoRematchCountdownStartedAtMs] = useState<number | null>(
     null
@@ -291,6 +300,25 @@ export function GameRoomPage({
     [onboardingProgress, shouldShowOnboarding, smartAction.enabled]
   );
   const qualityProfile = useMemo(() => getQualityProfile(qualityLevel), [qualityLevel]);
+  const winLineDirector = useMemo(
+    () =>
+      evaluateWinLineDirector({
+        winningLine: snapshot.winningLine,
+        size: snapshot.size,
+        preferReducedMotion: qualityMode === "smooth" || qualityLevel === "low"
+      }),
+    [qualityLevel, qualityMode, snapshot.size, snapshot.winningLine]
+  );
+  const winLineDirectorRoundKey = useMemo(
+    () =>
+      createWinLineDirectorRoundKey({
+        roomId: snapshot.roomId,
+        winner: snapshot.winner,
+        lastMoveNumber: snapshot.lastMove?.moveNumber ?? null,
+        lastMoveTimestamp: snapshot.lastMove?.timestamp ?? null
+      }),
+    [snapshot.lastMove?.moveNumber, snapshot.lastMove?.timestamp, snapshot.roomId, snapshot.winner]
+  );
   const isMyTurn = snapshot.turn === myMark && snapshot.winner === null;
   const turnRemainingMs = useMemo(() => {
     if (snapshot.winner || turnDeadlineAt === null) {
@@ -433,17 +461,38 @@ export function GameRoomPage({
     }
     return Math.max(0, opponentReconnectDeadlineAt - nowMs);
   }, [nowMs, opponentReconnectDeadlineAt, snapshot.winner]);
+  const clearWinLineCinematicTimer = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (winLineDirectorTimerRef.current !== null) {
+      window.clearTimeout(winLineDirectorTimerRef.current);
+      winLineDirectorTimerRef.current = null;
+    }
+  }, []);
+  const stopWinLineCinematic = useCallback(() => {
+    clearWinLineCinematicTimer();
+    setWinLineCinematicActive(false);
+  }, [clearWinLineCinematicTimer]);
+  const handleContinueMatchAction = useCallback(() => {
+    stopWinLineCinematic();
+    onContinueMatch();
+  }, [onContinueMatch, stopWinLineCinematic]);
+  const handleRematchAction = useCallback(() => {
+    stopWinLineCinematic();
+    onRematch();
+  }, [onRematch, stopWinLineCinematic]);
 
   const handlePrimaryAction = useCallback(() => {
     if (!smartAction.enabled) {
       return;
     }
     if (smartAction.actionType === "continueMatch") {
-      onContinueMatch();
+      handleContinueMatchAction();
       return;
     }
     if (smartAction.actionType === "rematch" || smartAction.actionType === "opponentReady") {
-      onRematch();
+      handleRematchAction();
       return;
     }
     if (
@@ -451,12 +500,13 @@ export function GameRoomPage({
       smartAction.actionType === "block" ||
       smartAction.actionType === "suggest"
     ) {
+      stopWinLineCinematic();
       if (!smartAction.target) {
         return;
       }
       onPlace(smartAction.target);
     }
-  }, [onContinueMatch, onPlace, onRematch, smartAction]);
+  }, [handleContinueMatchAction, handleRematchAction, onPlace, smartAction, stopWinLineCinematic]);
 
   const handleToggleTimeoutAssist = useCallback(() => {
     onTimeoutAssistEnabledChange(!timeoutAssistEnabled);
@@ -520,6 +570,7 @@ export function GameRoomPage({
   ]);
 
   const handleBoardRotate = useCallback(() => {
+    stopWinLineCinematic();
     if (!shouldShowOnboarding) {
       return;
     }
@@ -531,7 +582,7 @@ export function GameRoomPage({
             hasRotated: true
           }
     );
-  }, [shouldShowOnboarding]);
+  }, [shouldShowOnboarding, stopWinLineCinematic]);
 
   const handleOnboardingPrimaryAction = useCallback(() => {
     setOnboardingProgress((current) =>
@@ -606,6 +657,38 @@ export function GameRoomPage({
   }, [snapshot.winner]);
 
   useEffect(() => {
+    if (!snapshot.winner || snapshot.winner === "draw" || !winLineDirector) {
+      winLineDirectorTriggeredRoundKeyRef.current = null;
+      stopWinLineCinematic();
+      return;
+    }
+    if (winLineDirectorTriggeredRoundKeyRef.current === winLineDirectorRoundKey) {
+      return;
+    }
+
+    winLineDirectorTriggeredRoundKeyRef.current = winLineDirectorRoundKey;
+    if (!winLineDirector.shouldAnimate || typeof window === "undefined") {
+      stopWinLineCinematic();
+      return;
+    }
+
+    clearWinLineCinematicTimer();
+    setWinLineCinematicActive(true);
+    winLineDirectorTimerRef.current = window.setTimeout(() => {
+      setWinLineCinematicActive(false);
+      winLineDirectorTimerRef.current = null;
+    }, WIN_LINE_CINEMATIC_DURATION_MS);
+  }, [
+    clearWinLineCinematicTimer,
+    snapshot.winner,
+    stopWinLineCinematic,
+    winLineDirector,
+    winLineDirectorRoundKey
+  ]);
+
+  useEffect(() => () => clearWinLineCinematicTimer(), [clearWinLineCinematicTimer]);
+
+  useEffect(() => {
     setFocusMode("auto");
     setFocusLayer(Math.floor(snapshot.size / 2));
     setAdvancedOpen(false);
@@ -619,9 +702,11 @@ export function GameRoomPage({
     autoRematchCancelledRoundKeyRef.current = null;
     autoContinueTriggeredRoundKeyRef.current = null;
     autoContinueCancelledRoundKeyRef.current = null;
+    winLineDirectorTriggeredRoundKeyRef.current = null;
     turnNudgeTriggeredTurnKeyRef.current = null;
     wasMyTurnRef.current = snapshot.turn === myMark && snapshot.winner === null;
     clearTurnNudgeTitle();
+    stopWinLineCinematic();
     setSettlementStartedAtMs(null);
     setAutoRematchCountdownStartedAtMs(null);
     setAutoContinueCountdownStartedAtMs(null);
@@ -630,7 +715,7 @@ export function GameRoomPage({
       setWindowFocused(document.hasFocus());
     }
     setOnboardingProgress(createDefaultOnboardingProgress());
-  }, [clearTurnNudgeTitle, snapshot.roomId]);
+  }, [clearTurnNudgeTitle, snapshot.roomId, stopWinLineCinematic]);
 
   useEffect(() => {
     setSettlementStartedAtMs((current) =>
@@ -741,8 +826,8 @@ export function GameRoomPage({
     }
     autoRematchTriggeredRoundKeyRef.current = autoRematchRoundKey;
     setAutoRematchCountdownStartedAtMs(null);
-    onRematch();
-  }, [autoRematchDecision.shouldAutoRematch, autoRematchRoundKey, onRematch]);
+    handleRematchAction();
+  }, [autoRematchDecision.shouldAutoRematch, autoRematchRoundKey, handleRematchAction]);
 
   useEffect(() => {
     if (!autoContinueDecision.shouldAutoContinue) {
@@ -753,8 +838,8 @@ export function GameRoomPage({
     }
     autoContinueTriggeredRoundKeyRef.current = autoContinueRoundKey;
     setAutoContinueCountdownStartedAtMs(null);
-    onContinueMatch();
-  }, [autoContinueDecision.shouldAutoContinue, autoContinueRoundKey, onContinueMatch]);
+    handleContinueMatchAction();
+  }, [autoContinueDecision.shouldAutoContinue, autoContinueRoundKey, handleContinueMatchAction]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -941,6 +1026,8 @@ export function GameRoomPage({
         qualityProfile={qualityProfile}
         lastMove={snapshot.lastMove}
         winningLine={snapshot.winningLine}
+        winLineCinematicActive={winLineCinematicActive}
+        winLineFocusCoordinate={winLineCinematicActive ? winLineDirector?.focusCoordinate ?? null : null}
         focusLayer={focusLayer}
         hintMoves={hintMovesForBoard}
         pendingMove={pendingMove}
@@ -954,6 +1041,8 @@ export function GameRoomPage({
         myMark={myMark}
         turn={snapshot.turn}
         winner={snapshot.winner}
+        winLineSummary={winLineDirector?.lineLabel ?? null}
+        winLineCinematicActive={winLineCinematicActive}
         assistEnabled={assistEnabled}
         focusLayer={focusLayer}
         focusMode={focusMode}
@@ -1003,7 +1092,7 @@ export function GameRoomPage({
         onAutoFocus={handleAutoFocus}
         onToggleAssist={handleAssistToggle}
         onQualityModeChange={onQualityModeChange}
-        onRematch={onRematch}
+        onRematch={handleRematchAction}
         onLeave={onLeave}
       />
       {errorMessage ? <div className="game-toast">{errorMessage}</div> : null}
