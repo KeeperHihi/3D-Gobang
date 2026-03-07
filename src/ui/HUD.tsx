@@ -28,6 +28,8 @@ interface HUDProps {
   averageFps: number | null;
   myConnected: boolean;
   opponentConnected: boolean;
+  turnRemainingMs: number | null;
+  turnUrgent: boolean;
   myRematchReady: boolean;
   opponentRematchReady: boolean;
   opponentReconnectRemainingMs: number | null;
@@ -88,6 +90,8 @@ export function HUD({
   averageFps,
   myConnected,
   opponentConnected,
+  turnRemainingMs,
+  turnUrgent,
   myRematchReady,
   opponentRematchReady,
   opponentReconnectRemainingMs,
@@ -120,6 +124,9 @@ export function HUD({
     : isMobileLayout
       ? "更多操作"
       : "展开高级操作";
+  const turnRemainingSeconds =
+    turnRemainingMs === null ? null : Math.max(0, Math.ceil(turnRemainingMs / 1000));
+  const showTurnCountdown = !winner && turnRemainingSeconds !== null;
 
   return (
     <div className={`hud-root ${isMobileLayout ? "mobile" : "desktop"}`}>
@@ -150,6 +157,11 @@ export function HUD({
           </>
         ) : null}
         <div className="hud-turn">{turnText}</div>
+        {showTurnCountdown ? (
+          <div className={`hud-turn-clock ${turnUrgent ? "urgent" : ""}`}>
+            {turn === myMark ? "你的回合" : "对手回合"} · 剩余 {turnRemainingSeconds}s（以服务器结算为准）
+          </div>
+        ) : null}
         {onboardingGuide ? (
           <div className="hud-coach-card">
             <div className="hud-coach-header">

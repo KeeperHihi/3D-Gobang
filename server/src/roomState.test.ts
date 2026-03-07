@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  applyMoveToRoom,
   applyDisconnectForfeitIfExpired,
+  applyTurnForfeitIfExpired,
   clearReconnectDeadline,
   createRoomState,
   getRecordedMoveAck,
@@ -72,6 +74,7 @@ describe("requestRematch", () => {
     expect(room.board.every((cell) => cell === 0)).toBe(true);
     expect(room.turn).toBe("X");
     expect(room.winner).toBeNull();
+    expect(room.turnDeadlineAt).not.toBeNull();
     expect(room.moveCount).toBe(0);
     expect(getRecordedMoveAck(room, "X", "move-x-1")).toBeNull();
     expect(snapshotFromRoomState(room).rematchReady).toEqual({
@@ -134,6 +137,70 @@ describe("reconnect deadline and disconnect forfeit", () => {
     expect(room.winningLine).toBeNull();
     expect(room.players.O.reconnectDeadlineAt).toBeNull();
     expect(room.players.X.reconnectDeadlineAt).toBeNull();
+    expect(room.turnDeadlineAt).toBeNull();
     expect(room.rematchVotes.size).toBe(0);
+  });
+});
+
+describe("turn deadline and timeout forfeit", () => {
+  it("initializes turn deadline when room is created", () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const room = createFixtureRoom();
+
+    expect(room.turn).toBe("X");
+    expect(room.turnDeadlineAt).toBe(31_000);
+    nowSpy.mockRestore();
+  });
+
+  it("refreshes turn deadline after a valid move", () => {
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy.mockReturnValueOnce(1_000);
+    const room = createFixtureRoom();
+
+    nowSpy.mockReturnValue(8_000);
+    const result = applyMoveToRoom(room, "X", { x: 0, y: 0, z: 0 });
+
+    expect(result.accepted).toBe(true);
+    expect(room.turn).toBe("O");
+    expect(room.turnDeadlineAt).toBe(38_000);
+    nowSpy.mockRestore();
+  });
+
+  it("forfeits active turn only when matching deadline is expired", () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(2_000);
+    const room = createFixtureRoom();
+    const deadlineAt = room.turnDeadlineAt;
+    expect(deadlineAt).not.toBeNull();
+
+    const mismatchedDeadlineResult = applyTurnForfeitIfExpired(room, 99_999, (deadlineAt ?? 0) + 1);
+    const earlyResult = applyTurnForfeitIfExpired(room, (deadlineAt ?? 0) - 1, deadlineAt ?? 0);
+    const expiredResult = applyTurnForfeitIfExpired(room, deadlineAt ?? 0, deadlineAt ?? 0);
+
+    expect(mismatchedDeadlineResult).toBe(false);
+    expect(earlyResult).toBe(false);
+    expect(expiredResult).toBe(true);
+    expect(room.winner).toBe("O");
+    expect(room.turnDeadlineAt).toBeNull();
+    nowSpy.mockRestore();
+  });
+
+  it("rejects late move and applies timeout forfeit immediately", () => {
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy.mockReturnValueOnce(1_000);
+    const room = createFixtureRoom();
+    const originalBoard = [...room.board];
+
+    nowSpy.mockReturnValue(31_001);
+    const result = applyMoveToRoom(room, "X", { x: 0, y: 0, z: 0 });
+
+    expect(result).toEqual({
+      accepted: false,
+      timedOut: true,
+      reason: "当前回合已超时，系统已判负"
+    });
+    expect(room.winner).toBe("O");
+    expect(room.turnDeadlineAt).toBeNull();
+    expect(room.board).toEqual(originalBoard);
+    nowSpy.mockRestore();
   });
 });

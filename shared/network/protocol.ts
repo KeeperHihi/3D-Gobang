@@ -30,6 +30,7 @@ export interface RoomSnapshot {
   connect: number;
   board: number[];
   turn: PlayerMark;
+  turnDeadlineAt: number | null;
   winner: Winner;
   lastMove: MoveRecord | null;
   winningLine: number[] | null;

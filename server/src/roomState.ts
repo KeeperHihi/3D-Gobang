@@ -31,6 +31,9 @@ export interface RecordedMoveAck {
 }
 
 const CLIENT_MOVE_ACK_HISTORY_LIMIT = 80;
+const OPENING_MOVE_COUNT_LIMIT = 4;
+const OPENING_TURN_LIMIT_MS = 30_000;
+const STANDARD_TURN_LIMIT_MS = 20_000;
 
 export interface RoomState {
   roomId: string;
@@ -38,6 +41,7 @@ export interface RoomState {
   connect: number;
   board: BoardCell[];
   turn: PlayerMark;
+  turnDeadlineAt: number | null;
   winner: Winner;
   lastMove: MoveRecord | null;
   winningLine: number[] | null;
@@ -71,6 +75,7 @@ interface RoomCreateOptions {
 export interface MoveApplyResult {
   accepted: boolean;
   reason?: string;
+  timedOut?: boolean;
 }
 
 export interface RematchRequestResult {
@@ -82,12 +87,13 @@ export interface RematchRequestResult {
 export function createRoomState(options: RoomCreateOptions): RoomState {
   const size = options.size ?? DEFAULT_BOARD_SIZE;
   const connect = options.connect ?? DEFAULT_CONNECT_COUNT;
-  return {
+  const room: RoomState = {
     roomId: options.roomId,
     size,
     connect,
     board: createBoard(size),
     turn: "X",
+    turnDeadlineAt: null,
     winner: null,
     lastMove: null,
     winningLine: null,
@@ -117,6 +123,9 @@ export function createRoomState(options: RoomCreateOptions): RoomState {
     winLinesIndex: createWinLinesIndex(size, connect),
     moveCount: 0
   };
+
+  startTurnDeadline(room, Date.now());
+  return room;
 }
 
 export function getRecordedMoveAck(
@@ -165,6 +174,53 @@ function clearReconnectDeadlines(room: RoomState): void {
   room.players.O.reconnectDeadlineAt = null;
 }
 
+function currentTurnTimeLimitMs(room: RoomState): number {
+  if (room.moveCount < OPENING_MOVE_COUNT_LIMIT) {
+    return OPENING_TURN_LIMIT_MS;
+  }
+  return STANDARD_TURN_LIMIT_MS;
+}
+
+export function startTurnDeadline(room: RoomState, nowMs: number): number | null {
+  if (room.winner) {
+    room.turnDeadlineAt = null;
+    return null;
+  }
+
+  const deadlineAt = nowMs + currentTurnTimeLimitMs(room);
+  room.turnDeadlineAt = deadlineAt;
+  return deadlineAt;
+}
+
+export function clearTurnDeadline(room: RoomState): void {
+  room.turnDeadlineAt = null;
+}
+
+export function applyTurnForfeitIfExpired(
+  room: RoomState,
+  nowMs: number,
+  expectedDeadlineAt?: number
+): boolean {
+  if (room.winner || room.turnDeadlineAt === null) {
+    return false;
+  }
+
+  if (expectedDeadlineAt !== undefined && room.turnDeadlineAt !== expectedDeadlineAt) {
+    return false;
+  }
+
+  if (room.turnDeadlineAt > nowMs) {
+    return false;
+  }
+
+  room.winner = room.turn === "X" ? "O" : "X";
+  room.winningLine = null;
+  room.rematchVotes.clear();
+  clearReconnectDeadlines(room);
+  clearTurnDeadline(room);
+  return true;
+}
+
 export function snapshotFromRoomState(room: RoomState): RoomSnapshot {
   return {
     roomId: room.roomId,
@@ -172,6 +228,7 @@ export function snapshotFromRoomState(room: RoomState): RoomSnapshot {
     connect: room.connect,
     board: room.board,
     turn: room.turn,
+    turnDeadlineAt: room.turnDeadlineAt,
     winner: room.winner,
     lastMove: room.lastMove,
     winningLine: room.winningLine,
@@ -253,6 +310,7 @@ export function applyDisconnectForfeitIfExpired(
   room.winningLine = null;
   room.rematchVotes.clear();
   clearReconnectDeadlines(room);
+  clearTurnDeadline(room);
   return true;
 }
 
@@ -271,6 +329,14 @@ export function applyMoveToRoom(
   mark: PlayerMark,
   coordinate: Coordinate3D
 ): MoveApplyResult {
+  if (applyTurnForfeitIfExpired(room, Date.now())) {
+    return {
+      accepted: false,
+      timedOut: true,
+      reason: "当前回合已超时，系统已判负"
+    };
+  }
+
   if (room.winner) {
     return {
       accepted: false,
@@ -310,6 +376,7 @@ export function applyMoveToRoom(
     room.winner = winResult.winner;
     room.winningLine = winResult.winningLine;
     clearReconnectDeadlines(room);
+    clearTurnDeadline(room);
     return { accepted: true };
   }
 
@@ -317,10 +384,12 @@ export function applyMoveToRoom(
     room.winner = "draw";
     room.winningLine = null;
     clearReconnectDeadlines(room);
+    clearTurnDeadline(room);
     return { accepted: true };
   }
 
   room.turn = room.turn === "X" ? "O" : "X";
+  startTurnDeadline(room, Date.now());
   return { accepted: true };
 }
 
@@ -358,6 +427,7 @@ export function requestRematch(room: RoomState, mark: PlayerMark): RematchReques
   room.rematchVotes.clear();
   clearReconnectDeadlines(room);
   clearRecordedMoveAcks(room);
+  startTurnDeadline(room, Date.now());
 
   return {
     accepted: true,

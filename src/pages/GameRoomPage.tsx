@@ -95,6 +95,7 @@ export function GameRoomPage({
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const opponentMark: PlayerMark = myMark === "X" ? "O" : "X";
   const opponentReconnectDeadlineAt = snapshot.players[opponentMark].reconnectDeadlineAt;
+  const turnDeadlineAt = snapshot.turnDeadlineAt;
   const myRematchReady = snapshot.rematchReady[myMark];
   const opponentRematchReady = snapshot.rematchReady[opponentMark];
   const hasPendingMove = pendingMove !== null;
@@ -175,6 +176,13 @@ export function GameRoomPage({
     [onboardingProgress, shouldShowOnboarding, smartAction.enabled]
   );
   const qualityProfile = useMemo(() => getQualityProfile(qualityLevel), [qualityLevel]);
+  const turnRemainingMs = useMemo(() => {
+    if (snapshot.winner || turnDeadlineAt === null) {
+      return null;
+    }
+    return Math.max(0, turnDeadlineAt - nowMs);
+  }, [nowMs, snapshot.winner, turnDeadlineAt]);
+  const turnUrgent = turnRemainingMs !== null && turnRemainingMs <= 8_000;
   const opponentReconnectRemainingMs = useMemo(() => {
     if (snapshot.winner || opponentReconnectDeadlineAt === null) {
       return null;
@@ -455,6 +463,8 @@ export function GameRoomPage({
         averageFps={averageFps}
         myConnected={snapshot.players[myMark].connected}
         opponentConnected={snapshot.players[opponentMark].connected}
+        turnRemainingMs={turnRemainingMs}
+        turnUrgent={turnUrgent}
         myRematchReady={myRematchReady}
         opponentRematchReady={opponentRematchReady}
         opponentReconnectRemainingMs={opponentReconnectRemainingMs}

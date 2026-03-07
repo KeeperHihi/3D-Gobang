@@ -12,12 +12,14 @@ import type {
 import {
   applyDisconnectForfeitIfExpired,
   applyMoveToRoom,
+  applyTurnForfeitIfExpired,
   clearReconnectDeadline,
   createRoomState,
   getRecordedMoveAck,
   markForSocket,
   recordMoveAck,
   requestRematch,
+  clearTurnDeadline,
   setPlayerConnection,
   startReconnectDeadline,
   snapshotFromRoomState,
@@ -56,6 +58,7 @@ const rooms = new Map<string, RoomState>();
 const seatTokenMap = new Map<string, { roomId: string; mark: PlayerMark }>();
 const socketRoomMap = new Map<string, string>();
 const reconnectForfeitTimers = new Map<string, NodeJS.Timeout>();
+const turnForfeitTimers = new Map<string, NodeJS.Timeout>();
 const RECONNECT_GRACE_PERIOD_MS = 30_000;
 
 function createRoomId(): string {
@@ -81,6 +84,15 @@ function clearReconnectForfeitTimersForRoom(roomId: string): void {
   clearReconnectForfeitTimer(roomId, "O");
 }
 
+function clearTurnForfeitTimer(roomId: string): void {
+  const timer = turnForfeitTimers.get(roomId);
+  if (!timer) {
+    return;
+  }
+  clearTimeout(timer);
+  turnForfeitTimers.delete(roomId);
+}
+
 function emitRoomUpdate(roomId: string): void {
   const room = rooms.get(roomId);
   if (!room) {
@@ -89,6 +101,40 @@ function emitRoomUpdate(roomId: string): void {
   io.to(roomId).emit("room:update", {
     snapshot: snapshotFromRoomState(room)
   });
+}
+
+function scheduleTurnForfeit(roomId: string): void {
+  const room = rooms.get(roomId);
+  if (!room) {
+    clearTurnForfeitTimer(roomId);
+    return;
+  }
+
+  const deadlineAt = room.turnDeadlineAt;
+  if (room.winner || deadlineAt === null) {
+    clearTurnForfeitTimer(roomId);
+    return;
+  }
+
+  clearTurnForfeitTimer(roomId);
+  const timeout = setTimeout(() => {
+    turnForfeitTimers.delete(roomId);
+    const currentRoom = rooms.get(roomId);
+    if (!currentRoom) {
+      return;
+    }
+
+    const forfeited = applyTurnForfeitIfExpired(currentRoom, Date.now(), deadlineAt);
+    if (!forfeited) {
+      return;
+    }
+
+    clearReconnectForfeitTimersForRoom(roomId);
+    emitRoomUpdate(roomId);
+    detachRoomIfAbandoned(roomId);
+  }, Math.max(0, deadlineAt - Date.now()));
+
+  turnForfeitTimers.set(roomId, timeout);
 }
 
 function scheduleReconnectForfeit(roomId: string, mark: PlayerMark): void {
@@ -118,6 +164,7 @@ function scheduleReconnectForfeit(roomId: string, mark: PlayerMark): void {
       return;
     }
 
+    scheduleTurnForfeit(roomId);
     emitRoomUpdate(roomId);
     detachRoomIfAbandoned(roomId);
   }, Math.max(0, deadlineAt - nowMs));
@@ -136,6 +183,7 @@ function detachRoomIfAbandoned(roomId: string): void {
   seatTokenMap.delete(room.players.X.seatToken);
   seatTokenMap.delete(room.players.O.seatToken);
   clearReconnectForfeitTimersForRoom(roomId);
+  clearTurnForfeitTimer(roomId);
   rooms.delete(roomId);
 }
 
@@ -216,6 +264,7 @@ function handleMatchPair(pair: { firstSocketId: string; secondSocketId: string }
 
   attachSocketToRoom(firstSocket, roomId);
   attachSocketToRoom(secondSocket, roomId);
+  scheduleTurnForfeit(roomId);
 
   const snapshot = snapshotFromRoomState(room);
   firstSocket.emit("queue:matched", {
@@ -408,6 +457,12 @@ io.on("connection", (socket) => {
         clientMoveId,
         ...ack
       });
+      if (applyResult.timedOut) {
+        clearReconnectForfeitTimersForRoom(roomId);
+        clearTurnForfeitTimer(roomId);
+        emitRoomUpdate(roomId);
+        detachRoomIfAbandoned(roomId);
+      }
       return;
     }
 
@@ -420,6 +475,7 @@ io.on("connection", (socket) => {
       clientMoveId,
       ...ack
     });
+    scheduleTurnForfeit(roomId);
     emitRoomUpdate(roomId);
   });
 
@@ -446,6 +502,7 @@ io.on("connection", (socket) => {
       return;
     }
 
+    scheduleTurnForfeit(roomId);
     emitRoomUpdate(roomId);
   });
 
@@ -472,6 +529,8 @@ io.on("connection", (socket) => {
     setPlayerConnection(room, mark, null, false);
     if (room.winner) {
       clearReconnectDeadline(room, mark);
+      clearTurnDeadline(room);
+      clearTurnForfeitTimer(roomId);
     } else {
       scheduleReconnectForfeit(roomId, mark);
     }

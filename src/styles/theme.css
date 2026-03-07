@@ -349,6 +349,32 @@ body {
   font-weight: 600;
 }
 
+.hud-turn-clock {
+  margin-bottom: 10px;
+  border-radius: 11px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #e4f5ff;
+  border: 1px solid rgba(124, 219, 255, 0.38);
+  background: linear-gradient(90deg, rgba(66, 131, 207, 0.25), rgba(66, 90, 195, 0.2));
+}
+
+.hud-turn-clock.urgent {
+  color: #fff5da;
+  border-color: rgba(255, 176, 124, 0.7);
+  background: linear-gradient(90deg, rgba(163, 67, 34, 0.42), rgba(158, 46, 81, 0.35));
+  animation: turn-clock-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes turn-clock-pulse {
+  from {
+    filter: brightness(0.95);
+  }
+  to {
+    filter: brightness(1.08);
+  }
+}
+
 .hud-coach-card {
   margin-bottom: 10px;
   border-radius: 12px;

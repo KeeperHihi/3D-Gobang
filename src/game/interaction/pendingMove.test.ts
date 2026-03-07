@@ -13,6 +13,7 @@ function createSnapshot(partial?: Partial<RoomSnapshot>): RoomSnapshot {
     connect: 5,
     board: Array.from({ length: 125 }, () => 0),
     turn: "X",
+    turnDeadlineAt: null,
     winner: null,
     lastMove: null,
     winningLine: null,
