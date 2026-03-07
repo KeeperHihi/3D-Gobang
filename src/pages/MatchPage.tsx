@@ -1,10 +1,12 @@
 import { createMatchQueueGuide } from "../game/interaction/matchQueueGuide";
+import { sceneWarmupHint, type SceneWarmupStatus } from "../game/interaction/sceneWarmup";
 
 interface MatchPageProps {
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
   matchPhase: "idle" | "queuing";
   queueSize: number;
   queueElapsedSeconds: number;
+  sceneWarmupStatus: SceneWarmupStatus;
   isRecoveringSession: boolean;
   onStartMatch: () => void;
   onCancelMatch: () => void;
@@ -21,6 +23,7 @@ export function MatchPage({
   matchPhase,
   queueSize,
   queueElapsedSeconds,
+  sceneWarmupStatus,
   isRecoveringSession,
   onStartMatch,
   onCancelMatch
@@ -35,6 +38,7 @@ export function MatchPage({
   });
   const startDisabled = connectionStatus !== "online" || isQueuing || isRecoveringSession;
   const cancelDisabled = connectionStatus !== "online" || !isQueuing || isRecoveringSession;
+  const warmupHint = sceneWarmupHint(sceneWarmupStatus);
 
   return (
     <main className="match-page">
@@ -59,6 +63,7 @@ export function MatchPage({
             </div>
           </div>
         ) : null}
+        {isQueuing ? <p className="match-warmup-status">{warmupHint}</p> : null}
         <button className="primary-button" type="button" onClick={onStartMatch} disabled={startDisabled}>
           {isRecoveringSession ? "正在恢复对局..." : isQueuing ? "正在匹配对手..." : "一键开始匹配"}
         </button>

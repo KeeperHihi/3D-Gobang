@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { MatchPage } from "./pages/MatchPage";
-import { GameRoomPage } from "./pages/GameRoomPage";
 import { createSocketClient } from "./network/socketClient";
+import { LoadingStage } from "./ui/LoadingStage";
 import {
   isPendingMoveStale,
   PENDING_MOVE_STALE_TIMEOUT_MS,
@@ -13,6 +13,7 @@ import {
   type QualityMode
 } from "./game/interaction/qualityProfile";
 import { validateContinueMatchRequest } from "./game/interaction/continueMatch";
+import { type SceneWarmupStatus } from "./game/interaction/sceneWarmup";
 import type {
   Coordinate3D,
   MoveAckPayload,
@@ -33,6 +34,16 @@ interface RoomSession {
 const SESSION_STORAGE_KEY = "nebula-cube-session";
 const QUALITY_MODE_STORAGE_KEY = "nebula-cube-quality-mode";
 const ONBOARDING_STORAGE_KEY = "nebula-cube-onboarding-v1";
+
+function loadGameRoomPageModule() {
+  return import("./pages/GameRoomPage");
+}
+
+const LazyGameRoomPage = lazy(() =>
+  loadGameRoomPageModule().then((module) => ({
+    default: module.GameRoomPage
+  }))
+);
 
 function createClientMoveId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -106,9 +117,11 @@ export default function App() {
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(() =>
     readOnboardingCompletedFromStorage()
   );
+  const [sceneWarmupStatus, setSceneWarmupStatus] = useState<SceneWarmupStatus>("idle");
 
   const sessionRef = useRef<RoomSession | null>(session);
   const matchPhaseRef = useRef<MatchPhase>(matchPhase);
+  const sceneWarmupStartedRef = useRef(false);
 
   useEffect(() => {
     sessionRef.current = session;
@@ -142,6 +155,23 @@ export default function App() {
     const timer = window.setInterval(updateElapsed, 1000);
     return () => window.clearInterval(timer);
   }, [matchPhase, queueStartedAtMs]);
+
+  useEffect(() => {
+    if (matchPhase !== "queuing" || sceneWarmupStartedRef.current) {
+      return;
+    }
+
+    sceneWarmupStartedRef.current = true;
+    setSceneWarmupStatus("warming");
+    void loadGameRoomPageModule()
+      .then(() => {
+        setSceneWarmupStatus("ready");
+      })
+      .catch(() => {
+        sceneWarmupStartedRef.current = false;
+        setSceneWarmupStatus("failed");
+      });
+  }, [matchPhase]);
 
   useEffect(() => {
     const resetQueueState = () => {
@@ -464,6 +494,7 @@ export default function App() {
         matchPhase={matchPhase === "queuing" ? "queuing" : "idle"}
         queueSize={queueSize}
         queueElapsedSeconds={queueElapsedSeconds}
+        sceneWarmupStatus={sceneWarmupStatus}
         isRecoveringSession={isRecoveringSession}
         onStartMatch={startMatch}
         onCancelMatch={cancelMatch}
@@ -478,27 +509,36 @@ export default function App() {
     snapshot.board.every((cell) => cell === 0);
 
   return (
-    <GameRoomPage
-      snapshot={snapshot}
-      myMark={session.mark}
-      connectionStatus={connectionState}
-      shouldShowOnboarding={shouldShowOnboarding}
-      qualityMode={qualityMode}
-      onQualityModeChange={setQualityMode}
-      pendingMove={
-        pendingMove
-          ? {
-              coordinate: pendingMove.coordinate,
-              player: pendingMove.player
-            }
-          : null
+    <Suspense
+      fallback={
+        <LoadingStage
+          title="正在部署星云战场"
+          detail="3D 场景加载中，马上进入对局..."
+        />
       }
-      errorMessage={errorMessage}
-      onPlace={placePiece}
-      onRematch={requestRematch}
-      onContinueMatch={requestContinueMatch}
-      onCompleteOnboarding={() => setOnboardingCompleted(true)}
-      onLeave={leaveRoom}
-    />
+    >
+      <LazyGameRoomPage
+        snapshot={snapshot}
+        myMark={session.mark}
+        connectionStatus={connectionState}
+        shouldShowOnboarding={shouldShowOnboarding}
+        qualityMode={qualityMode}
+        onQualityModeChange={setQualityMode}
+        pendingMove={
+          pendingMove
+            ? {
+                coordinate: pendingMove.coordinate,
+                player: pendingMove.player
+              }
+            : null
+        }
+        errorMessage={errorMessage}
+        onPlace={placePiece}
+        onRematch={requestRematch}
+        onContinueMatch={requestContinueMatch}
+        onCompleteOnboarding={() => setOnboardingCompleted(true)}
+        onLeave={leaveRoom}
+      />
+    </Suspense>
   );
 }
