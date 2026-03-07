@@ -316,6 +316,12 @@ body {
   filter: brightness(1.08);
 }
 
+.hud-mini-button.active {
+  border-color: rgba(151, 241, 255, 0.9);
+  background: linear-gradient(90deg, rgba(74, 149, 255, 0.45), rgba(110, 125, 255, 0.38));
+  color: #eef8ff;
+}
+
 .hud-mini-button:disabled {
   cursor: not-allowed;
   opacity: 0.5;

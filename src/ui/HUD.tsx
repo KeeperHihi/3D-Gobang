@@ -1,4 +1,10 @@
 import type { PlayerMark, Winner } from "../network/protocol";
+import {
+  qualityLevelLabel,
+  qualityModeLabel,
+  type QualityLevel,
+  type QualityMode
+} from "../game/interaction/qualityProfile";
 import type { SmartActionState } from "../game/interaction/smartAction";
 import { SmartActionBar } from "./SmartActionBar";
 
@@ -13,6 +19,9 @@ interface HUDProps {
   focusMode: "auto" | "manual";
   smartAction: SmartActionState;
   advancedOpen: boolean;
+  qualityMode: QualityMode;
+  qualityLevel: QualityLevel;
+  averageFps: number | null;
   myConnected: boolean;
   opponentConnected: boolean;
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
@@ -21,6 +30,7 @@ interface HUDProps {
   onLayerStep: (step: -1 | 1) => void;
   onAutoFocus: () => void;
   onToggleAssist: () => void;
+  onQualityModeChange: (mode: QualityMode) => void;
   onRematch: () => void;
   onLeave: () => void;
 }
@@ -62,6 +72,9 @@ export function HUD({
   focusMode,
   smartAction,
   advancedOpen,
+  qualityMode,
+  qualityLevel,
+  averageFps,
   myConnected,
   opponentConnected,
   connectionStatus,
@@ -70,6 +83,7 @@ export function HUD({
   onLayerStep,
   onAutoFocus,
   onToggleAssist,
+  onQualityModeChange,
   onRematch,
   onLeave
 }: HUDProps) {
@@ -118,6 +132,41 @@ export function HUD({
               <span>
                 L{focusLayer + 1}/{boardSize} · {focusMode === "auto" ? "自动" : "手动"}
               </span>
+            </div>
+            <div className="hud-row">
+              <span>渲染档位</span>
+              <span>{qualityLevelLabel(qualityLevel)}</span>
+            </div>
+            <div className="hud-row">
+              <span>渲染模式</span>
+              <span>{qualityModeLabel(qualityMode)}</span>
+            </div>
+            <div className="hud-row">
+              <span>实时帧率</span>
+              <span>{averageFps === null ? "采样中..." : `${Math.round(averageFps)} FPS`}</span>
+            </div>
+            <div className="hud-actions">
+              <button
+                className={`hud-mini-button ${qualityMode === "auto" ? "active" : ""}`}
+                type="button"
+                onClick={() => onQualityModeChange("auto")}
+              >
+                自动
+              </button>
+              <button
+                className={`hud-mini-button ${qualityMode === "quality" ? "active" : ""}`}
+                type="button"
+                onClick={() => onQualityModeChange("quality")}
+              >
+                画质优先
+              </button>
+              <button
+                className={`hud-mini-button ${qualityMode === "smooth" ? "active" : ""}`}
+                type="button"
+                onClick={() => onQualityModeChange("smooth")}
+              >
+                流畅优先
+              </button>
             </div>
             <div className="hud-actions">
               <button

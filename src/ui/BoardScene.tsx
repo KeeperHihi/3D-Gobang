@@ -5,6 +5,7 @@ import type { Mesh } from "three";
 import type { Coordinate3D, MoveRecord, PlayerMark } from "../network/protocol";
 import { fromLinearIndex } from "../game/engine/board";
 import type { HintPriority, MoveHint } from "../game/engine/moveHints";
+import type { QualityProfile } from "../game/interaction/qualityProfile";
 import { createCameraTarget, useCameraAssist } from "../game/interaction/cameraAssist";
 import { pickCell } from "../game/interaction/pickCell";
 
@@ -14,6 +15,7 @@ interface BoardSceneProps {
   board: number[];
   size: number;
   canPlace: boolean;
+  qualityProfile: QualityProfile;
   lastMove: MoveRecord | null;
   winningLine: number[] | null;
   focusLayer: number | null;
@@ -41,6 +43,7 @@ interface HintPulseProps {
   position: [number, number, number];
   color: string;
   opacity: number;
+  speed: number;
   phase: number;
 }
 
@@ -54,7 +57,7 @@ function colorForHintPriority(priority: HintPriority): string {
   return "#5cf0ff";
 }
 
-function HintPulse({ position, color, opacity, phase }: HintPulseProps) {
+function HintPulse({ position, color, opacity, speed, phase }: HintPulseProps) {
   const pulseRef = useRef<Mesh>(null);
 
   useFrame(({ clock }) => {
@@ -62,7 +65,7 @@ function HintPulse({ position, color, opacity, phase }: HintPulseProps) {
     if (!pulseMesh) {
       return;
     }
-    const progress = clock.getElapsedTime() * 2.7 + phase;
+    const progress = clock.getElapsedTime() * speed + phase;
     const scale = 1 + Math.sin(progress) * 0.22;
     pulseMesh.scale.set(scale, scale, scale);
   });
@@ -108,6 +111,7 @@ export function BoardScene({
   board,
   size,
   canPlace,
+  qualityProfile,
   lastMove,
   winningLine,
   focusLayer,
@@ -155,12 +159,18 @@ export function BoardScene({
     <div className="board-scene">
       <Canvas camera={{ position: [9, 8, 9], fov: 42 }}>
         <color attach="background" args={["#040713"]} />
-        <fog attach="fog" args={["#040713", 12, 38]} />
+        <fog attach="fog" args={["#040713", 12, qualityProfile.fogFar]} />
         <ambientLight intensity={0.8} />
         <pointLight position={[9, 9, 6]} intensity={28} color="#40d9ff" />
         <pointLight position={[-8, -6, -10]} intensity={20} color="#ff45d4" />
-        <Stars radius={80} depth={40} count={3000} factor={4.2} fade saturation={0} />
-        <Sparkles count={160} scale={[20, 20, 20]} speed={0.35} size={2.2} color="#5fe9ff" />
+        <Stars radius={80} depth={40} count={qualityProfile.starsCount} factor={4.2} fade saturation={0} />
+        <Sparkles
+          count={qualityProfile.sparklesCount}
+          scale={[20, 20, 20]}
+          speed={qualityProfile.sparklesSpeed}
+          size={qualityProfile.sparklesSize}
+          color="#5fe9ff"
+        />
 
         <CameraAssistController
           size={size}
@@ -214,7 +224,9 @@ export function BoardScene({
             const color = value === 1 ? "#64f6ff" : value === 2 ? "#ff69d0" : "#182850";
             const emissiveBaseColor = value === 1 ? "#48ffff" : value === 2 ? "#ff52da" : "#4f8eff";
             const emissive = hintColor ?? emissiveBaseColor;
-            const opacityBase = isEmpty ? (isHovered && interactive ? 0.65 : 0.24) : 0.93;
+            const opacityBase = isEmpty
+              ? (isHovered && interactive ? 0.65 : 0.24) * qualityProfile.emptyCellOpacityScale
+              : 0.93;
             const opacity = opacityBase * layerOpacityFactor;
             const emissiveIntensityBase = isWinningCell
               ? 2.4
@@ -277,7 +289,8 @@ export function BoardScene({
               key={hint.index}
               position={toWorldPosition(size, hint.coordinate)}
               color={colorForHintPriority(hint.priority)}
-              opacity={rank === 0 ? 0.45 : 0.25}
+              opacity={(rank === 0 ? 0.45 : 0.25) * qualityProfile.hintPulseOpacityScale}
+              speed={qualityProfile.hintPulseSpeed}
               phase={rank * 0.75}
             />
           ))}

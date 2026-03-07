@@ -8,6 +8,10 @@ import {
   shouldClearPendingMove,
   type PendingMoveState
 } from "./game/interaction/pendingMove";
+import {
+  DEFAULT_QUALITY_MODE,
+  type QualityMode
+} from "./game/interaction/qualityProfile";
 import type {
   Coordinate3D,
   MoveAckPayload,
@@ -24,6 +28,7 @@ interface RoomSession {
 }
 
 const SESSION_STORAGE_KEY = "nebula-cube-session";
+const QUALITY_MODE_STORAGE_KEY = "nebula-cube-quality-mode";
 
 function createClientMoveId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -48,12 +53,24 @@ function readSessionFromStorage(): RoomSession | null {
   }
 }
 
+function readQualityModeFromStorage(): QualityMode {
+  const raw = localStorage.getItem(QUALITY_MODE_STORAGE_KEY);
+  if (raw === "auto" || raw === "quality" || raw === "smooth") {
+    return raw;
+  }
+  return DEFAULT_QUALITY_MODE;
+}
+
 function persistSession(session: RoomSession | null) {
   if (!session) {
     localStorage.removeItem(SESSION_STORAGE_KEY);
     return;
   }
   localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+}
+
+function persistQualityMode(mode: QualityMode): void {
+  localStorage.setItem(QUALITY_MODE_STORAGE_KEY, mode);
 }
 
 export default function App() {
@@ -64,6 +81,7 @@ export default function App() {
   const [isMatching, setIsMatching] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pendingMove, setPendingMove] = useState<PendingMoveState | null>(null);
+  const [qualityMode, setQualityMode] = useState<QualityMode>(() => readQualityModeFromStorage());
 
   const sessionRef = useRef<RoomSession | null>(session);
 
@@ -71,6 +89,10 @@ export default function App() {
     sessionRef.current = session;
     persistSession(session);
   }, [session]);
+
+  useEffect(() => {
+    persistQualityMode(qualityMode);
+  }, [qualityMode]);
 
   useEffect(() => {
     const handleConnect = () => {
@@ -298,6 +320,8 @@ export default function App() {
       snapshot={snapshot}
       myMark={session.mark}
       connectionStatus={connectionState}
+      qualityMode={qualityMode}
+      onQualityModeChange={setQualityMode}
       pendingMove={
         pendingMove
           ? {

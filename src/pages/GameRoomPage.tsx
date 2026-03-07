@@ -5,6 +5,13 @@ import type { BoardCell } from "../game/engine/board";
 import { analyzeMoveHints, type MoveHint } from "../game/engine/moveHints";
 import { createWinLinesIndex } from "../game/engine/winLines";
 import { shouldBlockGlobalSpaceHotkey } from "../game/interaction/hotkey";
+import {
+  DEFAULT_QUALITY_LEVEL,
+  getQualityProfile,
+  selectQualityLevel,
+  type QualityLevel,
+  type QualityMode
+} from "../game/interaction/qualityProfile";
 import { createSmartActionState } from "../game/interaction/smartAction";
 import { BoardScene } from "../ui/BoardScene";
 import { HUD } from "../ui/HUD";
@@ -13,6 +20,8 @@ interface GameRoomPageProps {
   snapshot: RoomSnapshot;
   myMark: PlayerMark;
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
+  qualityMode: QualityMode;
+  onQualityModeChange: (mode: QualityMode) => void;
   pendingMove: {
     coordinate: Coordinate3D;
     player: PlayerMark;
@@ -27,10 +36,22 @@ function clampLayer(layer: number, size: number): number {
   return Math.max(0, Math.min(size - 1, layer));
 }
 
+function initialQualityLevelFromMode(mode: QualityMode): QualityLevel {
+  if (mode === "quality") {
+    return "ultra";
+  }
+  if (mode === "smooth") {
+    return "low";
+  }
+  return DEFAULT_QUALITY_LEVEL;
+}
+
 export function GameRoomPage({
   snapshot,
   myMark,
   connectionStatus,
+  qualityMode,
+  onQualityModeChange,
   pendingMove,
   errorMessage,
   onPlace,
@@ -43,6 +64,11 @@ export function GameRoomPage({
   const [focusMode, setFocusMode] = useState<"auto" | "manual">("auto");
   const [focusLayer, setFocusLayer] = useState(Math.floor(snapshot.size / 2));
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [qualityLevel, setQualityLevel] = useState<QualityLevel>(() =>
+    initialQualityLevelFromMode(qualityMode)
+  );
+  const [qualityLastSwitchAtMs, setQualityLastSwitchAtMs] = useState<number>(0);
+  const [averageFps, setAverageFps] = useState<number | null>(null);
   const hasPendingMove = pendingMove !== null;
   const canPlace =
     snapshot.turn === myMark && !snapshot.winner && connectionStatus === "online" && !hasPendingMove;
@@ -104,6 +130,7 @@ export function GameRoomPage({
       snapshot.winner
     ]
   );
+  const qualityProfile = useMemo(() => getQualityProfile(qualityLevel), [qualityLevel]);
 
   const handlePrimaryAction = useCallback(() => {
     if (!smartAction.enabled) {
@@ -173,6 +200,42 @@ export function GameRoomPage({
   }, [autoFocusLayer, focusMode, snapshot.size]);
 
   useEffect(() => {
+    let rafId = 0;
+    let frameCount = 0;
+    let windowStart = performance.now();
+
+    const measure = (now: number) => {
+      frameCount += 1;
+      const elapsed = now - windowStart;
+      if (elapsed >= 1000) {
+        setAverageFps((frameCount * 1000) / elapsed);
+        frameCount = 0;
+        windowStart = now;
+      }
+      rafId = window.requestAnimationFrame(measure);
+    };
+
+    rafId = window.requestAnimationFrame(measure);
+    return () => window.cancelAnimationFrame(rafId);
+  }, []);
+
+  useEffect(() => {
+    const nowMs = Date.now();
+    const nextLevel = selectQualityLevel({
+      mode: qualityMode,
+      currentLevel: qualityLevel,
+      averageFps,
+      nowMs,
+      lastSwitchAtMs: qualityLastSwitchAtMs
+    });
+    if (nextLevel === qualityLevel) {
+      return;
+    }
+    setQualityLevel(nextLevel);
+    setQualityLastSwitchAtMs(nowMs);
+  }, [averageFps, qualityLastSwitchAtMs, qualityLevel, qualityMode]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code !== "Space" || event.repeat) {
         return;
@@ -199,6 +262,7 @@ export function GameRoomPage({
         board={snapshot.board}
         size={snapshot.size}
         canPlace={canPlace}
+        qualityProfile={qualityProfile}
         lastMove={snapshot.lastMove}
         winningLine={snapshot.winningLine}
         focusLayer={focusLayer}
@@ -217,6 +281,9 @@ export function GameRoomPage({
         focusMode={focusMode}
         smartAction={smartAction}
         advancedOpen={advancedOpen}
+        qualityMode={qualityMode}
+        qualityLevel={qualityLevel}
+        averageFps={averageFps}
         myConnected={snapshot.players[myMark].connected}
         opponentConnected={snapshot.players[myMark === "X" ? "O" : "X"].connected}
         connectionStatus={connectionStatus}
@@ -225,6 +292,7 @@ export function GameRoomPage({
         onLayerStep={handleLayerStep}
         onAutoFocus={handleAutoFocus}
         onToggleAssist={handleAssistToggle}
+        onQualityModeChange={onQualityModeChange}
         onRematch={onRematch}
         onLeave={onLeave}
       />
