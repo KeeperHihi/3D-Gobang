@@ -1040,7 +1040,7 @@ export default function App() {
     <Suspense
       fallback={
         <LoadingStage
-          title="正在部署星云战场"
+          title="正在进入房间壳"
           detail={sceneWarmupLoadingStageDetail(sceneWarmupStatus)}
         />
       }

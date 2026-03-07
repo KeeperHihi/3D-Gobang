@@ -327,6 +327,104 @@ body {
   height: 100%;
 }
 
+.board-slot {
+  position: absolute;
+  inset: 0;
+}
+
+.board-loading-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: none;
+}
+
+.board-loading-panel-card {
+  width: min(520px, 100%);
+  border-radius: 20px;
+  padding: 22px 24px;
+  border: 1px solid rgba(111, 225, 255, 0.34);
+  background: linear-gradient(148deg, rgba(11, 24, 52, 0.78), rgba(6, 11, 28, 0.68));
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    0 10px 36px rgba(13, 44, 108, 0.28);
+  pointer-events: auto;
+}
+
+.board-loading-panel-kicker {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: rgba(147, 236, 255, 0.94);
+}
+
+.board-loading-panel-card h3 {
+  margin: 0 0 8px;
+  font-size: clamp(20px, 3.4vw, 28px);
+  color: #eff9ff;
+}
+
+.board-loading-panel-card p {
+  margin: 0;
+  line-height: 1.56;
+  color: rgba(207, 232, 255, 0.88);
+}
+
+.board-loading-pulse-track {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+}
+
+.board-loading-pulse-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: linear-gradient(160deg, #8de6ff, #9d91ff);
+  box-shadow: 0 0 12px rgba(116, 210, 255, 0.5);
+  animation: board-loading-dot 1s ease-in-out infinite;
+}
+
+.board-loading-pulse-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.board-loading-pulse-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.board-loading-retry {
+  margin-top: 16px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(111, 229, 255, 0.46);
+  background: linear-gradient(90deg, rgba(104, 231, 255, 0.24), rgba(171, 132, 255, 0.22));
+  color: #ddf4ff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.board-loading-retry:hover {
+  filter: brightness(1.08);
+}
+
+@keyframes board-loading-dot {
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.52;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
 .hud-root {
   position: absolute;
   top: 16px;

@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Component,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from "react";
 import type { Coordinate3D, PlayerMark, RoomSnapshot } from "../network/protocol";
 import { playDropSfx, playTurnNudgeSfx, playWinSfx } from "../audio/sfx";
 import type { BoardCell } from "../game/engine/board";
@@ -77,7 +87,7 @@ import {
   createWinLineDirectorRoundKey,
   evaluateWinLineDirector
 } from "../game/interaction/winLineDirector";
-import { BoardScene } from "../ui/BoardScene";
+import { BoardLoadingPanel } from "../ui/BoardLoadingPanel";
 import { HUD } from "../ui/HUD";
 
 interface GameRoomPageProps {
@@ -134,6 +144,71 @@ function resolveTurnNudgeNotificationPermission(): TurnNudgeNotificationPermissi
     return "unsupported";
   }
   return Notification.permission;
+}
+
+function loadBoardSceneModule() {
+  return import("../ui/BoardScene");
+}
+
+function createLazyBoardScene() {
+  return lazy(() =>
+    loadBoardSceneModule().then((module) => ({
+      default: module.BoardScene
+    }))
+  );
+}
+
+class BoardSceneSlotErrorBoundary extends Component<
+  {
+    resetKey: number;
+    onError: () => void;
+    children: ReactNode;
+  },
+  { hasError: boolean }
+> {
+  constructor(props: {
+    resetKey: number;
+    onError: () => void;
+    children: ReactNode;
+  }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch() {
+    this.props.onError();
+  }
+
+  componentDidUpdate(prevProps: { resetKey: number }) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return null;
+    }
+    return this.props.children;
+  }
+}
+
+function BoardSceneMountMarker({
+  onReady,
+  children
+}: {
+  onReady: () => void;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
+
+  return <>{children}</>;
 }
 
 const WIN_LINE_CINEMATIC_DURATION_MS = 2200;
@@ -215,6 +290,10 @@ export function GameRoomPage({
   const renderCapabilityForegroundLearnedMsRef = useRef(0);
   const renderCapabilityForegroundStartedAtMsRef = useRef<number | null>(null);
   const renderCapabilityConsecutiveLowFpsTrustedSamplesRef = useRef(0);
+  const [boardSceneReloadToken, setBoardSceneReloadToken] = useState(0);
+  const [boardSceneReady, setBoardSceneReady] = useState(false);
+  const [boardSceneLoadFailed, setBoardSceneLoadFailed] = useState(false);
+  const LazyBoardScene = useMemo(() => createLazyBoardScene(), [boardSceneReloadToken]);
   const [assistEnabled, setAssistEnabled] = useState(false);
   const [onboardingProgress, setOnboardingProgress] = useState(() =>
     createDefaultOnboardingProgress()
@@ -383,14 +462,33 @@ export function GameRoomPage({
       }),
     [smartAction]
   );
+  const effectivePrimaryIntent = useMemo(() => {
+    if (snapshot.winner) {
+      return primaryIntent;
+    }
+    const boardActionReady = boardSceneReady && !boardSceneLoadFailed;
+    if (boardActionReady) {
+      return primaryIntent;
+    }
+
+    const boardStatusReason = boardSceneLoadFailed
+      ? "棋盘加载失败，可点击“重试加载棋盘”后继续操作"
+      : "棋盘加载中，战场就绪后可操作";
+
+    return {
+      ...primaryIntent,
+      enabled: false,
+      reason: boardStatusReason
+    };
+  }, [boardSceneLoadFailed, boardSceneReady, primaryIntent, snapshot.winner]);
   const onboardingGuide = useMemo(
     () =>
       createOnboardingGuideState({
         enabled: shouldShowOnboarding,
-        canUsePrimaryAction: primaryIntent.enabled,
+        canUsePrimaryAction: effectivePrimaryIntent.enabled,
         progress: onboardingProgress
       }),
-    [onboardingProgress, primaryIntent.enabled, shouldShowOnboarding]
+    [effectivePrimaryIntent.enabled, onboardingProgress, shouldShowOnboarding]
   );
   const renderBootstrapDecision = useMemo(
     () =>
@@ -506,6 +604,8 @@ export function GameRoomPage({
   );
   const timeoutAssistInThresholdWindow =
     timeoutAssistEnabled &&
+    boardSceneReady &&
+    !boardSceneLoadFailed &&
     !assistEnabled &&
     canPlace &&
     turnRemainingMs !== null &&
@@ -552,9 +652,9 @@ export function GameRoomPage({
       evaluateTimeoutAssist({
         enabled: timeoutAssistEnabled,
         turnRemainingMs,
-        canPlace,
+        canPlace: canPlace && boardSceneReady && !boardSceneLoadFailed,
         hasPendingMove,
-        smartAction: primaryIntent,
+        smartAction: effectivePrimaryIntent,
         fallbackTarget: timeoutAssistFallbackTarget,
         alreadyTriggeredThisTurn: timeoutAssistAlreadyTriggered,
         thresholdMs: timeoutAssistThresholdMs
@@ -565,8 +665,10 @@ export function GameRoomPage({
       timeoutAssistEnabled,
       turnRemainingMs,
       canPlace,
+      boardSceneReady,
+      boardSceneLoadFailed,
       hasPendingMove,
-      primaryIntent,
+      effectivePrimaryIntent,
       timeoutAssistThresholdMs
     ]
   );
@@ -870,39 +972,55 @@ export function GameRoomPage({
     setFocusMode("manual");
     setFocusLayer(layerQuickNav.smartJumpLayer);
   }, [focusLayer, layerQuickNav.smartJumpLayer]);
+  const handleRetryBoardSceneLoad = useCallback(() => {
+    setBoardSceneReloadToken((current) => current + 1);
+    setBoardSceneReady(false);
+    setBoardSceneLoadFailed(false);
+  }, []);
+  const handleBoardSceneLoadError = useCallback(() => {
+    setBoardSceneLoadFailed(true);
+    setBoardSceneReady(false);
+  }, []);
+  const handleBoardSceneReady = useCallback(() => {
+    setBoardSceneReady(true);
+    setBoardSceneLoadFailed(false);
+  }, []);
   const handlePrimaryAction = useCallback(() => {
-    if (!primaryIntent.enabled) {
+    if (!effectivePrimaryIntent.enabled) {
       return;
     }
-    if (primaryIntent.actionType === "enableAssist") {
+    if (effectivePrimaryIntent.actionType === "enableAssist") {
       setAssistEnabled(true);
       setFocusMode("auto");
       return;
     }
-    if (primaryIntent.actionType === "continueMatch") {
+    if (effectivePrimaryIntent.actionType === "continueMatch") {
       handleContinueMatchAction();
       return;
     }
-    if (primaryIntent.actionType === "rematch" || primaryIntent.actionType === "opponentReady") {
+    if (
+      effectivePrimaryIntent.actionType === "rematch" ||
+      effectivePrimaryIntent.actionType === "opponentReady"
+    ) {
       handleRematchAction();
       return;
     }
     if (
-      primaryIntent.actionType === "win" ||
-      primaryIntent.actionType === "block" ||
-      primaryIntent.actionType === "suggest"
+      effectivePrimaryIntent.actionType === "win" ||
+      effectivePrimaryIntent.actionType === "block" ||
+      effectivePrimaryIntent.actionType === "suggest"
     ) {
       stopWinLineCinematic();
-      if (!primaryIntent.target) {
+      if (!effectivePrimaryIntent.target) {
         return;
       }
-      onPlace(primaryIntent.target);
+      onPlace(effectivePrimaryIntent.target);
     }
   }, [
+    effectivePrimaryIntent,
     handleContinueMatchAction,
     handleRematchAction,
     onPlace,
-    primaryIntent,
     stopWinLineCinematic
   ]);
 
@@ -1404,6 +1522,11 @@ export function GameRoomPage({
   }, [adaptiveTickDecision, nowMs, tickIntervalMs]);
 
   useEffect(() => {
+    setBoardSceneReady(false);
+    setBoardSceneLoadFailed(false);
+  }, [snapshot.roomId]);
+
+  useEffect(() => {
     const transition = evaluateVfxStageTransition({
       currentStage: vfxStage,
       targetStage: targetVfxStage,
@@ -1577,7 +1700,7 @@ export function GameRoomPage({
       if (shouldBlockGlobalSpaceHotkey(event.target)) {
         return;
       }
-      if (!primaryIntent.enabled) {
+      if (!effectivePrimaryIntent.enabled) {
         return;
       }
       event.preventDefault();
@@ -1585,32 +1708,50 @@ export function GameRoomPage({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handlePrimaryAction, layoutMode, primaryIntent.enabled]);
+  }, [effectivePrimaryIntent.enabled, handlePrimaryAction, layoutMode]);
 
   const gameToastMessage = errorMessage;
 
   return (
     <main className={`game-page ${layoutMode === "mobile" ? "mobile" : "desktop"}`}>
-      <BoardScene
-        layoutMode={layoutMode}
-        board={snapshot.board}
-        size={snapshot.size}
-        canPlace={canPlace}
-        vfxStage={vfxStage}
-        ambientEnabled={renderBootstrapDecision.ambientEnabled}
-        nonFocusLayerOpacity={nonFocusLayerOpacity}
-        qualityProfile={qualityProfile}
-        opponentMoveCue={opponentMoveCue}
-        winningLine={snapshot.winningLine}
-        winLineCinematicActive={winLineCinematicActive}
-        focusLayer={focusLayer}
-        hintMoves={hintMovesForBoard}
-        pendingMove={pendingMove}
-        onPlace={onPlace}
-        onLayerWheel={handleLayerWheel}
-        onLayerSwipe={handleLayerSwipe}
-        onUserRotate={handleBoardRotate}
-      />
+      <div className="board-slot">
+        {boardSceneLoadFailed ? (
+          <BoardLoadingPanel state="failed" onRetry={handleRetryBoardSceneLoad} />
+        ) : (
+          <BoardSceneSlotErrorBoundary
+            resetKey={boardSceneReloadToken}
+            onError={handleBoardSceneLoadError}
+          >
+            <Suspense fallback={<BoardLoadingPanel state="loading" />}>
+              <BoardSceneMountMarker
+                key={`board-scene-${snapshot.roomId}-${boardSceneReloadToken}`}
+                onReady={handleBoardSceneReady}
+              >
+                <LazyBoardScene
+                  layoutMode={layoutMode}
+                  board={snapshot.board}
+                  size={snapshot.size}
+                  canPlace={canPlace}
+                  vfxStage={vfxStage}
+                  ambientEnabled={renderBootstrapDecision.ambientEnabled}
+                  nonFocusLayerOpacity={nonFocusLayerOpacity}
+                  qualityProfile={qualityProfile}
+                  opponentMoveCue={opponentMoveCue}
+                  winningLine={snapshot.winningLine}
+                  winLineCinematicActive={winLineCinematicActive}
+                  focusLayer={focusLayer}
+                  hintMoves={hintMovesForBoard}
+                  pendingMove={pendingMove}
+                  onPlace={onPlace}
+                  onLayerWheel={handleLayerWheel}
+                  onLayerSwipe={handleLayerSwipe}
+                  onUserRotate={handleBoardRotate}
+                />
+              </BoardSceneMountMarker>
+            </Suspense>
+          </BoardSceneSlotErrorBoundary>
+        )}
+      </div>
       <HUD
         layoutMode={layoutMode}
         roomId={snapshot.roomId}
@@ -1626,7 +1767,7 @@ export function GameRoomPage({
         focusLayer={focusLayer}
         focusMode={focusMode}
         layerQuickNav={layerQuickNav}
-        primaryAction={primaryIntent}
+        primaryAction={effectivePrimaryIntent}
         onboardingGuide={onboardingGuide.visible ? onboardingGuide : null}
         advancedOpen={advancedOpen}
         qualityMode={qualityMode}
