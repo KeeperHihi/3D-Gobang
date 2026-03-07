@@ -86,6 +86,7 @@ import {
   createWinLineDirectorRoundKey,
   evaluateWinLineDirector
 } from "../game/interaction/winLineDirector";
+import { evaluateBoardLoadRecovery } from "../game/interaction/boardLoadRecovery";
 import { BoardLoadingPanel } from "../ui/BoardLoadingPanel";
 import { createLazyBoardScene } from "../ui/boardSceneLoader";
 import { HUD } from "../ui/HUD";
@@ -246,6 +247,7 @@ export function GameRoomPage({
   const autoContinueCancelledRoundKeyRef = useRef<string | null>(null);
   const winLineDirectorTriggeredRoundKeyRef = useRef<string | null>(null);
   const winLineDirectorTimerRef = useRef<number | null>(null);
+  const boardAutoRetryTimerRef = useRef<number | null>(null);
   const focusGuardTriggeredTurnKeyRef = useRef<string | null>(null);
   const focusGuardWasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
   const layerNavLastInputAtMsRef = useRef(0);
@@ -281,6 +283,9 @@ export function GameRoomPage({
   const [boardSceneReloadToken, setBoardSceneReloadToken] = useState(0);
   const [boardSceneReady, setBoardSceneReady] = useState(false);
   const [boardSceneLoadFailed, setBoardSceneLoadFailed] = useState(false);
+  const [boardAutoRetryAttempt, setBoardAutoRetryAttempt] = useState(0);
+  const [boardAutoRetryScheduledAtMs, setBoardAutoRetryScheduledAtMs] = useState<number | null>(null);
+  const [boardAutoRetrying, setBoardAutoRetrying] = useState(false);
   const LazyBoardScene = useMemo(() => createLazyBoardScene(), [boardSceneReloadToken]);
   const [assistEnabled, setAssistEnabled] = useState(false);
   const [onboardingProgress, setOnboardingProgress] = useState(() =>
@@ -342,6 +347,20 @@ export function GameRoomPage({
     snapshot.turn === myMark && !snapshot.winner && connectionStatus === "online" && !hasPendingMove;
   const canContinueMatchByOffline = Boolean(snapshot.winner && !opponentConnected);
   const boardCells = snapshot.board as BoardCell[];
+  const boardLoadRecoveryDecision = useMemo(
+    () =>
+      evaluateBoardLoadRecovery({
+        failedAutoRetryCount: boardAutoRetryAttempt,
+        isOnline: connectionStatus === "online"
+      }),
+    [boardAutoRetryAttempt, connectionStatus]
+  );
+  const boardAutoRetryRemainingMs = useMemo(() => {
+    if (boardAutoRetryScheduledAtMs === null) {
+      return null;
+    }
+    return Math.max(0, boardAutoRetryScheduledAtMs - nowMs);
+  }, [boardAutoRetryScheduledAtMs, nowMs]);
   const hintsWinLinesIndex = useMemo(
     () => createWinLinesIndex(snapshot.size, snapshot.connect),
     [snapshot.connect, snapshot.size]
@@ -960,19 +979,69 @@ export function GameRoomPage({
     setFocusMode("manual");
     setFocusLayer(layerQuickNav.smartJumpLayer);
   }, [focusLayer, layerQuickNav.smartJumpLayer]);
-  const handleRetryBoardSceneLoad = useCallback(() => {
+  const clearBoardAutoRetryTimer = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (boardAutoRetryTimerRef.current !== null) {
+      window.clearTimeout(boardAutoRetryTimerRef.current);
+      boardAutoRetryTimerRef.current = null;
+    }
+    setBoardAutoRetryScheduledAtMs(null);
+  }, []);
+  const triggerBoardSceneReload = useCallback(() => {
     setBoardSceneReloadToken((current) => current + 1);
     setBoardSceneReady(false);
     setBoardSceneLoadFailed(false);
   }, []);
+  const handleRetryBoardSceneLoad = useCallback(() => {
+    clearBoardAutoRetryTimer();
+    setBoardAutoRetrying(false);
+    setBoardAutoRetryAttempt(0);
+    triggerBoardSceneReload();
+  }, [clearBoardAutoRetryTimer, triggerBoardSceneReload]);
   const handleBoardSceneLoadError = useCallback(() => {
     setBoardSceneLoadFailed(true);
     setBoardSceneReady(false);
   }, []);
   const handleBoardSceneReady = useCallback(() => {
+    clearBoardAutoRetryTimer();
+    setBoardAutoRetrying(false);
+    setBoardAutoRetryAttempt(0);
     setBoardSceneReady(true);
     setBoardSceneLoadFailed(false);
-  }, []);
+  }, [clearBoardAutoRetryTimer]);
+  useEffect(() => {
+    if (!boardSceneLoadFailed) {
+      clearBoardAutoRetryTimer();
+      setBoardAutoRetrying(false);
+      return;
+    }
+    if (!boardLoadRecoveryDecision.shouldAutoRetry || boardLoadRecoveryDecision.nextRetryDelayMs === null) {
+      clearBoardAutoRetryTimer();
+      setBoardAutoRetrying(false);
+      return;
+    }
+    if (typeof window === "undefined" || boardAutoRetryTimerRef.current !== null) {
+      return;
+    }
+
+    setBoardAutoRetrying(true);
+    setBoardAutoRetryScheduledAtMs(Date.now() + boardLoadRecoveryDecision.nextRetryDelayMs);
+    boardAutoRetryTimerRef.current = window.setTimeout(() => {
+      boardAutoRetryTimerRef.current = null;
+      setBoardAutoRetryScheduledAtMs(null);
+      setBoardAutoRetrying(false);
+      setBoardAutoRetryAttempt((current) => current + 1);
+      triggerBoardSceneReload();
+    }, boardLoadRecoveryDecision.nextRetryDelayMs);
+  }, [
+    boardLoadRecoveryDecision.nextRetryDelayMs,
+    boardLoadRecoveryDecision.shouldAutoRetry,
+    boardSceneLoadFailed,
+    clearBoardAutoRetryTimer,
+    triggerBoardSceneReload
+  ]);
   const handlePrimaryAction = useCallback(() => {
     if (!effectivePrimaryIntent.enabled) {
       return;
@@ -1143,6 +1212,7 @@ export function GameRoomPage({
   ]);
 
   useEffect(() => () => clearWinLineCinematicTimer(), [clearWinLineCinematicTimer]);
+  useEffect(() => () => clearBoardAutoRetryTimer(), [clearBoardAutoRetryTimer]);
 
   useEffect(() => {
     setFocusMode("auto");
@@ -1510,9 +1580,12 @@ export function GameRoomPage({
   }, [adaptiveTickDecision, nowMs, tickIntervalMs]);
 
   useEffect(() => {
+    clearBoardAutoRetryTimer();
+    setBoardAutoRetrying(false);
+    setBoardAutoRetryAttempt(0);
     setBoardSceneReady(false);
     setBoardSceneLoadFailed(false);
-  }, [snapshot.roomId]);
+  }, [clearBoardAutoRetryTimer, snapshot.roomId]);
 
   useEffect(() => {
     const transition = evaluateVfxStageTransition({
@@ -1704,7 +1777,16 @@ export function GameRoomPage({
     <main className={`game-page ${layoutMode === "mobile" ? "mobile" : "desktop"}`}>
       <div className="board-slot">
         {boardSceneLoadFailed ? (
-          <BoardLoadingPanel state="failed" onRetry={handleRetryBoardSceneLoad} />
+          <BoardLoadingPanel
+            state="failed"
+            onRetry={handleRetryBoardSceneLoad}
+            autoRetrying={boardAutoRetrying}
+            autoRetryNextAttempt={boardLoadRecoveryDecision.nextAttempt}
+            autoRetryAttemptedCount={boardAutoRetryAttempt}
+            autoRetryMaxAttempts={boardLoadRecoveryDecision.maxAutoRetryCount}
+            autoRetryRemainingMs={boardAutoRetryRemainingMs}
+            recoveryStatus={boardLoadRecoveryDecision.status}
+          />
         ) : (
           <BoardSceneSlotErrorBoundary
             resetKey={boardSceneReloadToken}
