@@ -33,6 +33,7 @@ interface HUDProps {
   focusMode: "auto" | "manual";
   layerQuickNav: LayerQuickNavDecision;
   tapLockCoordinate: Coordinate3D | null;
+  tapLockVisible: boolean;
   tapLockRemainingMs: number | null;
   primaryAction: PrimaryIntentState;
   onboardingGuide: OnboardingGuideState | null;
@@ -78,6 +79,7 @@ interface HUDProps {
   onToggleAdvanced: () => void;
   onLayerStep: (step: -1 | 1) => void;
   onLayerSmartJump: () => void;
+  onJumpToTapLockLayer: () => void;
   onCancelTapLock: () => void;
   onAutoFocus: () => void;
   onToggleAssist: () => void;
@@ -161,6 +163,7 @@ export function HUD({
   focusMode,
   layerQuickNav,
   tapLockCoordinate,
+  tapLockVisible,
   tapLockRemainingMs,
   primaryAction,
   onboardingGuide,
@@ -206,6 +209,7 @@ export function HUD({
   onToggleAdvanced,
   onLayerStep,
   onLayerSmartJump,
+  onJumpToTapLockLayer,
   onCancelTapLock,
   onAutoFocus,
   onToggleAssist,
@@ -630,9 +634,18 @@ export function HUD({
               <span>{tapLockCoordinateLabel}</span>
             </div>
             <div className="hud-tap-lock-text">
-              主按钮或空格确认落子{tapLockSecondsLeft !== null ? ` · ${tapLockSecondsLeft}s` : ""}
+              {tapLockVisible
+                ? `主按钮或空格确认落子${tapLockSecondsLeft !== null ? ` · ${tapLockSecondsLeft}s` : ""}`
+                : `当前不在锁定层，先回到 L${tapLockCoordinate.z + 1} 再确认${
+                    tapLockSecondsLeft !== null ? ` · ${tapLockSecondsLeft}s` : ""
+                  }`}
             </div>
             <div className="hud-actions">
+              {!tapLockVisible ? (
+                <button className="hud-mini-button active" type="button" onClick={onJumpToTapLockLayer}>
+                  回到锁定层
+                </button>
+              ) : null}
               <button className="hud-mini-button" type="button" onClick={onCancelTapLock}>
                 取消
               </button>

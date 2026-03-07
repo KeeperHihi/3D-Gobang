@@ -27,7 +27,8 @@ describe("createPrimaryIntentState", () => {
           coordinate: { x: 4, y: 3, z: 2 },
           expiresAtMs: 20_000
         }
-      }
+      },
+      focusLayer: 2
     });
 
     expect(state.source).toBe("tap-lock");
@@ -48,7 +49,8 @@ describe("createPrimaryIntentState", () => {
       layerTapLockDecision: {
         canConfirm: false,
         lock: null
-      }
+      },
+      focusLayer: 1
     });
 
     expect(state.source).toBe("smart-action");
@@ -72,12 +74,58 @@ describe("createPrimaryIntentState", () => {
           coordinate: { x: 1, y: 1, z: 4 },
           expiresAtMs: 18_000
         }
-      }
+      },
+      focusLayer: 4
     });
 
     expect(state.source).toBe("tap-lock");
     expect(state.enabled).toBe(true);
     expect(state.label).toBe("确认落子");
     expect(state.target).toEqual({ x: 1, y: 1, z: 4 });
+  });
+
+  it("falls back when lock is confirmable but not visible in current layer", () => {
+    const fallbackAction = createSmartAction({
+      actionType: "block",
+      label: "一键防守",
+      target: { x: 2, y: 2, z: 1 }
+    });
+    const state = createPrimaryIntentState({
+      smartAction: fallbackAction,
+      layerTapLockDecision: {
+        canConfirm: true,
+        lock: {
+          coordinate: { x: 3, y: 3, z: 4 },
+          expiresAtMs: 30_000
+        }
+      },
+      focusLayer: 1
+    });
+
+    expect(state.source).toBe("smart-action");
+    expect(state.actionType).toBe("block");
+    expect(state.label).toBe("一键防守");
+    expect(state.target).toEqual({ x: 2, y: 2, z: 1 });
+  });
+
+  it("treats lock as visible when focus layer is null", () => {
+    const state = createPrimaryIntentState({
+      smartAction: createSmartAction({
+        actionType: "manual",
+        enabled: false,
+        target: null
+      }),
+      layerTapLockDecision: {
+        canConfirm: true,
+        lock: {
+          coordinate: { x: 0, y: 0, z: 2 },
+          expiresAtMs: 10_000
+        }
+      },
+      focusLayer: null
+    });
+
+    expect(state.source).toBe("tap-lock");
+    expect(state.target).toEqual({ x: 0, y: 0, z: 2 });
   });
 });

@@ -334,13 +334,16 @@ export function GameRoomPage({
   const activeLayerTapLock = layerTapLockDecision.lock;
   const tapLockRemainingMs =
     activeLayerTapLock === null ? null : Math.max(0, activeLayerTapLock.expiresAtMs - nowMs);
+  const isTapLockVisible =
+    activeLayerTapLock !== null && (focusLayer === null || activeLayerTapLock.coordinate.z === focusLayer);
   const primaryIntent = useMemo(
     () =>
       createPrimaryIntentState({
         smartAction,
-        layerTapLockDecision
+        layerTapLockDecision,
+        focusLayer
       }),
-    [layerTapLockDecision, smartAction]
+    [focusLayer, layerTapLockDecision, smartAction]
   );
   const onboardingGuide = useMemo(
     () =>
@@ -754,6 +757,17 @@ export function GameRoomPage({
   const handleClearTapLock = useCallback(() => {
     setLayerTapLock(null);
   }, []);
+  const handleJumpToTapLockLayer = useCallback(() => {
+    if (!activeLayerTapLock) {
+      return;
+    }
+    if (focusLayer === activeLayerTapLock.coordinate.z) {
+      return;
+    }
+    layerNavLastInputAtMsRef.current = Date.now();
+    setFocusMode("manual");
+    setFocusLayer(activeLayerTapLock.coordinate.z);
+  }, [activeLayerTapLock, focusLayer]);
   const handleConfirmTapLock = useCallback(() => {
     const decision = evaluateLayerTapLock({
       lock: layerTapLock,
@@ -1335,6 +1349,7 @@ export function GameRoomPage({
         focusMode={focusMode}
         layerQuickNav={layerQuickNav}
         tapLockCoordinate={activeLayerTapLock?.coordinate ?? null}
+        tapLockVisible={isTapLockVisible}
         tapLockRemainingMs={tapLockRemainingMs}
         primaryAction={primaryIntent}
         onboardingGuide={onboardingGuide.visible ? onboardingGuide : null}
@@ -1380,6 +1395,7 @@ export function GameRoomPage({
         onToggleAdvanced={handleToggleAdvanced}
         onLayerStep={handleLayerStep}
         onLayerSmartJump={handleLayerSmartJump}
+        onJumpToTapLockLayer={handleJumpToTapLockLayer}
         onCancelTapLock={handleClearTapLock}
         onAutoFocus={handleAutoFocus}
         onToggleAssist={handleAssistToggle}

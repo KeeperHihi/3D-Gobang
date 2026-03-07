@@ -11,6 +11,7 @@ export interface PrimaryIntentState extends SmartActionState {
 interface PrimaryIntentInput {
   smartAction: SmartActionState;
   layerTapLockDecision: Pick<LayerTapLockDecision, "lock" | "canConfirm">;
+  focusLayer: number | null;
 }
 
 function lockReason(coordinate: Coordinate3D): string {
@@ -18,14 +19,16 @@ function lockReason(coordinate: Coordinate3D): string {
 }
 
 export function createPrimaryIntentState(input: PrimaryIntentInput): PrimaryIntentState {
-  const { layerTapLockDecision, smartAction } = input;
-  if (layerTapLockDecision.canConfirm && layerTapLockDecision.lock) {
+  const { layerTapLockDecision, smartAction, focusLayer } = input;
+  const lock = layerTapLockDecision.lock;
+  const lockVisible = lock !== null && (focusLayer === null || lock.coordinate.z === focusLayer);
+  if (layerTapLockDecision.canConfirm && lockVisible && lock) {
     return {
       actionType: "suggest",
       label: "确认落子",
       enabled: true,
-      reason: lockReason(layerTapLockDecision.lock.coordinate),
-      target: layerTapLockDecision.lock.coordinate,
+      reason: lockReason(lock.coordinate),
+      target: lock.coordinate,
       source: "tap-lock"
     };
   }
