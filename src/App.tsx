@@ -21,6 +21,7 @@ import type {
 } from "./network/protocol";
 
 type ConnectionState = "connecting" | "online" | "reconnecting" | "offline";
+type MatchPhase = "idle" | "queuing" | "matched";
 
 interface RoomSession {
   roomId: string;
@@ -79,12 +80,16 @@ export default function App() {
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [session, setSession] = useState<RoomSession | null>(() => readSessionFromStorage());
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null);
-  const [isMatching, setIsMatching] = useState(false);
+  const [matchPhase, setMatchPhase] = useState<MatchPhase>(() => (session ? "matched" : "idle"));
+  const [queueSize, setQueueSize] = useState(0);
+  const [queueStartedAtMs, setQueueStartedAtMs] = useState<number | null>(null);
+  const [queueElapsedSeconds, setQueueElapsedSeconds] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pendingMove, setPendingMove] = useState<PendingMoveState | null>(null);
   const [qualityMode, setQualityMode] = useState<QualityMode>(() => readQualityModeFromStorage());
 
   const sessionRef = useRef<RoomSession | null>(session);
+  const matchPhaseRef = useRef<MatchPhase>(matchPhase);
 
   useEffect(() => {
     sessionRef.current = session;
@@ -92,10 +97,36 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
+    matchPhaseRef.current = matchPhase;
+  }, [matchPhase]);
+
+  useEffect(() => {
     persistQualityMode(qualityMode);
   }, [qualityMode]);
 
   useEffect(() => {
+    if (matchPhase !== "queuing" || queueStartedAtMs === null) {
+      setQueueElapsedSeconds(0);
+      return;
+    }
+
+    const updateElapsed = () => {
+      const elapsedSeconds = Math.max(0, Math.floor((Date.now() - queueStartedAtMs) / 1000));
+      setQueueElapsedSeconds(elapsedSeconds);
+    };
+
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(timer);
+  }, [matchPhase, queueStartedAtMs]);
+
+  useEffect(() => {
+    const resetQueueState = () => {
+      setQueueStartedAtMs(null);
+      setQueueElapsedSeconds(0);
+      setQueueSize(0);
+    };
+
     const handleConnect = () => {
       setConnectionState("online");
       const currentSession = sessionRef.current;
@@ -104,12 +135,23 @@ export default function App() {
           roomId: currentSession.roomId,
           seatToken: currentSession.seatToken
         });
+        return;
+      }
+
+      if (matchPhaseRef.current === "queuing") {
+        setMatchPhase("idle");
+        resetQueueState();
+        setErrorMessage("连接已恢复，请重新开始匹配");
       }
     };
 
     const handleDisconnect = () => {
       setConnectionState("reconnecting");
       setPendingMove(null);
+      if (!sessionRef.current) {
+        setMatchPhase("idle");
+        resetQueueState();
+      }
     };
 
     const handleConnectionError = () => {
@@ -120,15 +162,33 @@ export default function App() {
     socket.on("disconnect", handleDisconnect);
     socket.on("connect_error", handleConnectionError);
 
-    socket.on("queue:joined", ({ waitingForOpponent }) => {
-      setIsMatching(waitingForOpponent);
+    socket.on("queue:joined", ({ waitingForOpponent, queueSize: nextQueueSize }) => {
+      if (waitingForOpponent) {
+        setMatchPhase("queuing");
+        setQueueSize(nextQueueSize);
+        setQueueStartedAtMs((current) => current ?? Date.now());
+      } else {
+        setMatchPhase("idle");
+        setQueueSize(nextQueueSize);
+        setQueueStartedAtMs(null);
+        setQueueElapsedSeconds(0);
+      }
+      setErrorMessage(null);
+    });
+
+    socket.on("queue:left", ({ queueSize: nextQueueSize }) => {
+      setMatchPhase("idle");
+      setQueueSize(nextQueueSize);
+      setQueueStartedAtMs(null);
+      setQueueElapsedSeconds(0);
       setErrorMessage(null);
     });
 
     socket.on("queue:matched", ({ roomId, mark, seatToken, snapshot: nextSnapshot }) => {
       setSession({ roomId, mark, seatToken });
       setSnapshot(nextSnapshot);
-      setIsMatching(false);
+      setMatchPhase("matched");
+      resetQueueState();
       setErrorMessage(null);
       setPendingMove(null);
     });
@@ -136,14 +196,16 @@ export default function App() {
     socket.on("room:resumed", ({ roomId, mark, seatToken, snapshot: nextSnapshot }) => {
       setSession({ roomId, mark, seatToken });
       setSnapshot(nextSnapshot);
-      setIsMatching(false);
+      setMatchPhase("matched");
+      resetQueueState();
       setErrorMessage(null);
       setPendingMove(null);
     });
 
     socket.on("room:update", ({ snapshot: nextSnapshot }) => {
       setSnapshot(nextSnapshot);
-      setIsMatching(false);
+      setMatchPhase("matched");
+      resetQueueState();
       setPendingMove((currentPendingMove) => {
         if (!currentPendingMove) {
           return null;
@@ -158,7 +220,8 @@ export default function App() {
     socket.on("room:resume-failed", ({ reason }) => {
       setSession(null);
       setSnapshot(null);
-      setIsMatching(false);
+      setMatchPhase("idle");
+      resetQueueState();
       setErrorMessage(reason);
       setPendingMove(null);
     });
@@ -183,7 +246,10 @@ export default function App() {
     });
 
     socket.on("game:error", ({ message }) => {
-      setIsMatching(false);
+      if (matchPhaseRef.current === "queuing") {
+        setMatchPhase("idle");
+        resetQueueState();
+      }
       setErrorMessage(message);
       setPendingMove(null);
     });
@@ -241,13 +307,31 @@ export default function App() {
   }, [pendingMove, socket]);
 
   const startMatch = () => {
+    if (sessionRef.current && !snapshot) {
+      setErrorMessage("正在恢复对局，请稍后");
+      return;
+    }
     if (!socket.connected) {
       setErrorMessage("正在连接服务器，请稍后重试");
       return;
     }
-    setIsMatching(true);
+    setMatchPhase("queuing");
+    setQueueSize((current) => (current > 0 ? current : 1));
+    setQueueStartedAtMs(Date.now());
+    setQueueElapsedSeconds(0);
     setErrorMessage(null);
     socket.emit("queue:join", {});
+  };
+
+  const cancelMatch = () => {
+    if (!socket.connected) {
+      setErrorMessage("正在连接服务器，请稍后重试");
+      return;
+    }
+    if (matchPhaseRef.current !== "queuing") {
+      return;
+    }
+    socket.emit("queue:leave", {});
   };
 
   const placePiece = (coordinate: Coordinate3D) => {
@@ -317,7 +401,10 @@ export default function App() {
     setErrorMessage(null);
     setSession(null);
     setSnapshot(null);
-    setIsMatching(true);
+    setMatchPhase("queuing");
+    setQueueSize(1);
+    setQueueStartedAtMs(Date.now());
+    setQueueElapsedSeconds(0);
     sessionRef.current = null;
     persistSession(null);
 
@@ -332,7 +419,10 @@ export default function App() {
     persistSession(null);
     setSession(null);
     setSnapshot(null);
-    setIsMatching(false);
+    setMatchPhase("idle");
+    setQueueSize(0);
+    setQueueStartedAtMs(null);
+    setQueueElapsedSeconds(0);
     setErrorMessage(null);
     setPendingMove(null);
     socket.disconnect();
@@ -340,11 +430,16 @@ export default function App() {
   };
 
   if (!session || !snapshot) {
+    const isRecoveringSession = session !== null && snapshot === null;
     return (
       <MatchPage
         connectionStatus={connectionState}
-        isMatching={isMatching}
+        matchPhase={matchPhase === "queuing" ? "queuing" : "idle"}
+        queueSize={queueSize}
+        queueElapsedSeconds={queueElapsedSeconds}
+        isRecoveringSession={isRecoveringSession}
         onStartMatch={startMatch}
+        onCancelMatch={cancelMatch}
       />
     );
   }

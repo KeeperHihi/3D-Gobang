@@ -33,6 +33,10 @@ export class Matchmaker {
     };
   }
 
+  has(socketId: string): boolean {
+    return this.queue.includes(socketId);
+  }
+
   remove(socketId: string): void {
     this.queue = this.queue.filter((queuedSocketId) => queuedSocketId !== socketId);
   }

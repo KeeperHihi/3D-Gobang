@@ -41,6 +41,10 @@ export interface QueueJoinedPayload {
   queueSize: number;
 }
 
+export interface QueueLeftPayload {
+  queueSize: number;
+}
+
 export interface QueueMatchedPayload {
   roomId: string;
   mark: PlayerMark;
@@ -70,6 +74,8 @@ export interface ResumeFailedPayload {
 export interface QueueJoinPayload {
   displayName?: string;
 }
+
+export interface QueueLeavePayload {}
 
 export interface QueueContinuePayload {
   roomId: string;
@@ -109,6 +115,7 @@ export interface RequestStatePayload {
 
 export interface ClientToServerEvents {
   "queue:join": (payload: QueueJoinPayload) => void;
+  "queue:leave": (payload: QueueLeavePayload) => void;
   "queue:continue": (payload: QueueContinuePayload) => void;
   "game:place": (payload: PlaceMovePayload) => void;
   "game:rematch": (payload: RematchPayload) => void;
@@ -118,6 +125,7 @@ export interface ClientToServerEvents {
 
 export interface ServerToClientEvents {
   "queue:joined": (payload: QueueJoinedPayload) => void;
+  "queue:left": (payload: QueueLeftPayload) => void;
   "queue:matched": (payload: QueueMatchedPayload) => void;
   "room:update": (payload: RoomUpdatePayload) => void;
   "room:resumed": (payload: RoomResumedPayload) => void;

@@ -33,4 +33,12 @@ describe("Matchmaker", () => {
     matchmaker.remove("socket-c");
     expect(matchmaker.waitingCount).toBe(0);
   });
+
+  it("supports queued socket existence query", () => {
+    const matchmaker = new Matchmaker();
+    matchmaker.enqueue("socket-a");
+
+    expect(matchmaker.has("socket-a")).toBe(true);
+    expect(matchmaker.has("socket-b")).toBe(false);
+  });
 });

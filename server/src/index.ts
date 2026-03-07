@@ -257,6 +257,18 @@ io.on("connection", (socket) => {
     enqueueSocketForMatch(socket);
   });
 
+  socket.on("queue:leave", () => {
+    if (socketRoomMap.has(socket.id)) {
+      emitGameError(socket, "你已在房间中，无法取消匹配");
+      return;
+    }
+
+    matchmaker.remove(socket.id);
+    socket.emit("queue:left", {
+      queueSize: matchmaker.waitingCount
+    });
+  });
+
   socket.on("queue:continue", ({ roomId, seatToken }) => {
     const resolved = resolveRoomAndMark(roomId, seatToken);
     if (!resolved) {
