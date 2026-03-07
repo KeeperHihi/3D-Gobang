@@ -40,6 +40,7 @@ const SESSION_STORAGE_KEY = "nebula-cube-session";
 const QUALITY_MODE_STORAGE_KEY = "nebula-cube-quality-mode";
 const ONBOARDING_STORAGE_KEY = "nebula-cube-onboarding-v1";
 const TIMEOUT_ASSIST_STORAGE_KEY = "nebula-cube-timeout-assist-v1";
+const AUTO_REMATCH_STORAGE_KEY = "nebula-cube-auto-rematch-v1";
 
 function loadGameRoomPageModule() {
   return import("./pages/GameRoomPage");
@@ -117,6 +118,14 @@ function persistTimeoutAssistToStorage(enabled: boolean): void {
   localStorage.setItem(TIMEOUT_ASSIST_STORAGE_KEY, enabled ? "on" : "off");
 }
 
+function readAutoRematchFromStorage(): boolean {
+  return localStorage.getItem(AUTO_REMATCH_STORAGE_KEY) === "on";
+}
+
+function persistAutoRematchToStorage(enabled: boolean): void {
+  localStorage.setItem(AUTO_REMATCH_STORAGE_KEY, enabled ? "on" : "off");
+}
+
 export default function App() {
   const socket = useMemo(() => createSocketClient(), []);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
@@ -137,6 +146,9 @@ export default function App() {
   );
   const [timeoutAssistEnabled, setTimeoutAssistEnabled] = useState<boolean>(() =>
     readTimeoutAssistFromStorage()
+  );
+  const [autoRematchEnabled, setAutoRematchEnabled] = useState<boolean>(() =>
+    readAutoRematchFromStorage()
   );
   const [networkLatencyProfile, setNetworkLatencyProfile] = useState(() =>
     createInitialNetworkLatencyProfile()
@@ -168,6 +180,10 @@ export default function App() {
   useEffect(() => {
     persistTimeoutAssistToStorage(timeoutAssistEnabled);
   }, [timeoutAssistEnabled]);
+
+  useEffect(() => {
+    persistAutoRematchToStorage(autoRematchEnabled);
+  }, [autoRematchEnabled]);
 
   useEffect(() => {
     if (matchPhase !== "queuing" || queueStartedAtMs === null) {
@@ -477,6 +493,16 @@ export default function App() {
     });
   };
 
+  const requestRematchCancel = () => {
+    if (!session) {
+      return;
+    }
+    socket.emit("game:rematch:cancel", {
+      roomId: session.roomId,
+      seatToken: session.seatToken
+    });
+  };
+
   const requestContinueMatch = () => {
     const validation = validateContinueMatchRequest({
       hasSession: session !== null,
@@ -580,12 +606,15 @@ export default function App() {
         errorMessage={errorMessage}
         onPlace={placePiece}
         onRematch={requestRematch}
+        onRematchCancel={requestRematchCancel}
         onContinueMatch={requestContinueMatch}
         onCompleteOnboarding={() => setOnboardingCompleted(true)}
         timeoutAssistEnabled={timeoutAssistEnabled}
         onTimeoutAssistEnabledChange={setTimeoutAssistEnabled}
         timeoutAssistThresholdMs={timeoutAssistThresholdMs}
         timeoutAssistNetworkTier={networkLatencyProfile.networkTier}
+        autoRematchEnabled={autoRematchEnabled}
+        onAutoRematchEnabledChange={setAutoRematchEnabled}
         onLeave={leaveRoom}
       />
     </Suspense>

@@ -3,6 +3,7 @@ import {
   applyMoveToRoom,
   applyDisconnectForfeitIfExpired,
   applyTurnForfeitIfExpired,
+  cancelRematch,
   clearReconnectDeadline,
   createRoomState,
   getRecordedMoveAck,
@@ -98,6 +99,50 @@ describe("requestRematch", () => {
     expect(snapshotFromRoomState(room).rematchReady).toEqual({
       X: false,
       O: false
+    });
+  });
+
+  it("allows canceling a rematch vote before new game starts", () => {
+    const room = createFixtureRoom();
+    room.winner = "X";
+    requestRematch(room, "X");
+
+    const cancelResult = cancelRematch(room, "X");
+
+    expect(cancelResult).toEqual({
+      accepted: true,
+      canceled: true
+    });
+    expect(snapshotFromRoomState(room).rematchReady).toEqual({
+      X: false,
+      O: false
+    });
+  });
+
+  it("treats missing rematch vote cancel as idempotent success", () => {
+    const room = createFixtureRoom();
+    room.winner = "X";
+
+    const cancelResult = cancelRematch(room, "X");
+
+    expect(cancelResult).toEqual({
+      accepted: true,
+      canceled: false
+    });
+  });
+
+  it("rejects cancel once new round has already started", () => {
+    const room = createFixtureRoom();
+    room.winner = "X";
+    requestRematch(room, "X");
+    requestRematch(room, "O");
+
+    const cancelResult = cancelRematch(room, "X");
+
+    expect(cancelResult).toEqual({
+      accepted: false,
+      canceled: false,
+      reason: "对局尚未结束，无法取消再来一局"
     });
   });
 });

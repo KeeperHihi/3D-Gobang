@@ -84,6 +84,12 @@ export interface RematchRequestResult {
   reason?: string;
 }
 
+export interface RematchCancelResult {
+  accepted: boolean;
+  canceled: boolean;
+  reason?: string;
+}
+
 export function createRoomState(options: RoomCreateOptions): RoomState {
   const size = options.size ?? DEFAULT_BOARD_SIZE;
   const connect = options.connect ?? DEFAULT_CONNECT_COUNT;
@@ -432,5 +438,21 @@ export function requestRematch(room: RoomState, mark: PlayerMark): RematchReques
   return {
     accepted: true,
     started: true
+  };
+}
+
+export function cancelRematch(room: RoomState, mark: PlayerMark): RematchCancelResult {
+  if (!room.winner) {
+    return {
+      accepted: false,
+      canceled: false,
+      reason: "对局尚未结束，无法取消再来一局"
+    };
+  }
+
+  const canceled = room.rematchVotes.delete(mark);
+  return {
+    accepted: true,
+    canceled
   };
 }

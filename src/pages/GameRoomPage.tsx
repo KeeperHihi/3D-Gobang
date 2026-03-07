@@ -15,6 +15,10 @@ import {
 } from "../game/interaction/qualityProfile";
 import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatency";
 import {
+  createAutoRematchRoundKey,
+  evaluateAutoRematch
+} from "../game/interaction/autoRematch";
+import {
   createDefaultOnboardingProgress,
   createOnboardingGuideState,
   isOnboardingCompletedByPlayer
@@ -41,12 +45,15 @@ interface GameRoomPageProps {
   errorMessage: string | null;
   onPlace: (coordinate: Coordinate3D) => void;
   onRematch: () => void;
+  onRematchCancel: () => void;
   onContinueMatch: () => void;
   onCompleteOnboarding: () => void;
   timeoutAssistEnabled: boolean;
   onTimeoutAssistEnabledChange: (enabled: boolean) => void;
   timeoutAssistThresholdMs: number;
   timeoutAssistNetworkTier: TimeoutAssistNetworkTier;
+  autoRematchEnabled: boolean;
+  onAutoRematchEnabledChange: (enabled: boolean) => void;
   onLeave: () => void;
 }
 
@@ -75,12 +82,15 @@ export function GameRoomPage({
   errorMessage,
   onPlace,
   onRematch,
+  onRematchCancel,
   onContinueMatch,
   onCompleteOnboarding,
   timeoutAssistEnabled,
   onTimeoutAssistEnabledChange,
   timeoutAssistThresholdMs,
   timeoutAssistNetworkTier,
+  autoRematchEnabled,
+  onAutoRematchEnabledChange,
   onLeave
 }: GameRoomPageProps) {
   const lastMoveNumberRef = useRef(0);
@@ -88,6 +98,8 @@ export function GameRoomPage({
   const onboardingCompletionSentRef = useRef(false);
   const onboardingActivatedRef = useRef(false);
   const timeoutAssistTurnKeyRef = useRef<string | null>(null);
+  const autoRematchTriggeredRoundKeyRef = useRef<string | null>(null);
+  const autoRematchCancelledRoundKeyRef = useRef<string | null>(null);
   const [assistEnabled, setAssistEnabled] = useState(true);
   const [onboardingProgress, setOnboardingProgress] = useState(() =>
     createDefaultOnboardingProgress()
@@ -107,6 +119,9 @@ export function GameRoomPage({
   const [qualityLastSwitchAtMs, setQualityLastSwitchAtMs] = useState<number>(0);
   const [averageFps, setAverageFps] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [autoRematchCountdownStartedAtMs, setAutoRematchCountdownStartedAtMs] = useState<number | null>(
+    null
+  );
   const opponentMark: PlayerMark = myMark === "X" ? "O" : "X";
   const opponentReconnectDeadlineAt = snapshot.players[opponentMark].reconnectDeadlineAt;
   const turnDeadlineAt = snapshot.turnDeadlineAt;
@@ -228,6 +243,41 @@ export function GameRoomPage({
       timeoutAssistThresholdMs
     ]
   );
+  const autoRematchRoundKey = useMemo(
+    () =>
+      createAutoRematchRoundKey({
+        roomId: snapshot.roomId,
+        winner: snapshot.winner,
+        lastMoveNumber: snapshot.lastMove?.moveNumber ?? null,
+        lastMoveTimestamp: snapshot.lastMove?.timestamp ?? null
+      }),
+    [snapshot.lastMove?.moveNumber, snapshot.lastMove?.timestamp, snapshot.roomId, snapshot.winner]
+  );
+  const autoRematchDecision = useMemo(
+    () =>
+      evaluateAutoRematch({
+        enabled: autoRematchEnabled,
+        winner: snapshot.winner,
+        opponentConnected: snapshot.players[opponentMark].connected,
+        canContinueMatch,
+        myRematchReady,
+        countdownStartedAtMs: autoRematchCountdownStartedAtMs,
+        nowMs,
+        alreadyCancelled: autoRematchCancelledRoundKeyRef.current === autoRematchRoundKey,
+        alreadyTriggered: autoRematchTriggeredRoundKeyRef.current === autoRematchRoundKey
+      }),
+    [
+      autoRematchCountdownStartedAtMs,
+      autoRematchEnabled,
+      autoRematchRoundKey,
+      canContinueMatch,
+      myRematchReady,
+      nowMs,
+      opponentMark,
+      snapshot.players,
+      snapshot.winner
+    ]
+  );
   const turnUrgent = turnRemainingMs !== null && turnRemainingMs <= 8_000;
   const opponentReconnectRemainingMs = useMemo(() => {
     if (snapshot.winner || opponentReconnectDeadlineAt === null) {
@@ -263,6 +313,26 @@ export function GameRoomPage({
   const handleToggleTimeoutAssist = useCallback(() => {
     onTimeoutAssistEnabledChange(!timeoutAssistEnabled);
   }, [onTimeoutAssistEnabledChange, timeoutAssistEnabled]);
+  const handleCancelAutoRematch = useCallback(() => {
+    if (!snapshot.winner) {
+      return;
+    }
+    autoRematchCancelledRoundKeyRef.current = autoRematchRoundKey;
+    setAutoRematchCountdownStartedAtMs(null);
+    onRematchCancel();
+  }, [autoRematchRoundKey, onRematchCancel, snapshot.winner]);
+  const handleToggleAutoRematch = useCallback(() => {
+    const nextEnabled = !autoRematchEnabled;
+    onAutoRematchEnabledChange(nextEnabled);
+    if (!nextEnabled && autoRematchDecision.canCancel) {
+      handleCancelAutoRematch();
+    }
+  }, [
+    autoRematchDecision.canCancel,
+    autoRematchEnabled,
+    handleCancelAutoRematch,
+    onAutoRematchEnabledChange
+  ]);
 
   const handleBoardRotate = useCallback(() => {
     if (!shouldShowOnboarding) {
@@ -344,8 +414,29 @@ export function GameRoomPage({
     onboardingCompletionSentRef.current = false;
     onboardingActivatedRef.current = false;
     timeoutAssistTurnKeyRef.current = null;
+    autoRematchTriggeredRoundKeyRef.current = null;
+    autoRematchCancelledRoundKeyRef.current = null;
+    setAutoRematchCountdownStartedAtMs(null);
     setOnboardingProgress(createDefaultOnboardingProgress());
   }, [snapshot.roomId]);
+
+  useEffect(() => {
+    if (!snapshot.winner) {
+      autoRematchTriggeredRoundKeyRef.current = null;
+      autoRematchCancelledRoundKeyRef.current = null;
+      setAutoRematchCountdownStartedAtMs(null);
+      return;
+    }
+    setAutoRematchCountdownStartedAtMs((current) => {
+      if (autoRematchDecision.shouldStartCountdown && current === null) {
+        return Date.now();
+      }
+      if (autoRematchDecision.phase === "idle" || autoRematchDecision.phase === "cancelled") {
+        return null;
+      }
+      return current;
+    });
+  }, [autoRematchDecision.phase, autoRematchDecision.shouldStartCountdown, snapshot.winner]);
 
   useEffect(() => {
     if (!shouldShowOnboarding || onboardingActivatedRef.current) {
@@ -395,6 +486,18 @@ export function GameRoomPage({
     timeoutAssistTurnKeyRef.current = timeoutAssistTurnKey;
     handlePrimaryAction();
   }, [handlePrimaryAction, timeoutAssistDecision.shouldAutoAct, timeoutAssistTurnKey]);
+
+  useEffect(() => {
+    if (!autoRematchDecision.shouldAutoRematch) {
+      return;
+    }
+    if (autoRematchTriggeredRoundKeyRef.current === autoRematchRoundKey) {
+      return;
+    }
+    autoRematchTriggeredRoundKeyRef.current = autoRematchRoundKey;
+    setAutoRematchCountdownStartedAtMs(null);
+    onRematch();
+  }, [autoRematchDecision.shouldAutoRematch, autoRematchRoundKey, onRematch]);
 
   useEffect(() => {
     if (focusMode !== "auto") {
@@ -531,12 +634,18 @@ export function GameRoomPage({
         timeoutAssistUrgency={timeoutAssistDecision.urgencyLabel}
         timeoutAssistThresholdMs={timeoutAssistThresholdMs}
         timeoutAssistNetworkTier={timeoutAssistNetworkTier}
+        autoRematchEnabled={autoRematchEnabled}
+        autoRematchPhase={autoRematchDecision.phase}
+        autoRematchCountdownRemainingMs={autoRematchDecision.countdownRemainingMs}
+        autoRematchCanCancel={autoRematchDecision.canCancel}
         myRematchReady={myRematchReady}
         opponentRematchReady={opponentRematchReady}
         opponentReconnectRemainingMs={opponentReconnectRemainingMs}
         connectionStatus={connectionStatus}
         onPrimaryAction={handlePrimaryAction}
         onToggleTimeoutAssist={handleToggleTimeoutAssist}
+        onToggleAutoRematch={handleToggleAutoRematch}
+        onCancelAutoRematch={handleCancelAutoRematch}
         onOnboardingPrimaryAction={handleOnboardingPrimaryAction}
         onOnboardingSkip={handleOnboardingSkip}
         onToggleAdvanced={handleToggleAdvanced}

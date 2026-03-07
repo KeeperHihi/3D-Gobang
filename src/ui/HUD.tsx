@@ -10,6 +10,7 @@ import type { OnboardingGuideState } from "../game/interaction/onboardingGuide";
 import type { SmartActionState } from "../game/interaction/smartAction";
 import type { TimeoutAssistUrgency } from "../game/interaction/timeoutAssist";
 import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatency";
+import type { AutoRematchPhase } from "../game/interaction/autoRematch";
 import { SmartActionBar } from "./SmartActionBar";
 
 interface HUDProps {
@@ -36,12 +37,18 @@ interface HUDProps {
   timeoutAssistUrgency: TimeoutAssistUrgency;
   timeoutAssistThresholdMs: number;
   timeoutAssistNetworkTier: TimeoutAssistNetworkTier;
+  autoRematchEnabled: boolean;
+  autoRematchPhase: AutoRematchPhase;
+  autoRematchCountdownRemainingMs: number | null;
+  autoRematchCanCancel: boolean;
   myRematchReady: boolean;
   opponentRematchReady: boolean;
   opponentReconnectRemainingMs: number | null;
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
   onPrimaryAction: () => void;
   onToggleTimeoutAssist: () => void;
+  onToggleAutoRematch: () => void;
+  onCancelAutoRematch: () => void;
   onOnboardingPrimaryAction: () => void;
   onOnboardingSkip: () => void;
   onToggleAdvanced: () => void;
@@ -103,12 +110,18 @@ export function HUD({
   timeoutAssistUrgency,
   timeoutAssistThresholdMs,
   timeoutAssistNetworkTier,
+  autoRematchEnabled,
+  autoRematchPhase,
+  autoRematchCountdownRemainingMs,
+  autoRematchCanCancel,
   myRematchReady,
   opponentRematchReady,
   opponentReconnectRemainingMs,
   connectionStatus,
   onPrimaryAction,
   onToggleTimeoutAssist,
+  onToggleAutoRematch,
+  onCancelAutoRematch,
   onOnboardingPrimaryAction,
   onOnboardingSkip,
   onToggleAdvanced,
@@ -139,8 +152,13 @@ export function HUD({
   const turnRemainingSeconds =
     turnRemainingMs === null ? null : Math.max(0, Math.ceil(turnRemainingMs / 1000));
   const timeoutAssistThresholdSeconds = Math.max(1, Math.ceil(timeoutAssistThresholdMs / 1000));
+  const autoRematchCountdownSeconds =
+    autoRematchCountdownRemainingMs === null
+      ? null
+      : Math.max(0, Math.ceil(autoRematchCountdownRemainingMs / 1000));
   const showTurnCountdown = !winner && turnRemainingSeconds !== null;
   const showTimeoutAssistHint = !winner && turn === myMark;
+  const showAutoRematchHint = Boolean(winner) && opponentConnected;
   const timeoutAssistNetworkHint =
     timeoutAssistNetworkTier === "unstable"
       ? "弱网提前"
@@ -158,6 +176,17 @@ export function HUD({
           ? `超时护航：本回合已自动执行保底落子（${timeoutAssistNetworkHint}）`
           : "超时护航：本回合已自动执行保底落子"
         : `超时护航已开启（阈值 ${timeoutAssistThresholdSeconds}s）`;
+  const autoRematchText = !autoRematchEnabled
+    ? "连战模式已关闭"
+    : autoRematchPhase === "countdown"
+      ? `连战模式：${autoRematchCountdownSeconds ?? 0}s 后自动准备`
+      : autoRematchPhase === "armed"
+        ? myRematchReady
+          ? "连战模式：已自动准备，等待对手"
+          : "连战模式：准备提交中"
+        : autoRematchPhase === "cancelled"
+          ? "连战模式：本局已取消自动准备"
+          : "连战模式已开启";
 
   return (
     <div className={`hud-root ${isMobileLayout ? "mobile" : "desktop"}`}>
@@ -204,6 +233,26 @@ export function HUD({
             }`}
           >
             {timeoutAssistText}
+          </div>
+        ) : null}
+        {showAutoRematchHint ? (
+          <div
+            className={`hud-auto-rematch ${
+              !autoRematchEnabled
+                ? "disabled"
+                : autoRematchPhase === "countdown"
+                  ? "countdown"
+                  : autoRematchPhase === "cancelled"
+                    ? "cancelled"
+                    : "enabled"
+            }`}
+          >
+            <span>{autoRematchText}</span>
+            {autoRematchCanCancel ? (
+              <button className="hud-mini-button" type="button" onClick={onCancelAutoRematch}>
+                取消自动准备
+              </button>
+            ) : null}
           </div>
         ) : null}
         {onboardingGuide ? (
@@ -349,6 +398,13 @@ export function HUD({
               </button>
             </div>
             <div className="hud-actions">
+              <button
+                className={`hud-mini-button ${autoRematchEnabled ? "active" : ""}`}
+                type="button"
+                onClick={onToggleAutoRematch}
+              >
+                连战模式：{autoRematchEnabled ? "开" : "关"}
+              </button>
               <button
                 className={`hud-mini-button ${timeoutAssistEnabled ? "active" : ""}`}
                 type="button"

@@ -108,6 +108,11 @@ export interface RematchPayload {
   seatToken: string;
 }
 
+export interface RematchCancelPayload {
+  roomId: string;
+  seatToken: string;
+}
+
 export interface ResumePayload {
   roomId: string;
   seatToken: string;
@@ -124,6 +129,7 @@ export interface ClientToServerEvents {
   "queue:continue": (payload: QueueContinuePayload) => void;
   "game:place": (payload: PlaceMovePayload) => void;
   "game:rematch": (payload: RematchPayload) => void;
+  "game:rematch:cancel": (payload: RematchCancelPayload) => void;
   "room:resume": (payload: ResumePayload) => void;
   "room:state:request": (payload: RequestStatePayload) => void;
 }
