@@ -2,12 +2,14 @@ import type { SmartActionState } from "./smartAction";
 import type { PlayerMark } from "../../network/protocol";
 
 export type TimeoutAssistUrgency = "off" | "idle" | "armed" | "triggered";
+export type TimeoutAssistNextAction = "none" | "jumpToLock" | "autoAct";
 
 export interface TimeoutAssistInput {
   enabled: boolean;
   turnRemainingMs: number | null;
   canPlace: boolean;
   hasPendingMove: boolean;
+  hasHiddenConfirmableLock?: boolean;
   smartAction: Pick<SmartActionState, "actionType" | "enabled" | "target">;
   alreadyTriggeredThisTurn: boolean;
   thresholdMs?: number;
@@ -15,6 +17,7 @@ export interface TimeoutAssistInput {
 
 export interface TimeoutAssistDecision {
   shouldAutoAct: boolean;
+  nextAction: TimeoutAssistNextAction;
   urgencyLabel: TimeoutAssistUrgency;
   remainingMs: number | null;
 }
@@ -44,6 +47,7 @@ export function evaluateTimeoutAssist(input: TimeoutAssistInput): TimeoutAssistD
   if (!input.enabled) {
     return {
       shouldAutoAct: false,
+      nextAction: "none",
       urgencyLabel: "off",
       remainingMs
     };
@@ -52,6 +56,7 @@ export function evaluateTimeoutAssist(input: TimeoutAssistInput): TimeoutAssistD
   if (input.alreadyTriggeredThisTurn) {
     return {
       shouldAutoAct: false,
+      nextAction: "none",
       urgencyLabel: "triggered",
       remainingMs
     };
@@ -60,7 +65,26 @@ export function evaluateTimeoutAssist(input: TimeoutAssistInput): TimeoutAssistD
   if (remainingMs === null || !input.canPlace || input.hasPendingMove) {
     return {
       shouldAutoAct: false,
+      nextAction: "none",
       urgencyLabel: "idle",
+      remainingMs
+    };
+  }
+
+  if (remainingMs > thresholdMs) {
+    return {
+      shouldAutoAct: false,
+      nextAction: "none",
+      urgencyLabel: "idle",
+      remainingMs
+    };
+  }
+
+  if (input.hasHiddenConfirmableLock) {
+    return {
+      shouldAutoAct: false,
+      nextAction: "jumpToLock",
+      urgencyLabel: "armed",
       remainingMs
     };
   }
@@ -72,14 +96,7 @@ export function evaluateTimeoutAssist(input: TimeoutAssistInput): TimeoutAssistD
   if (!canAutoAct) {
     return {
       shouldAutoAct: false,
-      urgencyLabel: "idle",
-      remainingMs
-    };
-  }
-
-  if (remainingMs > thresholdMs) {
-    return {
-      shouldAutoAct: false,
+      nextAction: "none",
       urgencyLabel: "idle",
       remainingMs
     };
@@ -87,6 +104,7 @@ export function evaluateTimeoutAssist(input: TimeoutAssistInput): TimeoutAssistD
 
   return {
     shouldAutoAct: true,
+    nextAction: "autoAct",
     urgencyLabel: "armed",
     remainingMs
   };

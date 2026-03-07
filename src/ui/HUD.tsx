@@ -8,7 +8,10 @@ import {
 } from "../game/interaction/qualityProfile";
 import type { OnboardingGuideState } from "../game/interaction/onboardingGuide";
 import type { PrimaryIntentState } from "../game/interaction/primaryIntent";
-import type { TimeoutAssistUrgency } from "../game/interaction/timeoutAssist";
+import type {
+  TimeoutAssistNextAction,
+  TimeoutAssistUrgency
+} from "../game/interaction/timeoutAssist";
 import type { TimeoutAssistNetworkTier } from "../game/interaction/networkLatency";
 import type { AutoRematchPhase } from "../game/interaction/autoRematch";
 import type { AutoContinueAfterFallbackPhase } from "../game/interaction/autoContinueAfterFallback";
@@ -47,6 +50,7 @@ interface HUDProps {
   turnUrgent: boolean;
   timeoutAssistEnabled: boolean;
   timeoutAssistUrgency: TimeoutAssistUrgency;
+  timeoutAssistNextAction: TimeoutAssistNextAction;
   timeoutAssistThresholdMs: number;
   timeoutAssistNetworkTier: TimeoutAssistNetworkTier;
   turnNudgeEnabled: boolean;
@@ -177,6 +181,7 @@ export function HUD({
   turnUrgent,
   timeoutAssistEnabled,
   timeoutAssistUrgency,
+  timeoutAssistNextAction,
   timeoutAssistThresholdMs,
   timeoutAssistNetworkTier,
   turnNudgeEnabled,
@@ -279,6 +284,8 @@ export function HUD({
         : null;
   const timeoutAssistText = !timeoutAssistEnabled
     ? "超时护航已关闭"
+    : timeoutAssistNextAction === "jumpToLock"
+      ? `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，将先回到锁定层再确认`
     : timeoutAssistUrgency === "armed"
       ? timeoutAssistNetworkHint
         ? `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，${timeoutAssistNetworkHint}自动执行当前主动作`

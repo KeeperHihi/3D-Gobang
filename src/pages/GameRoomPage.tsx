@@ -159,6 +159,7 @@ export function GameRoomPage({
   const winLineDirectorTriggeredRoundKeyRef = useRef<string | null>(null);
   const winLineDirectorTimerRef = useRef<number | null>(null);
   const focusGuardTriggeredTurnKeyRef = useRef<string | null>(null);
+  const timeoutAssistJumpToLockKeyRef = useRef<string | null>(null);
   const focusGuardWasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
   const layerNavLastInputAtMsRef = useRef(0);
   const layerNavLastRotateAtMsRef = useRef(0);
@@ -439,11 +440,15 @@ export function GameRoomPage({
         turnRemainingMs,
         canPlace,
         hasPendingMove,
+        hasHiddenConfirmableLock: activeLayerTapLock !== null && layerTapLockDecision.canConfirm && !isTapLockVisible,
         smartAction: primaryIntent,
         alreadyTriggeredThisTurn: timeoutAssistAlreadyTriggered,
         thresholdMs: timeoutAssistThresholdMs
       }),
     [
+      activeLayerTapLock,
+      isTapLockVisible,
+      layerTapLockDecision.canConfirm,
       timeoutAssistAlreadyTriggered,
       timeoutAssistEnabled,
       turnRemainingMs,
@@ -947,6 +952,7 @@ export function GameRoomPage({
     autoContinueCancelledRoundKeyRef.current = null;
     winLineDirectorTriggeredRoundKeyRef.current = null;
     focusGuardTriggeredTurnKeyRef.current = null;
+    timeoutAssistJumpToLockKeyRef.current = null;
     turnNudgeTriggeredTurnKeyRef.current = null;
     wasMyTurnRef.current = snapshot.turn === myMark && snapshot.winner === null;
     focusGuardWasMyTurnRef.current = snapshot.turn === myMark && snapshot.winner === null;
@@ -1055,7 +1061,25 @@ export function GameRoomPage({
   }, [onCompleteOnboarding, onboardingProgress]);
 
   useEffect(() => {
-    if (!timeoutAssistDecision.shouldAutoAct) {
+    if (timeoutAssistDecision.nextAction === "none") {
+      return;
+    }
+    if (timeoutAssistDecision.nextAction === "jumpToLock") {
+      if (!activeLayerTapLock) {
+        return;
+      }
+      const jumpToLockKey = [
+        timeoutAssistTurnKey,
+        activeLayerTapLock.coordinate.x,
+        activeLayerTapLock.coordinate.y,
+        activeLayerTapLock.coordinate.z,
+        activeLayerTapLock.expiresAtMs
+      ].join(":");
+      if (timeoutAssistJumpToLockKeyRef.current === jumpToLockKey) {
+        return;
+      }
+      timeoutAssistJumpToLockKeyRef.current = jumpToLockKey;
+      handleJumpToTapLockLayer();
       return;
     }
     if (timeoutAssistTurnKeyRef.current === timeoutAssistTurnKey) {
@@ -1063,7 +1087,13 @@ export function GameRoomPage({
     }
     timeoutAssistTurnKeyRef.current = timeoutAssistTurnKey;
     handlePrimaryAction();
-  }, [handlePrimaryAction, timeoutAssistDecision.shouldAutoAct, timeoutAssistTurnKey]);
+  }, [
+    activeLayerTapLock,
+    handleJumpToTapLockLayer,
+    handlePrimaryAction,
+    timeoutAssistDecision.nextAction,
+    timeoutAssistTurnKey
+  ]);
 
   useEffect(() => {
     if (!autoRematchDecision.shouldAutoRematch) {
@@ -1363,6 +1393,7 @@ export function GameRoomPage({
         turnUrgent={turnUrgent}
         timeoutAssistEnabled={timeoutAssistEnabled}
         timeoutAssistUrgency={timeoutAssistDecision.urgencyLabel}
+        timeoutAssistNextAction={timeoutAssistDecision.nextAction}
         timeoutAssistThresholdMs={timeoutAssistThresholdMs}
         timeoutAssistNetworkTier={timeoutAssistNetworkTier}
         turnNudgeEnabled={turnNudgeEnabled}

@@ -7,6 +7,7 @@ function createDecision(overrides?: Partial<Parameters<typeof evaluateTimeoutAss
     turnRemainingMs: 2_200,
     canPlace: true,
     hasPendingMove: false,
+    hasHiddenConfirmableLock: false,
     alreadyTriggeredThisTurn: false,
     smartAction: {
       actionType: "suggest",
@@ -24,6 +25,7 @@ describe("evaluateTimeoutAssist", () => {
     });
 
     expect(decision.shouldAutoAct).toBe(true);
+    expect(decision.nextAction).toBe("autoAct");
     expect(decision.urgencyLabel).toBe("armed");
   });
 
@@ -33,6 +35,7 @@ describe("evaluateTimeoutAssist", () => {
     });
 
     expect(decision.shouldAutoAct).toBe(false);
+    expect(decision.nextAction).toBe("none");
     expect(decision.urgencyLabel).toBe("idle");
   });
 
@@ -60,8 +63,11 @@ describe("evaluateTimeoutAssist", () => {
     });
 
     expect(disabledAction.shouldAutoAct).toBe(false);
+    expect(disabledAction.nextAction).toBe("none");
     expect(missingTarget.shouldAutoAct).toBe(false);
+    expect(missingTarget.nextAction).toBe("none");
     expect(nonAutoAction.shouldAutoAct).toBe(false);
+    expect(nonAutoAction.nextAction).toBe("none");
   });
 
   it("does not trigger when pending move already exists", () => {
@@ -70,6 +76,7 @@ describe("evaluateTimeoutAssist", () => {
     });
 
     expect(decision.shouldAutoAct).toBe(false);
+    expect(decision.nextAction).toBe("none");
     expect(decision.urgencyLabel).toBe("idle");
   });
 
@@ -79,6 +86,7 @@ describe("evaluateTimeoutAssist", () => {
     });
 
     expect(decision.shouldAutoAct).toBe(false);
+    expect(decision.nextAction).toBe("none");
     expect(decision.urgencyLabel).toBe("triggered");
   });
 
@@ -88,6 +96,7 @@ describe("evaluateTimeoutAssist", () => {
     });
 
     expect(decision.shouldAutoAct).toBe(false);
+    expect(decision.nextAction).toBe("none");
     expect(decision.urgencyLabel).toBe("off");
   });
 
@@ -102,7 +111,45 @@ describe("evaluateTimeoutAssist", () => {
     });
 
     expect(remainsAt2300WithStrictThreshold.shouldAutoAct).toBe(false);
+    expect(remainsAt2300WithStrictThreshold.nextAction).toBe("none");
     expect(remainsAt2300WithLooseThreshold.shouldAutoAct).toBe(true);
+    expect(remainsAt2300WithLooseThreshold.nextAction).toBe("autoAct");
+  });
+
+  it("prioritizes jump-to-lock when hidden confirmable lock exists in threshold", () => {
+    const decision = createDecision({
+      hasHiddenConfirmableLock: true,
+      turnRemainingMs: 2_100
+    });
+
+    expect(decision.shouldAutoAct).toBe(false);
+    expect(decision.nextAction).toBe("jumpToLock");
+    expect(decision.urgencyLabel).toBe("armed");
+  });
+
+  it("does not jump-to-lock before threshold even if hidden lock exists", () => {
+    const decision = createDecision({
+      hasHiddenConfirmableLock: true,
+      turnRemainingMs: 3_200
+    });
+
+    expect(decision.shouldAutoAct).toBe(false);
+    expect(decision.nextAction).toBe("none");
+    expect(decision.urgencyLabel).toBe("idle");
+  });
+
+  it("can jump-to-lock without actionable smart action target", () => {
+    const decision = createDecision({
+      hasHiddenConfirmableLock: true,
+      smartAction: {
+        actionType: "manual",
+        enabled: false,
+        target: null
+      }
+    });
+
+    expect(decision.shouldAutoAct).toBe(false);
+    expect(decision.nextAction).toBe("jumpToLock");
   });
 });
 
