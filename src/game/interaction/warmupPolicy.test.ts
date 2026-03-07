@@ -40,6 +40,7 @@ describe("evaluateWarmupPolicy", () => {
     });
 
     expect(decision.shouldAutoWarmup).toBe(true);
+    expect(decision.shouldWarmupBoard).toBe(true);
     expect(decision.intentOnlyMode).toBe(false);
     expect(decision.shouldRetryWarmup).toBe(false);
   });
@@ -62,9 +63,12 @@ describe("evaluateWarmupPolicy", () => {
     });
 
     expect(blockedByNetwork.shouldAutoWarmup).toBe(false);
+    expect(blockedByNetwork.shouldWarmupBoard).toBe(false);
     expect(blockedByNetwork.intentOnlyMode).toBe(true);
     expect(allowedByIntent.shouldAutoWarmup).toBe(true);
+    expect(allowedByIntent.shouldWarmupBoard).toBe(false);
     expect(blockedBySaveData.shouldAutoWarmup).toBe(false);
+    expect(blockedBySaveData.shouldWarmupBoard).toBe(false);
     expect(blockedBySaveData.intentOnlyMode).toBe(true);
   });
 
@@ -81,8 +85,10 @@ describe("evaluateWarmupPolicy", () => {
     });
 
     expect(firstRetry.shouldRetryWarmup).toBe(true);
+    expect(firstRetry.shouldWarmupBoard).toBe(false);
     expect(firstRetry.retryDelayMs).toBe(1_000);
     expect(thirdRetry.shouldRetryWarmup).toBe(true);
+    expect(thirdRetry.shouldWarmupBoard).toBe(false);
     expect(thirdRetry.retryDelayMs).toBe(4_000);
   });
 
@@ -94,6 +100,7 @@ describe("evaluateWarmupPolicy", () => {
     });
 
     expect(decision.shouldRetryWarmup).toBe(false);
+    expect(decision.shouldWarmupBoard).toBe(false);
     expect(decision.retryDelayMs).toBeNull();
   });
 
@@ -106,8 +113,22 @@ describe("evaluateWarmupPolicy", () => {
     });
 
     expect(hiddenDecision.shouldAutoWarmup).toBe(false);
+    expect(hiddenDecision.shouldWarmupBoard).toBe(false);
     expect(hiddenDecision.shouldRetryWarmup).toBe(false);
     expect(offlineDecision.shouldAutoWarmup).toBe(false);
+    expect(offlineDecision.shouldWarmupBoard).toBe(false);
     expect(offlineDecision.shouldRetryWarmup).toBe(false);
+  });
+
+  it("keeps queue auto warmup on weak network but skips board preheat", () => {
+    const decision = createDecision({
+      matchPhase: "queuing",
+      effectiveType: "3g",
+      saveData: false,
+      hasUserIntent: false
+    });
+
+    expect(decision.shouldAutoWarmup).toBe(true);
+    expect(decision.shouldWarmupBoard).toBe(false);
   });
 });

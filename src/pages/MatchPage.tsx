@@ -1,5 +1,9 @@
 import { createMatchQueueGuide } from "../game/interaction/matchQueueGuide";
-import { sceneWarmupHint, type SceneWarmupStatus } from "../game/interaction/sceneWarmup";
+import {
+  sceneWarmupHint,
+  type SceneWarmupBoardStatus,
+  type SceneWarmupStatus
+} from "../game/interaction/sceneWarmup";
 
 interface MatchPageProps {
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
@@ -7,6 +11,7 @@ interface MatchPageProps {
   queueSize: number;
   queueElapsedSeconds: number;
   sceneWarmupStatus: SceneWarmupStatus;
+  sceneWarmupBoardStatus: SceneWarmupBoardStatus;
   warmupIntentOnlyMode: boolean;
   isWarmupAutoRetrying: boolean;
   isRecoveringSession: boolean;
@@ -28,6 +33,7 @@ export function MatchPage({
   queueSize,
   queueElapsedSeconds,
   sceneWarmupStatus,
+  sceneWarmupBoardStatus,
   warmupIntentOnlyMode,
   isWarmupAutoRetrying,
   isRecoveringSession,
@@ -50,7 +56,8 @@ export function MatchPage({
     connectionStatus !== "online" || sceneWarmupStatus !== "failed" || isRecoveringSession;
   const warmupHint = sceneWarmupHint(sceneWarmupStatus, {
     intentOnlyMode: warmupIntentOnlyMode,
-    autoRetrying: isWarmupAutoRetrying
+    autoRetrying: isWarmupAutoRetrying,
+    boardWarmupStatus: sceneWarmupBoardStatus
   });
 
   return (

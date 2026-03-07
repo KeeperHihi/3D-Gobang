@@ -17,6 +17,7 @@ export interface WarmupPolicyInput {
 
 export interface WarmupPolicyDecision {
   shouldAutoWarmup: boolean;
+  shouldWarmupBoard: boolean;
   shouldRetryWarmup: boolean;
   retryDelayMs: number | null;
   intentOnlyMode: boolean;
@@ -51,6 +52,7 @@ function isIntentOnlyNetwork(input: Pick<WarmupPolicyInput, "effectiveType" | "s
 
 export function evaluateWarmupPolicy(input: WarmupPolicyInput): WarmupPolicyDecision {
   const intentOnlyMode = isIntentOnlyNetwork(input);
+  const shouldWarmupBoard = !intentOnlyMode;
   const isOnline = input.connectionStatus === "online";
   const canOperate = isOnline && input.pageVisible && input.matchPhase !== "matched";
   const retryDelayMs =
@@ -61,6 +63,7 @@ export function evaluateWarmupPolicy(input: WarmupPolicyInput): WarmupPolicyDeci
   if (!canOperate || input.sceneWarmupStatus === "ready" || input.sceneWarmupStatus === "warming") {
     return {
       shouldAutoWarmup: false,
+      shouldWarmupBoard: false,
       shouldRetryWarmup: false,
       retryDelayMs: null,
       intentOnlyMode
@@ -71,6 +74,7 @@ export function evaluateWarmupPolicy(input: WarmupPolicyInput): WarmupPolicyDeci
     if (input.hasUserIntent) {
       return {
         shouldAutoWarmup: true,
+        shouldWarmupBoard,
         shouldRetryWarmup: false,
         retryDelayMs: null,
         intentOnlyMode
@@ -83,6 +87,7 @@ export function evaluateWarmupPolicy(input: WarmupPolicyInput): WarmupPolicyDeci
       input.retryCount < WARMUP_RETRY_DELAYS_MS.length;
     return {
       shouldAutoWarmup: false,
+      shouldWarmupBoard: false,
       shouldRetryWarmup,
       retryDelayMs: shouldRetryWarmup ? retryDelayMs : null,
       intentOnlyMode
@@ -92,6 +97,7 @@ export function evaluateWarmupPolicy(input: WarmupPolicyInput): WarmupPolicyDeci
   if (input.hasUserIntent) {
     return {
       shouldAutoWarmup: true,
+      shouldWarmupBoard,
       shouldRetryWarmup: false,
       retryDelayMs: null,
       intentOnlyMode
@@ -101,6 +107,7 @@ export function evaluateWarmupPolicy(input: WarmupPolicyInput): WarmupPolicyDeci
   if (input.matchPhase === "queuing") {
     return {
       shouldAutoWarmup: true,
+      shouldWarmupBoard,
       shouldRetryWarmup: false,
       retryDelayMs: null,
       intentOnlyMode
@@ -110,6 +117,7 @@ export function evaluateWarmupPolicy(input: WarmupPolicyInput): WarmupPolicyDeci
   if (input.matchPhase === "idle" && !intentOnlyMode) {
     return {
       shouldAutoWarmup: true,
+      shouldWarmupBoard: true,
       shouldRetryWarmup: false,
       retryDelayMs: null,
       intentOnlyMode
@@ -118,6 +126,7 @@ export function evaluateWarmupPolicy(input: WarmupPolicyInput): WarmupPolicyDeci
 
   return {
     shouldAutoWarmup: false,
+    shouldWarmupBoard: false,
     shouldRetryWarmup: false,
     retryDelayMs: null,
     intentOnlyMode

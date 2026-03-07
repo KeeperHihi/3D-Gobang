@@ -15,6 +15,7 @@ import {
 import { validateContinueMatchRequest } from "./game/interaction/continueMatch";
 import {
   sceneWarmupLoadingStageDetail,
+  type SceneWarmupBoardStatus,
   type SceneWarmupStatus
 } from "./game/interaction/sceneWarmup";
 import {
@@ -22,6 +23,7 @@ import {
   normalizeWarmupEffectiveType,
   type WarmupEffectiveType
 } from "./game/interaction/warmupPolicy";
+import { preloadBoardScene } from "./ui/boardSceneLoader";
 import {
   createInitialNetworkLatencyProfile,
   deriveTimeoutAssistThresholdMs,
@@ -260,6 +262,7 @@ export default function App() {
     createInitialNetworkLatencyProfile()
   );
   const [sceneWarmupStatus, setSceneWarmupStatus] = useState<SceneWarmupStatus>("idle");
+  const [sceneWarmupBoardStatus, setSceneWarmupBoardStatus] = useState<SceneWarmupBoardStatus>("idle");
   const [warmupNetworkSnapshot, setWarmupNetworkSnapshot] = useState<WarmupNetworkSnapshot>(() =>
     readWarmupNetworkSnapshot()
   );
@@ -327,8 +330,9 @@ export default function App() {
     setWarmupIntentVersion((current) => current + 1);
   }, []);
 
-  const prepareArena = useCallback((options?: { forceRetry?: boolean }) => {
+  const prepareArena = useCallback((options?: { forceRetry?: boolean; includeBoardWarmup?: boolean }) => {
     const forceRetry = options?.forceRetry ?? false;
+    const includeBoardWarmup = options?.includeBoardWarmup ?? true;
     const currentStatus = sceneWarmupStatusRef.current;
 
     if (
@@ -343,8 +347,22 @@ export default function App() {
 
     setSceneWarmupStatus("warming");
     sceneWarmupStatusRef.current = "warming";
+    setSceneWarmupBoardStatus("idle");
+
+    let warmupStage: "shell" | "board" = "shell";
 
     const warmupPromise = loadGameRoomPageModule()
+      .then(() => {
+        if (!includeBoardWarmup) {
+          setSceneWarmupBoardStatus("skipped");
+          return;
+        }
+        warmupStage = "board";
+        setSceneWarmupBoardStatus("warming");
+        return preloadBoardScene().then(() => {
+          setSceneWarmupBoardStatus("ready");
+        });
+      })
       .then(() => {
         sceneWarmupPromiseRef.current = null;
         sceneWarmupStatusRef.current = "ready";
@@ -353,6 +371,7 @@ export default function App() {
       .catch(() => {
         sceneWarmupPromiseRef.current = null;
         sceneWarmupStatusRef.current = "failed";
+        setSceneWarmupBoardStatus(warmupStage === "board" ? "failed" : "idle");
         setSceneWarmupStatus("failed");
       });
     sceneWarmupPromiseRef.current = warmupPromise;
@@ -460,13 +479,16 @@ export default function App() {
       !hasWarmupIntent && matchPhase === "idle" && sceneWarmupStatus === "idle";
     if (shouldDelayIdleWarmup) {
       const timer = window.setTimeout(() => {
-        prepareArena();
+        prepareArena({
+          includeBoardWarmup: warmupPolicyDecision.shouldWarmupBoard
+        });
       }, WARMUP_IDLE_AUTOSTART_DELAY_MS);
       return () => window.clearTimeout(timer);
     }
 
     prepareArena({
-      forceRetry: sceneWarmupStatus === "failed"
+      forceRetry: sceneWarmupStatus === "failed",
+      includeBoardWarmup: warmupPolicyDecision.shouldWarmupBoard
     });
     if (hasWarmupIntent) {
       consumedWarmupIntentVersionRef.current = warmupIntentVersion;
@@ -478,7 +500,8 @@ export default function App() {
     sceneWarmupStatus,
     snapshot,
     warmupIntentVersion,
-    warmupPolicyDecision.shouldAutoWarmup
+    warmupPolicyDecision.shouldAutoWarmup,
+    warmupPolicyDecision.shouldWarmupBoard
   ]);
 
   useEffect(() => {
@@ -499,7 +522,8 @@ export default function App() {
       setWarmupRetryScheduledAtMs(null);
       setWarmupRetryCount((current) => current + 1);
       prepareArena({
-        forceRetry: true
+        forceRetry: true,
+        includeBoardWarmup: warmupPolicyDecision.shouldWarmupBoard
       });
     }, warmupPolicyDecision.retryDelayMs);
 
@@ -514,6 +538,7 @@ export default function App() {
     prepareArena,
     warmupPolicyDecision.retryDelayMs,
     warmupPolicyDecision.shouldRetryWarmup,
+    warmupPolicyDecision.shouldWarmupBoard,
     warmupRetryCount
   ]);
 
@@ -546,6 +571,7 @@ export default function App() {
       saveData: warmupNetworkSnapshot.saveData,
       matchPhase,
       sceneWarmupStatus,
+      sceneWarmupBoardStatus,
       pageVisible,
       hasWarmupIntent,
       retryCount: warmupRetryCount,
@@ -555,6 +581,7 @@ export default function App() {
     hasWarmupIntent,
     matchPhase,
     pageVisible,
+    sceneWarmupBoardStatus,
     sceneWarmupStatus,
     warmupNetworkSnapshot.effectiveType,
     warmupNetworkSnapshot.saveData,
@@ -1018,6 +1045,7 @@ export default function App() {
         queueSize={queueSize}
         queueElapsedSeconds={queueElapsedSeconds}
         sceneWarmupStatus={sceneWarmupStatus}
+        sceneWarmupBoardStatus={sceneWarmupBoardStatus}
         isRecoveringSession={isRecoveringSession}
         onStartMatch={startMatch}
         onCancelMatch={cancelMatch}
@@ -1041,7 +1069,9 @@ export default function App() {
       fallback={
         <LoadingStage
           title="正在进入房间壳"
-          detail={sceneWarmupLoadingStageDetail(sceneWarmupStatus)}
+          detail={sceneWarmupLoadingStageDetail(sceneWarmupStatus, {
+            boardWarmupStatus: sceneWarmupBoardStatus
+          })}
         />
       }
     >

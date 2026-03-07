@@ -1,6 +1,5 @@
 import {
   Component,
-  lazy,
   Suspense,
   useCallback,
   useEffect,
@@ -88,6 +87,7 @@ import {
   evaluateWinLineDirector
 } from "../game/interaction/winLineDirector";
 import { BoardLoadingPanel } from "../ui/BoardLoadingPanel";
+import { createLazyBoardScene } from "../ui/boardSceneLoader";
 import { HUD } from "../ui/HUD";
 
 interface GameRoomPageProps {
@@ -144,18 +144,6 @@ function resolveTurnNudgeNotificationPermission(): TurnNudgeNotificationPermissi
     return "unsupported";
   }
   return Notification.permission;
-}
-
-function loadBoardSceneModule() {
-  return import("../ui/BoardScene");
-}
-
-function createLazyBoardScene() {
-  return lazy(() =>
-    loadBoardSceneModule().then((module) => ({
-      default: module.BoardScene
-    }))
-  );
 }
 
 class BoardSceneSlotErrorBoundary extends Component<
