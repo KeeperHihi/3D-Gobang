@@ -26,6 +26,10 @@ function createSnapshot(partial?: Partial<RoomSnapshot>): RoomSnapshot {
         reconnectDeadlineAt: null
       }
     },
+    rematchReady: {
+      X: false,
+      O: false
+    },
     ...partial
   };
 }

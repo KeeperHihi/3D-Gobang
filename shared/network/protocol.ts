@@ -34,6 +34,10 @@ export interface RoomSnapshot {
   lastMove: MoveRecord | null;
   winningLine: number[] | null;
   players: RoomPlayersSnapshot;
+  rematchReady: {
+    X: boolean;
+    O: boolean;
+  };
 }
 
 export interface QueueJoinedPayload {

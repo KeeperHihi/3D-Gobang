@@ -184,6 +184,10 @@ export function snapshotFromRoomState(room: RoomState): RoomSnapshot {
         connected: room.players.O.connected,
         reconnectDeadlineAt: room.players.O.reconnectDeadlineAt
       }
+    },
+    rematchReady: {
+      X: room.rematchVotes.has("X"),
+      O: room.rematchVotes.has("O")
     }
   };
 }
@@ -326,6 +330,14 @@ export function requestRematch(room: RoomState, mark: PlayerMark): RematchReques
       accepted: false,
       started: false,
       reason: "对局尚未结束，无法再来一局"
+    };
+  }
+
+  if (!room.players.X.connected || !room.players.O.connected) {
+    return {
+      accepted: false,
+      started: false,
+      reason: "有玩家离线，无法再来一局"
     };
   }
 

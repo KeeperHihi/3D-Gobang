@@ -19,6 +19,8 @@ function createStateFixture(params?: {
   assistEnabled?: boolean;
   hasPendingMove?: boolean;
   canContinueMatch?: boolean;
+  myRematchReady?: boolean;
+  opponentRematchReady?: boolean;
   connectionStatus?: "connecting" | "online" | "reconnecting" | "offline";
 }) {
   return createSmartActionState({
@@ -31,6 +33,8 @@ function createStateFixture(params?: {
     assistEnabled: params?.assistEnabled ?? true,
     hasPendingMove: params?.hasPendingMove ?? false,
     canContinueMatch: params?.canContinueMatch ?? false,
+    myRematchReady: params?.myRematchReady ?? false,
+    opponentRematchReady: params?.opponentRematchReady ?? false,
     connectionStatus: params?.connectionStatus ?? "online"
   });
 }
@@ -107,6 +111,40 @@ describe("createSmartActionState", () => {
     expect(state.actionType).toBe("continueMatch");
     expect(state.label).toBe("继续匹配");
     expect(state.enabled).toBe(true);
+  });
+
+  it("returns waiting-ready action when I already confirmed rematch", () => {
+    const state = createStateFixture({
+      winner: "O",
+      myRematchReady: true
+    });
+
+    expect(state.actionType).toBe("readyWaiting");
+    expect(state.label).toBe("已准备，等待对手");
+    expect(state.enabled).toBe(false);
+  });
+
+  it("returns opponent-ready action when opponent is waiting my confirm", () => {
+    const state = createStateFixture({
+      winner: "draw",
+      opponentRematchReady: true
+    });
+
+    expect(state.actionType).toBe("opponentReady");
+    expect(state.label).toBe("对手已准备，点击开始");
+    expect(state.enabled).toBe(true);
+  });
+
+  it("shows countdown-like waiting state when both sides are ready", () => {
+    const state = createStateFixture({
+      winner: "X",
+      myRematchReady: true,
+      opponentRematchReady: true
+    });
+
+    expect(state.actionType).toBe("readyWaiting");
+    expect(state.label).toBe("即将开始下一局");
+    expect(state.enabled).toBe(false);
   });
 
   it("disables action when connection is not online", () => {

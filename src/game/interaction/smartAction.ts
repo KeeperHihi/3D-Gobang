@@ -12,6 +12,8 @@ export type SmartActionType =
   | "wait"
   | "continueMatch"
   | "rematch"
+  | "readyWaiting"
+  | "opponentReady"
   | "connection";
 
 export interface SmartActionState {
@@ -30,6 +32,8 @@ interface SmartActionInput {
   assistEnabled: boolean;
   hasPendingMove: boolean;
   canContinueMatch: boolean;
+  myRematchReady: boolean;
+  opponentRematchReady: boolean;
 }
 
 function connectionReason(status: ConnectionStatus): string {
@@ -53,8 +57,17 @@ function winnerReason(winner: Winner, myMark: PlayerMark): string {
 }
 
 export function createSmartActionState(input: SmartActionInput): SmartActionState {
-  const { snapshot, myMark, hints, connectionStatus, assistEnabled, hasPendingMove, canContinueMatch } =
-    input;
+  const {
+    snapshot,
+    myMark,
+    hints,
+    connectionStatus,
+    assistEnabled,
+    hasPendingMove,
+    canContinueMatch,
+    myRematchReady,
+    opponentRematchReady
+  } = input;
 
   if (connectionStatus !== "online") {
     return {
@@ -73,6 +86,28 @@ export function createSmartActionState(input: SmartActionInput): SmartActionStat
         label: "继续匹配",
         enabled: true,
         reason: "对手掉线已结算，点击一键继续匹配",
+        target: null
+      };
+    }
+
+    if (myRematchReady) {
+      return {
+        actionType: "readyWaiting",
+        label: opponentRematchReady ? "即将开始下一局" : "已准备，等待对手",
+        enabled: false,
+        reason: opponentRematchReady
+          ? "双方已准备，下一局即将开始"
+          : "你已确认再来一局，等待对手确认",
+        target: null
+      };
+    }
+
+    if (opponentRematchReady) {
+      return {
+        actionType: "opponentReady",
+        label: "对手已准备，点击开始",
+        enabled: true,
+        reason: "对手已确认，点击后立即进入下一局",
         target: null
       };
     }

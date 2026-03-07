@@ -6,6 +6,7 @@ import {
   getRecordedMoveAck,
   recordMoveAck,
   requestRematch,
+  snapshotFromRoomState,
   setPlayerConnection,
   startReconnectDeadline
 } from "./roomState";
@@ -58,6 +59,10 @@ describe("requestRematch", () => {
     });
     expect(room.board[0]).toBe(1);
     expect(room.winner).toBe("X");
+    expect(snapshotFromRoomState(room).rematchReady).toEqual({
+      X: true,
+      O: false
+    });
 
     const secondVote = requestRematch(room, "O");
     expect(secondVote).toEqual({
@@ -69,6 +74,28 @@ describe("requestRematch", () => {
     expect(room.winner).toBeNull();
     expect(room.moveCount).toBe(0);
     expect(getRecordedMoveAck(room, "X", "move-x-1")).toBeNull();
+    expect(snapshotFromRoomState(room).rematchReady).toEqual({
+      X: false,
+      O: false
+    });
+  });
+
+  it("rejects rematch when any player is disconnected", () => {
+    const room = createFixtureRoom();
+    room.winner = "X";
+    setPlayerConnection(room, "O", null, false);
+
+    const result = requestRematch(room, "X");
+
+    expect(result).toEqual({
+      accepted: false,
+      started: false,
+      reason: "有玩家离线，无法再来一局"
+    });
+    expect(snapshotFromRoomState(room).rematchReady).toEqual({
+      X: false,
+      O: false
+    });
   });
 });
 
@@ -96,6 +123,7 @@ describe("reconnect deadline and disconnect forfeit", () => {
 
   it("forfeits disconnected player when deadline is expired", () => {
     const room = createFixtureRoom();
+    room.rematchVotes.add("X");
     setPlayerConnection(room, "O", null, false);
     startReconnectDeadline(room, "O", 10_000, 30_000);
 
@@ -106,5 +134,6 @@ describe("reconnect deadline and disconnect forfeit", () => {
     expect(room.winningLine).toBeNull();
     expect(room.players.O.reconnectDeadlineAt).toBeNull();
     expect(room.players.X.reconnectDeadlineAt).toBeNull();
+    expect(room.rematchVotes.size).toBe(0);
   });
 });

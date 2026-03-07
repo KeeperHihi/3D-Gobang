@@ -254,6 +254,35 @@ body {
   font-weight: 600;
 }
 
+.hud-ready-check {
+  margin-bottom: 10px;
+  border-radius: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(112, 223, 255, 0.28);
+  background: linear-gradient(140deg, rgba(56, 109, 182, 0.22), rgba(66, 53, 140, 0.2));
+}
+
+.hud-ready-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  margin-bottom: 6px;
+  color: rgba(208, 238, 255, 0.9);
+}
+
+.hud-ready-row:last-child {
+  margin-bottom: 0;
+}
+
+.hud-ready-row.ready {
+  color: #9effdb;
+}
+
+.hud-ready-row.waiting {
+  color: rgba(199, 227, 245, 0.75);
+}
+
 .hud-reconnect-banner {
   margin-bottom: 10px;
   border-radius: 12px;
@@ -341,6 +370,19 @@ body {
   box-shadow:
     0 12px 30px rgba(106, 210, 255, 0.36),
     0 0 22px rgba(100, 191, 255, 0.28);
+}
+
+.smart-action-button.opponent-ready {
+  color: #051826;
+  background: linear-gradient(90deg, #8dffcb, #8be8ff 56%, #97bbff);
+  box-shadow:
+    0 12px 30px rgba(101, 230, 209, 0.34),
+    0 0 20px rgba(90, 200, 255, 0.24);
+}
+
+.smart-action-button.ready-waiting {
+  color: #d9efff;
+  background: linear-gradient(90deg, rgba(83, 139, 206, 0.95), rgba(91, 103, 210, 0.95));
 }
 
 .smart-action-button.pending {

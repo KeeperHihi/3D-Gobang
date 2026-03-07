@@ -26,6 +26,8 @@ interface HUDProps {
   averageFps: number | null;
   myConnected: boolean;
   opponentConnected: boolean;
+  myRematchReady: boolean;
+  opponentRematchReady: boolean;
   opponentReconnectRemainingMs: number | null;
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
   onPrimaryAction: () => void;
@@ -81,6 +83,8 @@ export function HUD({
   averageFps,
   myConnected,
   opponentConnected,
+  myRematchReady,
+  opponentRematchReady,
   opponentReconnectRemainingMs,
   connectionStatus,
   onPrimaryAction,
@@ -93,7 +97,7 @@ export function HUD({
   onLeave
 }: HUDProps) {
   const isMobileLayout = layoutMode === "mobile";
-  const canRematch = Boolean(winner) && opponentConnected;
+  const canRematch = Boolean(winner) && opponentConnected && !myRematchReady;
   const turnText = winner
     ? winnerText(winner, myMark)
     : turn === myMark
@@ -102,6 +106,7 @@ export function HUD({
   const reconnectDeadlineSeconds =
     opponentReconnectRemainingMs === null ? null : Math.max(0, Math.ceil(opponentReconnectRemainingMs / 1000));
   const showReconnectDeadline = !winner && reconnectDeadlineSeconds !== null && !opponentConnected;
+  const showRematchReadyCheck = Boolean(winner) && opponentConnected;
   const reconnectUrgent = reconnectDeadlineSeconds !== null && reconnectDeadlineSeconds <= 10;
   const advancedToggleLabel = advancedOpen
     ? "收起操作面板"
@@ -138,6 +143,18 @@ export function HUD({
           </>
         ) : null}
         <div className="hud-turn">{turnText}</div>
+        {showRematchReadyCheck ? (
+          <div className="hud-ready-check">
+            <div className={`hud-ready-row ${myRematchReady ? "ready" : "waiting"}`}>
+              <span>你</span>
+              <span>{myRematchReady ? "已准备" : "未准备"}</span>
+            </div>
+            <div className={`hud-ready-row ${opponentRematchReady ? "ready" : "waiting"}`}>
+              <span>对手</span>
+              <span>{opponentRematchReady ? "已准备" : "未准备"}</span>
+            </div>
+          </div>
+        ) : null}
         {showReconnectDeadline ? (
           <div className={`hud-reconnect-banner ${reconnectUrgent ? "urgent" : ""}`}>
             对手掉线，{reconnectDeadlineSeconds}s 内重连，否则自动判负

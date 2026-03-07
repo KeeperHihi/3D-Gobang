@@ -81,6 +81,8 @@ export function GameRoomPage({
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const opponentMark: PlayerMark = myMark === "X" ? "O" : "X";
   const opponentReconnectDeadlineAt = snapshot.players[opponentMark].reconnectDeadlineAt;
+  const myRematchReady = snapshot.rematchReady[myMark];
+  const opponentRematchReady = snapshot.rematchReady[opponentMark];
   const hasPendingMove = pendingMove !== null;
   const canPlace =
     snapshot.turn === myMark && !snapshot.winner && connectionStatus === "online" && !hasPendingMove;
@@ -132,7 +134,9 @@ export function GameRoomPage({
         connectionStatus,
         assistEnabled,
         hasPendingMove,
-        canContinueMatch
+        canContinueMatch,
+        myRematchReady,
+        opponentRematchReady
       }),
     [
       assistEnabled,
@@ -141,6 +145,8 @@ export function GameRoomPage({
       hasPendingMove,
       hintMovesForBoard,
       myMark,
+      myRematchReady,
+      opponentRematchReady,
       snapshot.turn,
       snapshot.winner
     ]
@@ -161,7 +167,7 @@ export function GameRoomPage({
       onContinueMatch();
       return;
     }
-    if (smartAction.actionType === "rematch") {
+    if (smartAction.actionType === "rematch" || smartAction.actionType === "opponentReady") {
       onRematch();
       return;
     }
@@ -344,6 +350,8 @@ export function GameRoomPage({
         averageFps={averageFps}
         myConnected={snapshot.players[myMark].connected}
         opponentConnected={snapshot.players[opponentMark].connected}
+        myRematchReady={myRematchReady}
+        opponentRematchReady={opponentRematchReady}
         opponentReconnectRemainingMs={opponentReconnectRemainingMs}
         connectionStatus={connectionStatus}
         onPrimaryAction={handlePrimaryAction}
