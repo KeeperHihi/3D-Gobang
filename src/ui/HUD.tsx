@@ -1,4 +1,5 @@
 import type { PlayerMark, Winner } from "../network/protocol";
+import type { LayoutMode } from "../game/interaction/deviceMode";
 import {
   qualityLevelLabel,
   qualityModeLabel,
@@ -9,6 +10,7 @@ import type { SmartActionState } from "../game/interaction/smartAction";
 import { SmartActionBar } from "./SmartActionBar";
 
 interface HUDProps {
+  layoutMode: LayoutMode;
   roomId: string;
   boardSize: number;
   myMark: PlayerMark;
@@ -62,6 +64,7 @@ function winnerText(winner: Winner, myMark: PlayerMark): string {
 }
 
 export function HUD({
+  layoutMode,
   roomId,
   boardSize,
   myMark,
@@ -87,46 +90,80 @@ export function HUD({
   onRematch,
   onLeave
 }: HUDProps) {
+  const isMobileLayout = layoutMode === "mobile";
   const canRematch = Boolean(winner);
   const turnText = winner
     ? winnerText(winner, myMark)
     : turn === myMark
       ? "轮到你落子"
       : "等待对手落子";
+  const advancedToggleLabel = advancedOpen
+    ? "收起操作面板"
+    : isMobileLayout
+      ? "更多操作"
+      : "展开高级操作";
 
   return (
-    <div className="hud-root">
+    <div className={`hud-root ${isMobileLayout ? "mobile" : "desktop"}`}>
       <div className="hud-card">
         <div className="hud-title">NEBULA CUBE</div>
-        <div className="hud-row">
-          <span>房间</span>
-          <span>{roomId}</span>
-        </div>
-        <div className="hud-row">
-          <span>你的棋子</span>
-          <span>{myMark}</span>
-        </div>
-        <div className="hud-row">
-          <span>网络</span>
-          <span>{connectionLabel(connectionStatus)}</span>
-        </div>
-        <div className="hud-row">
-          <span>你</span>
-          <span>{myConnected ? "在线" : "掉线"}</span>
-        </div>
-        <div className="hud-row">
-          <span>对手</span>
-          <span>{opponentConnected ? "在线" : "掉线"}</span>
-        </div>
+        {!isMobileLayout ? (
+          <>
+            <div className="hud-row">
+              <span>房间</span>
+              <span>{roomId}</span>
+            </div>
+            <div className="hud-row">
+              <span>你的棋子</span>
+              <span>{myMark}</span>
+            </div>
+            <div className="hud-row">
+              <span>网络</span>
+              <span>{connectionLabel(connectionStatus)}</span>
+            </div>
+            <div className="hud-row">
+              <span>你</span>
+              <span>{myConnected ? "在线" : "掉线"}</span>
+            </div>
+            <div className="hud-row">
+              <span>对手</span>
+              <span>{opponentConnected ? "在线" : "掉线"}</span>
+            </div>
+          </>
+        ) : null}
         <div className="hud-turn">{turnText}</div>
-        <SmartActionBar action={smartAction} onAction={onPrimaryAction} />
+        <SmartActionBar action={smartAction} onAction={onPrimaryAction} layoutMode={layoutMode} />
         <div className="hud-actions">
           <button className="hud-button ghost" type="button" onClick={onToggleAdvanced}>
-            {advancedOpen ? "收起高级操作" : "展开高级操作"}
+            {advancedToggleLabel}
           </button>
         </div>
         {advancedOpen ? (
           <div className="hud-advanced-panel">
+            {isMobileLayout ? (
+              <>
+                <div className="hud-row">
+                  <span>房间</span>
+                  <span>{roomId}</span>
+                </div>
+                <div className="hud-row">
+                  <span>你的棋子</span>
+                  <span>{myMark}</span>
+                </div>
+                <div className="hud-row">
+                  <span>网络</span>
+                  <span>{connectionLabel(connectionStatus)}</span>
+                </div>
+                <div className="hud-row">
+                  <span>你</span>
+                  <span>{myConnected ? "在线" : "掉线"}</span>
+                </div>
+                <div className="hud-row">
+                  <span>对手</span>
+                  <span>{opponentConnected ? "在线" : "掉线"}</span>
+                </div>
+              </>
+            ) : null}
             <div className="hud-row">
               <span>聚焦层</span>
               <span>

@@ -5,6 +5,7 @@ import type { BoardCell } from "../game/engine/board";
 import { analyzeMoveHints, type MoveHint } from "../game/engine/moveHints";
 import { createWinLinesIndex } from "../game/engine/winLines";
 import { shouldBlockGlobalSpaceHotkey } from "../game/interaction/hotkey";
+import { detectLayoutMode, type LayoutMode } from "../game/interaction/deviceMode";
 import {
   DEFAULT_QUALITY_LEVEL,
   getQualityProfile,
@@ -64,6 +65,12 @@ export function GameRoomPage({
   const [focusMode, setFocusMode] = useState<"auto" | "manual">("auto");
   const [focusLayer, setFocusLayer] = useState(Math.floor(snapshot.size / 2));
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
+    if (typeof window === "undefined") {
+      return "desktop";
+    }
+    return detectLayoutMode(window);
+  });
   const [qualityLevel, setQualityLevel] = useState<QualityLevel>(() =>
     initialQualityLevelFromMode(qualityMode)
   );
@@ -200,6 +207,26 @@ export function GameRoomPage({
   }, [autoFocusLayer, focusMode, snapshot.size]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const updateLayoutMode = () => {
+      setLayoutMode(detectLayoutMode(window));
+    };
+
+    updateLayoutMode();
+    window.addEventListener("resize", updateLayoutMode);
+    return () => window.removeEventListener("resize", updateLayoutMode);
+  }, []);
+
+  useEffect(() => {
+    if (layoutMode !== "mobile") {
+      return;
+    }
+    setAdvancedOpen(false);
+  }, [layoutMode]);
+
+  useEffect(() => {
     let rafId = 0;
     let frameCount = 0;
     let windowStart = performance.now();
@@ -236,6 +263,10 @@ export function GameRoomPage({
   }, [averageFps, qualityLastSwitchAtMs, qualityLevel, qualityMode]);
 
   useEffect(() => {
+    if (layoutMode === "mobile") {
+      return;
+    }
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code !== "Space" || event.repeat) {
         return;
@@ -254,11 +285,12 @@ export function GameRoomPage({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handlePrimaryAction, smartAction.enabled]);
+  }, [handlePrimaryAction, layoutMode, smartAction.enabled]);
 
   return (
-    <main className="game-page">
+    <main className={`game-page ${layoutMode === "mobile" ? "mobile" : "desktop"}`}>
       <BoardScene
+        layoutMode={layoutMode}
         board={snapshot.board}
         size={snapshot.size}
         canPlace={canPlace}
@@ -271,6 +303,7 @@ export function GameRoomPage({
         onPlace={onPlace}
       />
       <HUD
+        layoutMode={layoutMode}
         roomId={snapshot.roomId}
         boardSize={snapshot.size}
         myMark={myMark}

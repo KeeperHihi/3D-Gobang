@@ -1,8 +1,10 @@
 import type { SmartActionState } from "../game/interaction/smartAction";
+import type { LayoutMode } from "../game/interaction/deviceMode";
 
 interface SmartActionBarProps {
   action: SmartActionState;
   onAction: () => void;
+  layoutMode: LayoutMode;
 }
 
 function actionClassName(actionType: SmartActionState["actionType"]): string {
@@ -21,11 +23,13 @@ function actionClassName(actionType: SmartActionState["actionType"]): string {
   return "smart-action-button";
 }
 
-export function SmartActionBar({ action, onAction }: SmartActionBarProps) {
+export function SmartActionBar({ action, onAction, layoutMode }: SmartActionBarProps) {
+  const isMobile = layoutMode === "mobile";
+
   return (
-    <div className="smart-action-bar">
+    <div className={`smart-action-bar ${isMobile ? "dock" : ""}`}>
       <button
-        className={actionClassName(action.actionType)}
+        className={`${actionClassName(action.actionType)} ${isMobile ? "dock" : ""}`}
         type="button"
         disabled={!action.enabled}
         onClick={onAction}
@@ -33,7 +37,7 @@ export function SmartActionBar({ action, onAction }: SmartActionBarProps) {
         {action.label}
       </button>
       <div className="smart-action-hint">{action.reason}</div>
-      <div className="smart-action-hotkey">快捷键：Space</div>
+      {isMobile ? null : <div className="smart-action-hotkey">快捷键：Space</div>}
     </div>
   );
 }

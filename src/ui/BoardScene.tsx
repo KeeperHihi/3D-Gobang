@@ -5,6 +5,7 @@ import type { Mesh } from "three";
 import type { Coordinate3D, MoveRecord, PlayerMark } from "../network/protocol";
 import { fromLinearIndex } from "../game/engine/board";
 import type { HintPriority, MoveHint } from "../game/engine/moveHints";
+import type { LayoutMode } from "../game/interaction/deviceMode";
 import type { QualityProfile } from "../game/interaction/qualityProfile";
 import { createCameraTarget, useCameraAssist } from "../game/interaction/cameraAssist";
 import { pickCell } from "../game/interaction/pickCell";
@@ -12,6 +13,7 @@ import { pickCell } from "../game/interaction/pickCell";
 const BOARD_SPACING = 1.4;
 
 interface BoardSceneProps {
+  layoutMode: LayoutMode;
   board: number[];
   size: number;
   canPlace: boolean;
@@ -108,6 +110,7 @@ function toWorldPosition(size: number, coordinate: Coordinate3D): [number, numbe
 }
 
 export function BoardScene({
+  layoutMode,
   board,
   size,
   canPlace,
@@ -119,6 +122,7 @@ export function BoardScene({
   pendingMove,
   onPlace
 }: BoardSceneProps) {
+  const isMobileLayout = layoutMode === "mobile";
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const winningSet = useMemo(() => new Set(winningLine ?? []), [winningLine]);
   const pendingCellPosition = useMemo(() => {
@@ -157,7 +161,7 @@ export function BoardScene({
 
   return (
     <div className="board-scene">
-      <Canvas camera={{ position: [9, 8, 9], fov: 42 }}>
+      <Canvas camera={{ position: isMobileLayout ? [10.4, 9.3, 10.4] : [9, 8, 9], fov: 42 }}>
         <color attach="background" args={["#040713"]} />
         <fog attach="fog" args={["#040713", 12, qualityProfile.fogFar]} />
         <ambientLight intensity={0.8} />
@@ -180,10 +184,10 @@ export function BoardScene({
         />
         <OrbitControls
           enablePan={false}
-          minDistance={8}
-          maxDistance={20}
+          minDistance={isMobileLayout ? 9.5 : 8}
+          maxDistance={isMobileLayout ? 22 : 20}
           dampingFactor={0.09}
-          rotateSpeed={0.58}
+          rotateSpeed={isMobileLayout ? 0.42 : 0.58}
         />
 
         <group>
