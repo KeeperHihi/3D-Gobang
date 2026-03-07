@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
+  getQualityProfile,
   QUALITY_SWITCH_MIN_INTERVAL_MS,
   selectQualityLevel
 } from "./qualityProfile";
 
 describe("selectQualityLevel", () => {
+  it("exposes render budget fields by level", () => {
+    const ultra = getQualityProfile("ultra");
+    const low = getQualityProfile("low");
+
+    expect(ultra.cellSegments).toBeGreaterThan(low.cellSegments);
+    expect(ultra.maxHintPulseCount).toBeGreaterThan(low.maxHintPulseCount);
+    expect(ultra.maxWinningPulseCount).toBeGreaterThan(low.maxWinningPulseCount);
+    expect(low.sparklesEnabled).toBe(false);
+  });
+
   it("downgrades one level in auto mode when fps is low", () => {
     const nextLevel = selectQualityLevel({
       mode: "auto",

@@ -123,6 +123,8 @@ function resolveTurnNudgeNotificationPermission(): TurnNudgeNotificationPermissi
 const WIN_LINE_CINEMATIC_DURATION_MS = 2200;
 const LAYER_NAV_INPUT_THROTTLE_MS = 170;
 const LAYER_TAP_LOCK_TTL_MS = 3500;
+const CALM_MODE_ENTER_FPS = 33;
+const CALM_MODE_EXIT_FPS = 48;
 
 export function GameRoomPage({
   snapshot,
@@ -190,6 +192,7 @@ export function GameRoomPage({
   const [qualityLevel, setQualityLevel] = useState<QualityLevel>(() =>
     initialQualityLevelFromMode(qualityMode)
   );
+  const [autoCalmMode, setAutoCalmMode] = useState(false);
   const [qualityLastSwitchAtMs, setQualityLastSwitchAtMs] = useState<number>(0);
   const [averageFps, setAverageFps] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
@@ -364,7 +367,11 @@ export function GameRoomPage({
       }),
     [onboardingProgress, primaryIntent.enabled, shouldShowOnboarding]
   );
-  const qualityProfile = useMemo(() => getQualityProfile(qualityLevel), [qualityLevel]);
+  const effectiveQualityLevel: QualityLevel = autoCalmMode ? "low" : qualityLevel;
+  const qualityProfile = useMemo(
+    () => getQualityProfile(effectiveQualityLevel),
+    [effectiveQualityLevel]
+  );
   const winLineDirector = useMemo(
     () =>
       evaluateWinLineDirector({
@@ -995,6 +1002,7 @@ export function GameRoomPage({
     setSettlementStartedAtMs(null);
     setAutoRematchCountdownStartedAtMs(null);
     setAutoContinueCountdownStartedAtMs(null);
+    setAutoCalmMode(false);
     setOpponentMoveCue(null);
     if (typeof document !== "undefined") {
       setPageVisible(document.visibilityState === "visible");
@@ -1348,6 +1356,25 @@ export function GameRoomPage({
   }, [averageFps, qualityLastSwitchAtMs, qualityLevel, qualityMode]);
 
   useEffect(() => {
+    if (qualityMode !== "auto") {
+      if (autoCalmMode) {
+        setAutoCalmMode(false);
+      }
+      return;
+    }
+    if (averageFps === null || !Number.isFinite(averageFps)) {
+      return;
+    }
+    if (!autoCalmMode && averageFps < CALM_MODE_ENTER_FPS) {
+      setAutoCalmMode(true);
+      return;
+    }
+    if (autoCalmMode && averageFps > CALM_MODE_EXIT_FPS) {
+      setAutoCalmMode(false);
+    }
+  }, [autoCalmMode, averageFps, qualityMode]);
+
+  useEffect(() => {
     if (layoutMode === "mobile") {
       return;
     }
@@ -1417,7 +1444,8 @@ export function GameRoomPage({
         onboardingGuide={onboardingGuide.visible ? onboardingGuide : null}
         advancedOpen={advancedOpen}
         qualityMode={qualityMode}
-        qualityLevel={qualityLevel}
+        qualityLevel={effectiveQualityLevel}
+        calmModeActive={autoCalmMode}
         averageFps={averageFps}
         myConnected={snapshot.players[myMark].connected}
         opponentConnected={opponentConnected}

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Line, OrbitControls, Sparkles, Stars } from "@react-three/drei";
 import type { Mesh } from "three";
@@ -182,6 +182,15 @@ export function BoardScene({
   const isMobileLayout = layoutMode === "mobile";
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const cellSegments = Math.max(10, qualityProfile.cellSegments);
+  const visibleHintMoves = useMemo(
+    () => hintMoves.slice(0, qualityProfile.maxHintPulseCount),
+    [hintMoves, qualityProfile.maxHintPulseCount]
+  );
+  const visibleWinningPulseIndexes = useMemo(
+    () => (winningLine ?? []).slice(0, qualityProfile.maxWinningPulseCount),
+    [qualityProfile.maxWinningPulseCount, winningLine]
+  );
   const winningSet = useMemo(() => new Set(winningLine ?? []), [winningLine]);
   const pendingCellPosition = useMemo(() => {
     if (!pendingMove) {
@@ -213,14 +222,14 @@ export function BoardScene({
   const tapLockStillEmpty = tapLockIndex !== null ? board[tapLockIndex] === 0 : false;
   const hintMap = useMemo(() => {
     const map = new Map<number, HintMeta>();
-    hintMoves.forEach((hint, rank) => {
+    visibleHintMoves.forEach((hint, rank) => {
       map.set(hint.index, {
         priority: hint.priority,
         rank
       });
     });
     return map;
-  }, [hintMoves]);
+  }, [visibleHintMoves]);
   const linePoints = useMemo(() => {
     if (!winningLine) {
       return null;
@@ -231,14 +240,14 @@ export function BoardScene({
     });
   }, [size, winningLine]);
   const winningPulsePoints = useMemo(() => {
-    if (!winningLine || !winLineCinematicActive) {
+    if (!winLineCinematicActive || visibleWinningPulseIndexes.length === 0) {
       return [] as [number, number, number][];
     }
-    return winningLine.map((index) => {
+    return visibleWinningPulseIndexes.map((index) => {
       const coordinate = fromLinearIndex(index, size);
       return toWorldPosition(size, coordinate);
     });
-  }, [size, winLineCinematicActive, winningLine]);
+  }, [size, visibleWinningPulseIndexes, winLineCinematicActive]);
   const opponentMoveBlinkPosition = useMemo(() => {
     if (!opponentMoveCue) {
       return null;
@@ -246,6 +255,13 @@ export function BoardScene({
     return toWorldPosition(size, opponentMoveCue.coordinate);
   }, [opponentMoveCue, size]);
   const otherLayerOpacity = Math.max(0.02, Math.min(1, nonFocusLayerOpacity));
+
+  useEffect(() => {
+    if (canPlace) {
+      return;
+    }
+    setHoveredIndex(null);
+  }, [canPlace]);
 
   return (
     <div
@@ -299,13 +315,15 @@ export function BoardScene({
         <pointLight position={[9, 9, 6]} intensity={28} color="#40d9ff" />
         <pointLight position={[-8, -6, -10]} intensity={20} color="#ff45d4" />
         <Stars radius={80} depth={40} count={qualityProfile.starsCount} factor={4.2} fade saturation={0} />
-        <Sparkles
-          count={qualityProfile.sparklesCount}
-          scale={[20, 20, 20]}
-          speed={qualityProfile.sparklesSpeed}
-          size={qualityProfile.sparklesSize}
-          color="#5fe9ff"
-        />
+        {qualityProfile.sparklesEnabled && qualityProfile.sparklesCount > 0 ? (
+          <Sparkles
+            count={qualityProfile.sparklesCount}
+            scale={[20, 20, 20]}
+            speed={qualityProfile.sparklesSpeed}
+            size={qualityProfile.sparklesSize}
+            color="#5fe9ff"
+          />
+        ) : null}
         <OrbitControls
           enablePan={false}
           minDistance={isMobileLayout ? 9.5 : 8}
@@ -356,51 +374,57 @@ export function BoardScene({
             const emissiveIntensity = emissiveIntensityBase * (inFocusLayer ? 1 : 0.5);
             const scale = hint?.rank === 0 ? 1.16 : isHovered && interactive ? 1.12 : 1;
 
+            const interactiveProps = interactive
+              ? {
+                  onPointerEnter: (event: { stopPropagation: () => void }) => {
+                    event.stopPropagation();
+                    setHoveredIndex(index);
+                  },
+                  onPointerMove: (event: { stopPropagation: () => void }) => {
+                    event.stopPropagation();
+                    setHoveredIndex(index);
+                  },
+                  onPointerLeave: (event: { stopPropagation: () => void }) => {
+                    event.stopPropagation();
+                    setHoveredIndex((current) => (current === index ? null : current));
+                  },
+                  onClick: (event: {
+                    stopPropagation: () => void;
+                    intersections: {
+                      object: unknown;
+                    }[];
+                    object: unknown;
+                  }) => {
+                    event.stopPropagation();
+                    const coordinateFromHit = pickCell(
+                      event.intersections.find((intersection) => intersection.object === event.object)
+                    );
+                    if (!coordinateFromHit) {
+                      return;
+                    }
+                    const tapAssistDecision = evaluateLayerTapAssist({
+                      canPlace,
+                      isEmpty,
+                      inFocusLayer,
+                      targetLayer: coordinateFromHit.z,
+                      currentLayer: focusLayer
+                    });
+                    if (tapAssistDecision.action === "place") {
+                      onPlace(coordinateFromHit);
+                    }
+                  }
+                }
+              : {};
+
             return (
               <mesh
                 key={index}
                 position={toWorldPosition(size, coordinate)}
                 userData={{ cell: coordinate }}
                 scale={scale}
-                onPointerEnter={(event) => {
-                  event.stopPropagation();
-                  if (!interactive) {
-                    return;
-                  }
-                  setHoveredIndex(index);
-                }}
-                onPointerMove={(event) => {
-                  event.stopPropagation();
-                  if (!interactive) {
-                    return;
-                  }
-                  setHoveredIndex(index);
-                }}
-                onPointerLeave={(event) => {
-                  event.stopPropagation();
-                  setHoveredIndex((current) => (current === index ? null : current));
-                }}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  const coordinateFromHit = pickCell(
-                    event.intersections.find((intersection) => intersection.object === event.object)
-                  );
-                  if (!coordinateFromHit) {
-                    return;
-                  }
-                  const tapAssistDecision = evaluateLayerTapAssist({
-                    canPlace,
-                    isEmpty,
-                    inFocusLayer,
-                    targetLayer: coordinateFromHit.z,
-                    currentLayer: focusLayer
-                  });
-                  if (tapAssistDecision.action === "place") {
-                    onPlace(coordinateFromHit);
-                  }
-                }}
+                {...interactiveProps}
               >
-                <sphereGeometry args={[0.29, 32, 32]} />
+                <sphereGeometry args={[0.29, cellSegments, cellSegments]} />
                 <meshStandardMaterial
                   color={color}
                   emissive={emissive}
@@ -414,7 +438,7 @@ export function BoardScene({
             );
           })}
 
-          {hintMoves.map((hint, rank) => (
+          {visibleHintMoves.map((hint, rank) => (
             <HintPulse
               key={hint.index}
               position={toWorldPosition(size, hint.coordinate)}
@@ -427,7 +451,7 @@ export function BoardScene({
 
           {pendingCellPosition && pendingMove && pendingCellStillEmpty ? (
             <mesh position={pendingCellPosition} scale={1.08}>
-              <sphereGeometry args={[0.3, 32, 32]} />
+              <sphereGeometry args={[0.3, cellSegments, cellSegments]} />
               <meshStandardMaterial
                 color={pendingMove.player === "X" ? "#74fdff" : "#ffa0dd"}
                 emissive={pendingMove.player === "X" ? "#66ffff" : "#ff88de"}

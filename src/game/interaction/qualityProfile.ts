@@ -6,9 +6,13 @@ export interface QualityProfile {
   sparklesCount: number;
   sparklesSpeed: number;
   sparklesSize: number;
+  sparklesEnabled: boolean;
   fogFar: number;
   hintPulseSpeed: number;
   hintPulseOpacityScale: number;
+  maxHintPulseCount: number;
+  maxWinningPulseCount: number;
+  cellSegments: number;
   emptyCellOpacityScale: number;
 }
 
@@ -32,9 +36,13 @@ export const QUALITY_PROFILES: Record<QualityLevel, QualityProfile> = {
     sparklesCount: 180,
     sparklesSpeed: 0.36,
     sparklesSize: 2.3,
+    sparklesEnabled: true,
     fogFar: 38,
     hintPulseSpeed: 2.8,
     hintPulseOpacityScale: 1,
+    maxHintPulseCount: 8,
+    maxWinningPulseCount: 7,
+    cellSegments: 30,
     emptyCellOpacityScale: 1
   },
   high: {
@@ -42,9 +50,13 @@ export const QUALITY_PROFILES: Record<QualityLevel, QualityProfile> = {
     sparklesCount: 130,
     sparklesSpeed: 0.32,
     sparklesSize: 2.1,
+    sparklesEnabled: true,
     fogFar: 36,
     hintPulseSpeed: 2.5,
     hintPulseOpacityScale: 0.92,
+    maxHintPulseCount: 6,
+    maxWinningPulseCount: 6,
+    cellSegments: 24,
     emptyCellOpacityScale: 0.95
   },
   medium: {
@@ -52,9 +64,13 @@ export const QUALITY_PROFILES: Record<QualityLevel, QualityProfile> = {
     sparklesCount: 85,
     sparklesSpeed: 0.27,
     sparklesSize: 1.85,
+    sparklesEnabled: true,
     fogFar: 34,
     hintPulseSpeed: 2.1,
     hintPulseOpacityScale: 0.82,
+    maxHintPulseCount: 4,
+    maxWinningPulseCount: 5,
+    cellSegments: 18,
     emptyCellOpacityScale: 0.88
   },
   low: {
@@ -62,9 +78,13 @@ export const QUALITY_PROFILES: Record<QualityLevel, QualityProfile> = {
     sparklesCount: 45,
     sparklesSpeed: 0.22,
     sparklesSize: 1.45,
+    sparklesEnabled: false,
     fogFar: 32,
     hintPulseSpeed: 1.75,
     hintPulseOpacityScale: 0.72,
+    maxHintPulseCount: 2,
+    maxWinningPulseCount: 3,
+    cellSegments: 14,
     emptyCellOpacityScale: 0.8
   }
 };

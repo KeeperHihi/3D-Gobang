@@ -44,6 +44,7 @@ interface HUDProps {
   advancedOpen: boolean;
   qualityMode: QualityMode;
   qualityLevel: QualityLevel;
+  calmModeActive: boolean;
   averageFps: number | null;
   myConnected: boolean;
   opponentConnected: boolean;
@@ -177,6 +178,7 @@ export function HUD({
   advancedOpen,
   qualityMode,
   qualityLevel,
+  calmModeActive,
   averageFps,
   myConnected,
   opponentConnected,
@@ -392,12 +394,15 @@ export function HUD({
   const tapLockCoordinateLabel = tapLockCoordinate
     ? `L${tapLockCoordinate.z + 1} · (${tapLockCoordinate.x + 1}, ${tapLockCoordinate.y + 1})`
     : null;
+  const showMinimalConnectionSpotlight = !advancedOpen && showConnectionSpotlight;
+  const showMinimalReconnectSpotlight = !advancedOpen && showReconnectSpotlight;
+  const showMinimalOnboarding = !advancedOpen && showOnboardingSpotlight && onboardingGuide;
 
   return (
     <div className={`hud-root ${isMobileLayout ? "mobile" : "desktop"}`}>
       <div className="hud-card">
         <div className="hud-title">NEBULA CUBE</div>
-        {!isMobileLayout ? (
+        {advancedOpen && !isMobileLayout ? (
           <>
             <div className="hud-row">
               <span>房间</span>
@@ -422,63 +427,17 @@ export function HUD({
           </>
         ) : null}
         <div className="hud-turn">{turnText}</div>
-        {hudSpotlight.primaryCard ? (
-          <div className={`hud-spotlight-shell ${spotlightToneClass}`}>
-            <div className="hud-spotlight-title">{spotlightTitle(hudSpotlight.primaryCard.id)}</div>
-          </div>
-        ) : null}
-        {showWinLineSummary ? (
-          <div className={`hud-winline-director ${winLineCinematicActive ? "active" : "static"}`}>
-            <div className="hud-winline-director-title">
-              {winLineCinematicActive ? "胜线导演模式" : "胜线解析"}
-            </div>
-            <div className="hud-winline-director-text">{winLineSummary}</div>
-          </div>
-        ) : null}
-        {showConnectionSpotlight ? (
+        {showMinimalConnectionSpotlight ? (
           <div className="hud-spotlight-note critical">
             网络{connectionLabel(connectionStatus)}，请稍候恢复后继续操作
           </div>
         ) : null}
-        {showTurnCountdown ? (
-          <div className={`hud-turn-clock ${turnUrgent ? "urgent" : ""}`}>
-            {turn === myMark ? "你的回合" : "对手回合"} · 剩余 {turnRemainingSeconds}s（以服务器结算为准）
+        {showMinimalReconnectSpotlight ? (
+          <div className={`hud-reconnect-banner ${reconnectUrgent ? "urgent" : ""}`}>
+            对手掉线，{reconnectDeadlineSeconds}s 内重连，否则自动判负
           </div>
         ) : null}
-        {showTimeoutAssistHint ? (
-          <div
-            className={`hud-timeout-assist ${
-              timeoutAssistEnabled
-                ? timeoutAssistUrgency === "armed"
-                  ? "urgent"
-                  : "enabled"
-                : "disabled"
-            }`}
-          >
-            {timeoutAssistText}
-          </div>
-        ) : null}
-        {showAutoRematchHint ? (
-          <div
-            className={`hud-auto-rematch ${
-              !autoRematchEnabled
-                ? "disabled"
-                : autoRematchPhase === "countdown"
-                  ? "countdown"
-                  : autoRematchPhase === "cancelled"
-                    ? "cancelled"
-                    : "enabled"
-            }`}
-          >
-            <span>{autoRematchText}</span>
-            {autoRematchCanCancel ? (
-              <button className="hud-mini-button" type="button" onClick={onCancelAutoRematch}>
-                取消自动准备
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-        {showOnboardingSpotlight && onboardingGuide ? (
+        {showMinimalOnboarding ? (
           <div className="hud-coach-card">
             <div className="hud-coach-header">
               <span>新手引导</span>
@@ -504,86 +463,178 @@ export function HUD({
             </div>
           </div>
         ) : null}
-        {showReadyCheckSpotlight ? (
-          <div className="hud-ready-check">
-            <div className={`hud-ready-row ${myRematchReady ? "ready" : "waiting"}`}>
-              <span>你</span>
-              <span>{myRematchReady ? "已准备" : "未准备"}</span>
-            </div>
-            <div className={`hud-ready-row ${opponentRematchReady ? "ready" : "waiting"}`}>
-              <span>对手</span>
-              <span>{opponentRematchReady ? "已准备" : "未准备"}</span>
-            </div>
-          </div>
-        ) : null}
-        {showRematchWaitHint ? (
-          <div className={`hud-rematch-wait ${rematchWaitPhase === "fallback-ready" ? "fallback-ready" : ""}`}>
-            {rematchWaitText}
-          </div>
-        ) : null}
-        {showAutoContinueHint ? (
-          <div
-            className={`hud-auto-continue ${
-              autoContinuePhase === "countdown"
-                ? "countdown"
-                : autoContinuePhase === "cancelled"
-                  ? "cancelled"
-                  : "enabled"
-            }`}
-          >
-            <span>{autoContinueText}</span>
-            {autoContinueCanCancel ? (
-              <button className="hud-mini-button" type="button" onClick={onCancelAutoContinue}>
-                取消自动继续
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-        {showReconnectSpotlight ? (
-          <div className={`hud-reconnect-banner ${reconnectUrgent ? "urgent" : ""}`}>
-            对手掉线，{reconnectDeadlineSeconds}s 内重连，否则自动判负
-          </div>
-        ) : null}
-        {showTurnNudgePermissionPromptSpotlight ? (
-          <div className="hud-turn-nudge-permission prompt">
-            <div className="hud-turn-nudge-permission-text">{turnNudgePermissionPromptText}</div>
-            <div className="hud-actions">
-              <button
-                className="hud-mini-button active"
-                type="button"
-                onClick={onRequestTurnNudgePermission}
-                disabled={!turnNudgePermissionCanRequest || turnNudgePermissionRequestPending}
-              >
-                {turnNudgePermissionRequestPending ? "请求中..." : "启用系统通知"}
-              </button>
-              <button
-                className="hud-mini-button"
-                type="button"
-                onClick={onDismissTurnNudgePermissionHint}
-              >
-                稍后提醒
-              </button>
-            </div>
-          </div>
-        ) : null}
-        {showTurnNudgePermissionDeniedSpotlight ? (
-          <div className="hud-turn-nudge-permission denied">
-            <div className="hud-turn-nudge-permission-text">{turnNudgePermissionDeniedText}</div>
-            <div className="hud-actions">
-              <button className="hud-mini-button" type="button" onClick={onDismissTurnNudgePermissionHint}>
-                稍后提醒
-              </button>
-            </div>
-          </div>
-        ) : null}
-        {secondaryItems.length > 0 ? (
-          <div className="hud-secondary-list">
-            {secondaryItems.map((item, index) => (
-              <div key={`${item}-${index}`} className="hud-secondary-item">
-                {item}
+        {advancedOpen ? (
+          <>
+            {hudSpotlight.primaryCard ? (
+              <div className={`hud-spotlight-shell ${spotlightToneClass}`}>
+                <div className="hud-spotlight-title">{spotlightTitle(hudSpotlight.primaryCard.id)}</div>
               </div>
-            ))}
-          </div>
+            ) : null}
+            {showWinLineSummary ? (
+              <div className={`hud-winline-director ${winLineCinematicActive ? "active" : "static"}`}>
+                <div className="hud-winline-director-title">
+                  {winLineCinematicActive ? "胜线导演模式" : "胜线解析"}
+                </div>
+                <div className="hud-winline-director-text">{winLineSummary}</div>
+              </div>
+            ) : null}
+            {showConnectionSpotlight ? (
+              <div className="hud-spotlight-note critical">
+                网络{connectionLabel(connectionStatus)}，请稍候恢复后继续操作
+              </div>
+            ) : null}
+            {showTurnCountdown ? (
+              <div className={`hud-turn-clock ${turnUrgent ? "urgent" : ""}`}>
+                {turn === myMark ? "你的回合" : "对手回合"} · 剩余 {turnRemainingSeconds}s（以服务器结算为准）
+              </div>
+            ) : null}
+            {showTimeoutAssistHint ? (
+              <div
+                className={`hud-timeout-assist ${
+                  timeoutAssistEnabled
+                    ? timeoutAssistUrgency === "armed"
+                      ? "urgent"
+                      : "enabled"
+                    : "disabled"
+                }`}
+              >
+                {timeoutAssistText}
+              </div>
+            ) : null}
+            {showAutoRematchHint ? (
+              <div
+                className={`hud-auto-rematch ${
+                  !autoRematchEnabled
+                    ? "disabled"
+                    : autoRematchPhase === "countdown"
+                      ? "countdown"
+                      : autoRematchPhase === "cancelled"
+                        ? "cancelled"
+                        : "enabled"
+                }`}
+              >
+                <span>{autoRematchText}</span>
+                {autoRematchCanCancel ? (
+                  <button className="hud-mini-button" type="button" onClick={onCancelAutoRematch}>
+                    取消自动准备
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {showOnboardingSpotlight && onboardingGuide ? (
+              <div className="hud-coach-card">
+                <div className="hud-coach-header">
+                  <span>新手引导</span>
+                  <span>
+                    {onboardingGuide.stepIndex}/{onboardingGuide.totalSteps}
+                  </span>
+                </div>
+                <div className="hud-coach-title">{onboardingGuide.title}</div>
+                <div className="hud-coach-detail">{onboardingGuide.detail}</div>
+                <div className="hud-actions">
+                  {onboardingGuide.primaryActionLabel ? (
+                    <button
+                      className="hud-mini-button active"
+                      type="button"
+                      onClick={onOnboardingPrimaryAction}
+                    >
+                      {onboardingGuide.primaryActionLabel}
+                    </button>
+                  ) : null}
+                  <button className="hud-mini-button" type="button" onClick={onOnboardingSkip}>
+                    跳过引导
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {showReadyCheckSpotlight ? (
+              <div className="hud-ready-check">
+                <div className={`hud-ready-row ${myRematchReady ? "ready" : "waiting"}`}>
+                  <span>你</span>
+                  <span>{myRematchReady ? "已准备" : "未准备"}</span>
+                </div>
+                <div className={`hud-ready-row ${opponentRematchReady ? "ready" : "waiting"}`}>
+                  <span>对手</span>
+                  <span>{opponentRematchReady ? "已准备" : "未准备"}</span>
+                </div>
+              </div>
+            ) : null}
+            {showRematchWaitHint ? (
+              <div
+                className={`hud-rematch-wait ${rematchWaitPhase === "fallback-ready" ? "fallback-ready" : ""}`}
+              >
+                {rematchWaitText}
+              </div>
+            ) : null}
+            {showAutoContinueHint ? (
+              <div
+                className={`hud-auto-continue ${
+                  autoContinuePhase === "countdown"
+                    ? "countdown"
+                    : autoContinuePhase === "cancelled"
+                      ? "cancelled"
+                      : "enabled"
+                }`}
+              >
+                <span>{autoContinueText}</span>
+                {autoContinueCanCancel ? (
+                  <button className="hud-mini-button" type="button" onClick={onCancelAutoContinue}>
+                    取消自动继续
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {showReconnectSpotlight ? (
+              <div className={`hud-reconnect-banner ${reconnectUrgent ? "urgent" : ""}`}>
+                对手掉线，{reconnectDeadlineSeconds}s 内重连，否则自动判负
+              </div>
+            ) : null}
+            {showTurnNudgePermissionPromptSpotlight ? (
+              <div className="hud-turn-nudge-permission prompt">
+                <div className="hud-turn-nudge-permission-text">{turnNudgePermissionPromptText}</div>
+                <div className="hud-actions">
+                  <button
+                    className="hud-mini-button active"
+                    type="button"
+                    onClick={onRequestTurnNudgePermission}
+                    disabled={!turnNudgePermissionCanRequest || turnNudgePermissionRequestPending}
+                  >
+                    {turnNudgePermissionRequestPending ? "请求中..." : "启用系统通知"}
+                  </button>
+                  <button
+                    className="hud-mini-button"
+                    type="button"
+                    onClick={onDismissTurnNudgePermissionHint}
+                  >
+                    稍后提醒
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {showTurnNudgePermissionDeniedSpotlight ? (
+              <div className="hud-turn-nudge-permission denied">
+                <div className="hud-turn-nudge-permission-text">{turnNudgePermissionDeniedText}</div>
+                <div className="hud-actions">
+                  <button
+                    className="hud-mini-button"
+                    type="button"
+                    onClick={onDismissTurnNudgePermissionHint}
+                  >
+                    稍后提醒
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {secondaryItems.length > 0 ? (
+              <div className="hud-secondary-list">
+                {secondaryItems.map((item, index) => (
+                  <div key={`${item}-${index}`} className="hud-secondary-item">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </>
         ) : null}
         <div className="hud-layer-rail">
           <div className="hud-layer-rail-header">
@@ -705,6 +756,10 @@ export function HUD({
             <div className="hud-row">
               <span>渲染档位</span>
               <span>{qualityLevelLabel(qualityLevel)}</span>
+            </div>
+            <div className="hud-row">
+              <span>冷静模式</span>
+              <span>{calmModeActive ? "已触发" : "未触发"}</span>
             </div>
             <div className="hud-row">
               <span>实时帧率</span>
