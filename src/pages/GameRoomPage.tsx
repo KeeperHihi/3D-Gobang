@@ -462,6 +462,7 @@ export function GameRoomPage({
   const canContinueMatch = canContinueMatchByOffline || canContinueMatchByReadyTimeout;
   const continueMatchReason =
     canContinueMatchByOffline ? "opponentOffline" : canContinueMatchByReadyTimeout ? "readyTimeout" : null;
+  const canObserveBoard = boardSceneReady && !boardSceneLoadFailed;
   const smartAction = useMemo(
     () =>
       createSmartActionState({
@@ -472,6 +473,7 @@ export function GameRoomPage({
         myMark,
         hints: hintMovesForBoard,
         connectionStatus,
+        canObserveBoard,
         assistEnabled,
         hasPendingMove,
         canContinueMatch,
@@ -482,6 +484,7 @@ export function GameRoomPage({
       }),
     [
       assistEnabled,
+      canObserveBoard,
       canContinueMatch,
       continueMatchReason,
       connectionStatus,
@@ -506,7 +509,7 @@ export function GameRoomPage({
     if (snapshot.winner) {
       return primaryIntent;
     }
-    const boardActionReady = boardSceneReady && !boardSceneLoadFailed;
+    const boardActionReady = canObserveBoard;
     if (boardActionReady) {
       return primaryIntent;
     }
@@ -524,8 +527,7 @@ export function GameRoomPage({
     };
   }, [
     boardLoadRecoveryDecision.status,
-    boardSceneLoadFailed,
-    boardSceneReady,
+    canObserveBoard,
     primaryIntent,
     snapshot.winner
   ]);
@@ -2078,7 +2080,7 @@ export function GameRoomPage({
         opponentRematchReady={opponentRematchReady}
         opponentReconnectRemainingMs={opponentReconnectRemainingMs}
         connectionStatus={connectionStatus}
-        canObserveBoard={boardSceneReady && !boardSceneLoadFailed}
+        canObserveBoard={canObserveBoard}
         onPrimaryAction={handlePrimaryAction}
         onToggleTimeoutAssist={handleToggleTimeoutAssist}
         onToggleTurnNudge={handleToggleTurnNudge}

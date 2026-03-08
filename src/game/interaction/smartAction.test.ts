@@ -24,6 +24,7 @@ function createStateFixture(params?: {
   myRematchReady?: boolean;
   opponentRematchReady?: boolean;
   connectionStatus?: "connecting" | "online" | "reconnecting" | "offline";
+  canObserveBoard?: boolean;
 }) {
   return createSmartActionState({
     snapshot: {
@@ -39,7 +40,8 @@ function createStateFixture(params?: {
     continueSubmitting: params?.continueSubmitting ?? false,
     myRematchReady: params?.myRematchReady ?? false,
     opponentRematchReady: params?.opponentRematchReady ?? false,
-    connectionStatus: params?.connectionStatus ?? "online"
+    connectionStatus: params?.connectionStatus ?? "online",
+    canObserveBoard: params?.canObserveBoard ?? true
   });
 }
 
@@ -202,7 +204,8 @@ describe("createSmartActionState", () => {
   it("disables action when connection is not online", () => {
     const state = createStateFixture({
       connectionStatus: "reconnecting",
-      hints: [createHint("win")]
+      hints: [createHint("win")],
+      canObserveBoard: true
     });
 
     expect(state.actionType).toBe("connection");
@@ -211,14 +214,45 @@ describe("createSmartActionState", () => {
     expect(state.reason).toContain("切层观察");
   });
 
+  it("omits observation hint when reconnecting and board is not observable", () => {
+    const state = createStateFixture({
+      connectionStatus: "reconnecting",
+      canObserveBoard: false
+    });
+
+    expect(state.actionType).toBe("connection");
+    expect(state.reason).toBe("网络重连中，请稍候");
+  });
+
   it("keeps actionable observation hint when offline", () => {
     const state = createStateFixture({
-      connectionStatus: "offline"
+      connectionStatus: "offline",
+      canObserveBoard: true
     });
 
     expect(state.actionType).toBe("connection");
     expect(state.enabled).toBe(false);
     expect(state.reason).toContain("离线");
     expect(state.reason).toContain("切层观察");
+  });
+
+  it("omits observation hint when offline and board is not observable", () => {
+    const state = createStateFixture({
+      connectionStatus: "offline",
+      canObserveBoard: false
+    });
+
+    expect(state.actionType).toBe("connection");
+    expect(state.reason).toBe("当前离线，暂不可操作");
+  });
+
+  it("keeps neutral connection hint while connecting", () => {
+    const state = createStateFixture({
+      connectionStatus: "connecting",
+      canObserveBoard: false
+    });
+
+    expect(state.actionType).toBe("connection");
+    expect(state.reason).toBe("正在连接服务器");
   });
 });

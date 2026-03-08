@@ -1,5 +1,6 @@
 import type { Coordinate3D, PlayerMark, RoomSnapshot, Winner } from "../../network/protocol";
 import type { MoveHint } from "../engine/moveHints";
+import { evaluateConnectionGuidance } from "./connectionGuidance";
 
 export type ConnectionStatus = "connecting" | "online" | "reconnecting" | "offline";
 export type ContinueMatchReason = "opponentOffline" | "readyTimeout";
@@ -32,6 +33,7 @@ interface SmartActionInput {
   myMark: PlayerMark;
   hints: MoveHint[];
   connectionStatus: ConnectionStatus;
+  canObserveBoard: boolean;
   assistEnabled: boolean;
   hasPendingMove: boolean;
   canContinueMatch: boolean;
@@ -42,16 +44,6 @@ interface SmartActionInput {
 }
 
 const OBSERVATION_HINT = "可点击棋盘切层观察";
-
-function connectionReason(status: ConnectionStatus): string {
-  if (status === "connecting") {
-    return "正在连接服务器";
-  }
-  if (status === "reconnecting") {
-    return `网络重连中，请稍候，${OBSERVATION_HINT}`;
-  }
-  return `当前离线，暂不可操作，${OBSERVATION_HINT}`;
-}
 
 function winnerReason(winner: Winner, myMark: PlayerMark): string {
   if (winner === "draw") {
@@ -79,6 +71,7 @@ export function createSmartActionState(input: SmartActionInput): SmartActionStat
     myMark,
     hints,
     connectionStatus,
+    canObserveBoard,
     assistEnabled,
     hasPendingMove,
     canContinueMatch,
@@ -89,11 +82,15 @@ export function createSmartActionState(input: SmartActionInput): SmartActionStat
   } = input;
 
   if (connectionStatus !== "online") {
+    const connectionGuidance = evaluateConnectionGuidance({
+      connectionStatus,
+      canObserveBoard
+    });
     return {
       actionType: "connection",
       label: "连接中",
       enabled: false,
-      reason: connectionReason(connectionStatus),
+      reason: connectionGuidance.primaryHint ?? "正在连接服务器",
       target: null
     };
   }
