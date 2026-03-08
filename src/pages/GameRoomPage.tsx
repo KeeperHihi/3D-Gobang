@@ -81,6 +81,8 @@ import {
 } from "../game/interaction/focusGuard";
 import { evaluateFocusGuardCue } from "../game/interaction/focusGuardCue";
 import {
+  createFocusGuardInteractionCue,
+  createLayerFocusInteractionCue,
   resolveCueAfterTick,
   resolveNextCue,
   type InteractionCue
@@ -1056,18 +1058,11 @@ export function GameRoomPage({
         nowMs: now,
         lastShownAtMs: layerFocusCueLastShownAtMsRef.current
       });
-      if (!cueDecision.shouldShow) {
+      const incomingCue = createLayerFocusInteractionCue(cueDecision, now);
+      if (!incomingCue) {
         return;
       }
       layerFocusCueLastShownAtMsRef.current = cueDecision.shownAtMs;
-      const incomingCue: InteractionCue = {
-        kind: "tap-focus",
-        tone: "focus-cue",
-        message: cueDecision.message ?? "",
-        priority: 40,
-        shownAtMs: cueDecision.shownAtMs ?? now,
-        expiresAtMs: cueDecision.expiresAtMs ?? now
-      };
       setActiveInteractionCue((current) => resolveNextCue(current, incomingCue, now));
     },
     [
@@ -1535,16 +1530,9 @@ export function GameRoomPage({
         nowMs,
         lastShownAtMs: focusGuardCueLastShownAtMsRef.current
       });
-      if (cueDecision.shouldShow) {
+      const incomingCue = createFocusGuardInteractionCue(cueDecision, nowMs);
+      if (incomingCue) {
         focusGuardCueLastShownAtMsRef.current = cueDecision.shownAtMs;
-        const incomingCue: InteractionCue = {
-          kind: "focus-guard",
-          tone: "focus-guard-cue",
-          message: cueDecision.message ?? "",
-          priority: 60,
-          shownAtMs: cueDecision.shownAtMs ?? nowMs,
-          expiresAtMs: cueDecision.expiresAtMs ?? nowMs
-        };
         setActiveInteractionCue((current) => resolveNextCue(current, incomingCue, nowMs));
       }
     }

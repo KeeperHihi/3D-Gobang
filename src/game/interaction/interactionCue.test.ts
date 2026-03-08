@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  createFocusGuardInteractionCue,
+  createInteractionCue,
+  createLayerFocusInteractionCue,
   resolveCueAfterTick,
   resolveNextCue,
   type InteractionCue
@@ -85,5 +88,64 @@ describe("resolveCueAfterTick", () => {
     );
 
     expect(next).toBeNull();
+  });
+});
+
+describe("interaction cue factory", () => {
+  it("creates tap-focus cue with mapped tone and priority", () => {
+    const cue = createLayerFocusInteractionCue(
+      {
+        shouldShow: true,
+        message: "已切到 L4，再次点击空位即可落子",
+        shownAtMs: 12_000,
+        expiresAtMs: 13_000
+      },
+      11_500
+    );
+
+    expect(cue).toEqual({
+      kind: "tap-focus",
+      tone: "focus-cue",
+      message: "已切到 L4，再次点击空位即可落子",
+      priority: 40,
+      shownAtMs: 12_000,
+      expiresAtMs: 13_000
+    });
+  });
+
+  it("creates focus-guard cue with mapped tone and priority", () => {
+    const cue = createFocusGuardInteractionCue(
+      {
+        shouldShow: true,
+        message: "轮到你了，已切回推荐层 L3",
+        shownAtMs: 20_100,
+        expiresAtMs: 21_300
+      },
+      20_000
+    );
+
+    expect(cue).toEqual({
+      kind: "focus-guard",
+      tone: "focus-guard-cue",
+      message: "轮到你了，已切回推荐层 L3",
+      priority: 60,
+      shownAtMs: 20_100,
+      expiresAtMs: 21_300
+    });
+  });
+
+  it("returns null when decision should not show", () => {
+    const cue = createInteractionCue(
+      "tap-focus",
+      {
+        shouldShow: false,
+        message: null,
+        shownAtMs: null,
+        expiresAtMs: null
+      },
+      15_000
+    );
+
+    expect(cue).toBeNull();
   });
 });

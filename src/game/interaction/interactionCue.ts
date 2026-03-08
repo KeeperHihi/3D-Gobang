@@ -1,3 +1,6 @@
+import type { FocusGuardCueDecision } from "./focusGuardCue";
+import type { LayerFocusCueDecision } from "./layerFocusCue";
+
 export type InteractionCueKind = "focus-guard" | "tap-focus";
 
 export type InteractionCueTone = "focus-guard-cue" | "focus-cue";
@@ -9,6 +12,63 @@ export interface InteractionCue {
   priority: number;
   shownAtMs: number;
   expiresAtMs: number;
+}
+
+interface InteractionCueSpec {
+  tone: InteractionCueTone;
+  priority: number;
+}
+
+interface InteractionCueDecisionLike {
+  shouldShow: boolean;
+  message: string | null;
+  shownAtMs: number | null;
+  expiresAtMs: number | null;
+}
+
+const INTERACTION_CUE_SPECS: Record<InteractionCueKind, InteractionCueSpec> = {
+  "tap-focus": {
+    tone: "focus-cue",
+    priority: 40
+  },
+  "focus-guard": {
+    tone: "focus-guard-cue",
+    priority: 60
+  }
+};
+
+export function createInteractionCue(
+  kind: InteractionCueKind,
+  decision: InteractionCueDecisionLike,
+  nowMs: number
+): InteractionCue | null {
+  if (!decision.shouldShow) {
+    return null;
+  }
+
+  const spec = INTERACTION_CUE_SPECS[kind];
+  return {
+    kind,
+    tone: spec.tone,
+    message: decision.message ?? "",
+    priority: spec.priority,
+    shownAtMs: decision.shownAtMs ?? nowMs,
+    expiresAtMs: decision.expiresAtMs ?? nowMs
+  };
+}
+
+export function createLayerFocusInteractionCue(
+  decision: LayerFocusCueDecision,
+  nowMs: number
+): InteractionCue | null {
+  return createInteractionCue("tap-focus", decision, nowMs);
+}
+
+export function createFocusGuardInteractionCue(
+  decision: FocusGuardCueDecision,
+  nowMs: number
+): InteractionCue | null {
+  return createInteractionCue("focus-guard", decision, nowMs);
 }
 
 export function resolveCueAfterTick(
