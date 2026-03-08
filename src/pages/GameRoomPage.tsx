@@ -2040,6 +2040,7 @@ export function GameRoomPage({
         opponentRematchReady={opponentRematchReady}
         opponentReconnectRemainingMs={opponentReconnectRemainingMs}
         connectionStatus={connectionStatus}
+        canObserveBoard={boardSceneReady && !boardSceneLoadFailed}
         onPrimaryAction={handlePrimaryAction}
         onToggleTimeoutAssist={handleToggleTimeoutAssist}
         onToggleTurnNudge={handleToggleTurnNudge}

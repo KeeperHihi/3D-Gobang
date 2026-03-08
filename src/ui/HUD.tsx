@@ -20,6 +20,7 @@ import type { RematchWaitPhase } from "../game/interaction/rematchWait";
 import type { TurnNudgePermissionPhase } from "../game/interaction/turnNudgePermission";
 import type { HudSpotlightCardId, HudSpotlightDecision } from "../game/interaction/hudSpotlight";
 import type { LayerQuickNavDecision } from "../game/interaction/layerQuickNav";
+import { evaluateConnectionGuidance } from "../game/interaction/connectionGuidance";
 import { SmartActionBar } from "./SmartActionBar";
 
 interface HUDProps {
@@ -71,6 +72,7 @@ interface HUDProps {
   opponentRematchReady: boolean;
   opponentReconnectRemainingMs: number | null;
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
+  canObserveBoard: boolean;
   onPrimaryAction: () => void;
   onToggleTimeoutAssist: () => void;
   onToggleTurnNudge: () => void;
@@ -201,6 +203,7 @@ export function HUD({
   opponentRematchReady,
   opponentReconnectRemainingMs,
   connectionStatus,
+  canObserveBoard,
   onPrimaryAction,
   onToggleTimeoutAssist,
   onToggleTurnNudge,
@@ -326,6 +329,10 @@ export function HUD({
     primaryCardId === "turn-nudge-denied" && showTurnNudgePermissionDenied;
   const turnNudgePermissionPromptText = "启用系统通知后，切后台也能及时收到“轮到你了”提醒";
   const turnNudgePermissionDeniedText = "浏览器已禁用系统通知，可在浏览器设置中手动开启";
+  const connectionGuidance = evaluateConnectionGuidance({
+    connectionStatus,
+    canObserveBoard
+  });
   const spotlightToneClass =
     hudSpotlight.primaryCard?.tone === "critical"
       ? "critical"
@@ -335,7 +342,7 @@ export function HUD({
   const secondaryItems = hudSpotlight.secondaryItems
     .map((item) => {
       if (item.id === "connection") {
-        return `网络${connectionLabel(connectionStatus)}，暂不可执行主操作`;
+        return connectionGuidance.secondaryHint;
       }
       if (item.id === "reconnect") {
         return `对手掉线，${reconnectDeadlineSeconds ?? 0}s 内未重连将自动判负`;
@@ -419,7 +426,7 @@ export function HUD({
         <div className="hud-turn">{turnText}</div>
         {showMinimalConnectionSpotlight ? (
           <div className="hud-spotlight-note critical">
-            网络{connectionLabel(connectionStatus)}，请稍候恢复后继续操作
+            {connectionGuidance.primaryHint}
           </div>
         ) : null}
         {showMinimalReconnectSpotlight ? (
@@ -470,7 +477,7 @@ export function HUD({
             ) : null}
             {showConnectionSpotlight ? (
               <div className="hud-spotlight-note critical">
-                网络{connectionLabel(connectionStatus)}，请稍候恢复后继续操作
+                {connectionGuidance.primaryHint}
               </div>
             ) : null}
             {showTurnCountdown ? (
