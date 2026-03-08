@@ -35,6 +35,7 @@ interface MatchPageProps {
   challengeNotice: string | null;
   onDisplayNameChange: (displayName: string) => void;
   onSendChallenge: (targetSocketId: string) => void;
+  onSpectate: (targetSocketId: string) => void;
   onRespondChallenge: (accept: boolean) => void;
   onCancelOutgoingChallenge: () => void;
 }
@@ -139,6 +140,7 @@ export function MatchPage({
   challengeNotice,
   onDisplayNameChange,
   onSendChallenge,
+  onSpectate,
   onRespondChallenge,
   onCancelOutgoingChallenge
 }: MatchPageProps) {
@@ -441,6 +443,27 @@ export function MatchPage({
           ) : (
             challengablePlayers.map((player) => {
               const canChallenge = player.status === "idle" && !isQueuing && outgoingChallenge === null;
+              const canSpectate = player.status === "in-game" && !isQueuing;
+              const actionLabel =
+                player.status === "idle"
+                  ? "发起挑战"
+                  : player.status === "in-game"
+                    ? "观战"
+                    : player.status === "queuing"
+                      ? "匹配中"
+                      : "处理中";
+              const actionDisabled = player.status === "idle" ? !canChallenge : !canSpectate;
+              const actionClassName =
+                player.status === "in-game"
+                  ? "secondary-button match-online-action spectate"
+                  : "secondary-button match-online-action";
+              const onActionClick = () => {
+                if (player.status === "in-game") {
+                  onSpectate(player.socketId);
+                  return;
+                }
+                onSendChallenge(player.socketId);
+              };
               return (
                 <div key={player.socketId} className="match-online-item">
                   <div>
@@ -448,12 +471,12 @@ export function MatchPage({
                     <p className={`match-online-status ${player.status}`}>{presenceStatusText(player.status)}</p>
                   </div>
                   <button
-                    className="secondary-button"
+                    className={actionClassName}
                     type="button"
-                    disabled={!canChallenge}
-                    onClick={() => onSendChallenge(player.socketId)}
+                    disabled={actionDisabled}
+                    onClick={onActionClick}
                   >
-                    发起挑战
+                    {actionLabel}
                   </button>
                 </div>
               );

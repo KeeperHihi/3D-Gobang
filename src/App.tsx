@@ -47,14 +47,23 @@ type ConnectionState = "connecting" | "online" | "reconnecting" | "offline";
 type MatchPhase = "idle" | "queuing" | "matched";
 type RoomEntryMode = "fresh" | "resumed";
 
-interface RoomSession {
+interface PlayerRoomSession {
+  role: "player";
   roomId: string;
   seatToken: string;
   mark: PlayerMark;
 }
 
+interface SpectatorRoomSession {
+  role: "spectator";
+  roomId: string;
+  spectatorToken: string;
+}
+
+type RoomSession = PlayerRoomSession | SpectatorRoomSession;
+
 interface ContinueMatchBackup {
-  session: RoomSession;
+  session: PlayerRoomSession;
   snapshot: RoomSnapshot;
   roomEntryMode: RoomEntryMode;
 }
@@ -105,14 +114,23 @@ function readSessionFromStorage(): RoomSession | null {
     return null;
   }
   try {
-    const parsed = JSON.parse(raw) as RoomSession;
+    const parsed = JSON.parse(raw) as Partial<PlayerRoomSession>;
     if (!parsed.roomId || !parsed.seatToken || !parsed.mark) {
       return null;
     }
-    return parsed;
+    return {
+      role: "player",
+      roomId: parsed.roomId,
+      seatToken: parsed.seatToken,
+      mark: parsed.mark
+    };
   } catch {
     return null;
   }
+}
+
+function isSpectatorSession(session: RoomSession | null): session is SpectatorRoomSession {
+  return session?.role === "spectator";
 }
 
 function readQualityModeFromStorage(): QualityMode {
@@ -124,7 +142,7 @@ function readQualityModeFromStorage(): QualityMode {
 }
 
 function persistSession(session: RoomSession | null) {
-  if (!session) {
+  if (!session || session.role !== "player") {
     localStorage.removeItem(SESSION_STORAGE_KEY);
     return;
   }
@@ -686,10 +704,18 @@ export default function App() {
 
         const stateRequestSession = shouldRestore ? backup.session : sessionRef.current;
         if (socket.connected && stateRequestSession) {
-          socket.emit("room:state:request", {
-            roomId: stateRequestSession.roomId,
-            seatToken: stateRequestSession.seatToken
-          });
+          socket.emit(
+            "room:state:request",
+            stateRequestSession.role === "player"
+              ? {
+                  roomId: stateRequestSession.roomId,
+                  seatToken: stateRequestSession.seatToken
+                }
+              : {
+                  roomId: stateRequestSession.roomId,
+                  spectatorToken: stateRequestSession.spectatorToken
+                }
+          );
         }
       }
 
@@ -709,10 +735,17 @@ export default function App() {
       socket.emit("lobby:presence:request");
       const currentSession = sessionRef.current;
       if (currentSession) {
-        socket.emit("room:resume", {
-          roomId: currentSession.roomId,
-          seatToken: currentSession.seatToken
-        });
+        if (currentSession.role === "player") {
+          socket.emit("room:resume", {
+            roomId: currentSession.roomId,
+            seatToken: currentSession.seatToken
+          });
+        } else {
+          socket.emit("room:state:request", {
+            roomId: currentSession.roomId,
+            spectatorToken: currentSession.spectatorToken
+          });
+        }
         return;
       }
 
@@ -732,6 +765,17 @@ export default function App() {
       setIncomingChallenge(null);
       setOutgoingChallenge(null);
       setChatMessages([]);
+      if (isSpectatorSession(sessionRef.current)) {
+        sessionRef.current = null;
+        snapshotRef.current = null;
+        setSession(null);
+        setSnapshot(null);
+        setMatchPhase("idle");
+        setRoomEntryMode("fresh");
+        resetQueueState();
+        setErrorMessage("观战连接已中断，请重新进入观战");
+        return;
+      }
       if (!sessionRef.current) {
         setMatchPhase("idle");
         resetQueueState();
@@ -800,9 +844,10 @@ export default function App() {
 
     socket.on("queue:matched", ({ roomId, mark, seatToken, snapshot: nextSnapshot }) => {
       finalizeContinueMatchSuccess();
-      sessionRef.current = { roomId, mark, seatToken };
+      const nextSession: PlayerRoomSession = { role: "player", roomId, mark, seatToken };
+      sessionRef.current = nextSession;
       snapshotRef.current = nextSnapshot;
-      setSession({ roomId, mark, seatToken });
+      setSession(nextSession);
       setSnapshot(nextSnapshot);
       setMatchPhase("matched");
       setRoomEntryMode("fresh");
@@ -817,9 +862,10 @@ export default function App() {
     });
 
     socket.on("room:resumed", ({ roomId, mark, seatToken, snapshot: nextSnapshot }) => {
-      sessionRef.current = { roomId, mark, seatToken };
+      const resumedSession: PlayerRoomSession = { role: "player", roomId, mark, seatToken };
+      sessionRef.current = resumedSession;
       snapshotRef.current = nextSnapshot;
-      setSession({ roomId, mark, seatToken });
+      setSession(resumedSession);
       setSnapshot(nextSnapshot);
       setMatchPhase("matched");
       setRoomEntryMode("resumed");
@@ -831,6 +877,32 @@ export default function App() {
       setIncomingChallenge(null);
       setOutgoingChallenge(null);
       setChallengeNotice(null);
+    });
+
+    socket.on("room:spectate:joined", ({ roomId, spectatorToken, snapshot: nextSnapshot }) => {
+      const spectateSession: SpectatorRoomSession = {
+        role: "spectator",
+        roomId,
+        spectatorToken
+      };
+      sessionRef.current = spectateSession;
+      snapshotRef.current = nextSnapshot;
+      setSession(spectateSession);
+      setSnapshot(nextSnapshot);
+      setMatchPhase("matched");
+      setRoomEntryMode("fresh");
+      resetQueueState();
+      setErrorMessage(null);
+      setPendingMove(null);
+      pendingMoveSubmittedAtRef.current.clear();
+      setChatMessages([]);
+      setIncomingChallenge(null);
+      setOutgoingChallenge(null);
+      setChallengeNotice(null);
+    });
+
+    socket.on("room:spectate:join-failed", ({ reason }) => {
+      setErrorMessage(reason);
     });
 
     socket.on("room:update", ({ snapshot: nextSnapshot }) => {
@@ -958,10 +1030,18 @@ export default function App() {
 
         const currentSession = sessionRef.current;
         if (socket.connected && currentSession) {
-          socket.emit("room:state:request", {
-            roomId: currentSession.roomId,
-            seatToken: currentSession.seatToken
-          });
+          socket.emit(
+            "room:state:request",
+            currentSession.role === "player"
+              ? {
+                  roomId: currentSession.roomId,
+                  seatToken: currentSession.seatToken
+                }
+              : {
+                  roomId: currentSession.roomId,
+                  spectatorToken: currentSession.spectatorToken
+                }
+          );
         }
         pendingMoveSubmittedAtRef.current.delete(pendingMove.clientMoveId);
         setErrorMessage("网络波动，正在同步棋盘状态，请重试落子");
@@ -1038,6 +1118,18 @@ export default function App() {
     });
   };
 
+  const requestSpectate = (targetSocketId: string) => {
+    if (!socket.connected) {
+      setErrorMessage("正在连接服务器，请稍后重试");
+      return;
+    }
+    setErrorMessage(null);
+    setChallengeNotice(null);
+    socket.emit("room:spectate:join", {
+      targetSocketId
+    });
+  };
+
   const respondChallenge = (accept: boolean) => {
     if (!incomingChallenge) {
       return;
@@ -1066,7 +1158,7 @@ export default function App() {
 
   const placePiece = (coordinate: Coordinate3D) => {
     activateAudioAmbience();
-    if (!session || !snapshot) {
+    if (!session || !snapshot || session.role !== "player") {
       return;
     }
     if (snapshot.winner) {
@@ -1103,7 +1195,7 @@ export default function App() {
   };
 
   const requestRematch = () => {
-    if (!session) {
+    if (!session || session.role !== "player") {
       return;
     }
     socket.emit("game:rematch", {
@@ -1113,7 +1205,7 @@ export default function App() {
   };
 
   const requestRematchCancel = () => {
-    if (!session) {
+    if (!session || session.role !== "player") {
       return;
     }
     socket.emit("game:rematch:cancel", {
@@ -1123,7 +1215,7 @@ export default function App() {
   };
 
   const requestSurrender = () => {
-    if (!session) {
+    if (!session || session.role !== "player") {
       return;
     }
     if (!socket.connected) {
@@ -1142,7 +1234,7 @@ export default function App() {
     }
 
     const validation = validateContinueMatchRequest({
-      hasSession: session !== null,
+      hasSession: session?.role === "player",
       hasSnapshot: snapshot !== null,
       isConnected: socket.connected
     });
@@ -1154,7 +1246,7 @@ export default function App() {
       return;
     }
 
-    if (!session || !snapshot) {
+    if (!session || session.role !== "player" || !snapshot) {
       return;
     }
 
@@ -1196,7 +1288,8 @@ export default function App() {
     }
     socket.emit("room:chat:send", {
       roomId: session.roomId,
-      seatToken: session.seatToken,
+      seatToken: session.role === "player" ? session.seatToken : undefined,
+      spectatorToken: session.role === "spectator" ? session.spectatorToken : undefined,
       message: normalized
     });
   };
@@ -1250,6 +1343,7 @@ export default function App() {
         challengeNotice={challengeNotice}
         onDisplayNameChange={updateDisplayName}
         onSendChallenge={requestChallenge}
+        onSpectate={requestSpectate}
         onRespondChallenge={respondChallenge}
         onCancelOutgoingChallenge={cancelOutgoingChallenge}
       />
@@ -1257,6 +1351,7 @@ export default function App() {
   }
 
   const shouldShowOnboarding =
+    session.role === "player" &&
     !onboardingCompleted &&
     roomEntryMode === "fresh" &&
     !snapshot.winner &&
@@ -1275,7 +1370,8 @@ export default function App() {
     >
       <LazyGameRoomPage
         snapshot={snapshot}
-        myMark={session.mark}
+        viewerRole={session.role}
+        myMark={session.role === "player" ? session.mark : "X"}
         connectionStatus={connectionState}
         shouldShowOnboarding={shouldShowOnboarding}
         qualityMode={qualityMode}

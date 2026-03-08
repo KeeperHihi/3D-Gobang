@@ -109,6 +109,7 @@ import { HUD } from "../ui/HUD";
 
 interface GameRoomPageProps {
   snapshot: RoomSnapshot;
+  viewerRole: "player" | "spectator";
   myMark: PlayerMark;
   connectionStatus: "connecting" | "online" | "reconnecting" | "offline";
   shouldShowOnboarding: boolean;
@@ -254,6 +255,7 @@ function persistLayerHotkeysToStorage(hotkeys: LayerHotkeys): void {
 
 export function GameRoomPage({
   snapshot,
+  viewerRole,
   myMark,
   connectionStatus,
   shouldShowOnboarding,
@@ -282,6 +284,7 @@ export function GameRoomPage({
   onSurrender,
   onLeave
 }: GameRoomPageProps) {
+  const isSpectator = viewerRole === "spectator";
   const lastMoveNumberRef = useRef(0);
   const winnerRef = useRef(snapshot.winner);
   const onboardingCompletionSentRef = useRef(false);
@@ -299,12 +302,14 @@ export function GameRoomPage({
       (typeof document === "undefined" ? true : document.hasFocus())
   );
   const focusGuardTriggeredTurnKeyRef = useRef<string | null>(null);
-  const focusGuardWasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
+  const focusGuardWasMyTurnRef = useRef(
+    !isSpectator && snapshot.turn === myMark && snapshot.winner === null
+  );
   const layerNavLastInputAtMsRef = useRef(0);
   const layerNavLastRotateAtMsRef = useRef(0);
   const turnNudgeTriggeredTurnKeyRef = useRef<string | null>(null);
   const turnNudgeTitleActiveRef = useRef(false);
-  const wasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
+  const wasMyTurnRef = useRef(!isSpectator && snapshot.turn === myMark && snapshot.winner === null);
   const baseDocumentTitleRef = useRef(
     typeof document === "undefined" ? "NEBULA CUBE" : document.title
   );
@@ -397,12 +402,16 @@ export function GameRoomPage({
   const opponentConnected = snapshot.players[opponentMark].connected;
   const opponentReconnectDeadlineAt = snapshot.players[opponentMark].reconnectDeadlineAt;
   const turnDeadlineAt = snapshot.turnDeadlineAt;
-  const myRematchReady = snapshot.rematchReady[myMark];
-  const opponentRematchReady = snapshot.rematchReady[opponentMark];
+  const myRematchReady = isSpectator ? false : snapshot.rematchReady[myMark];
+  const opponentRematchReady = isSpectator ? false : snapshot.rematchReady[opponentMark];
   const hasPendingMove = pendingMove !== null;
   const canPlace =
-    snapshot.turn === myMark && !snapshot.winner && connectionStatus === "online" && !hasPendingMove;
-  const canContinueMatchByOffline = Boolean(snapshot.winner && !opponentConnected);
+    !isSpectator &&
+    snapshot.turn === myMark &&
+    !snapshot.winner &&
+    connectionStatus === "online" &&
+    !hasPendingMove;
+  const canContinueMatchByOffline = Boolean(!isSpectator && snapshot.winner && !opponentConnected);
   const boardCells = snapshot.board as BoardCell[];
   const boardLoadRecoveryDecision = useMemo(
     () =>
@@ -494,7 +503,7 @@ export function GameRoomPage({
       snapshot.winner
     ]
   );
-  const canContinueMatchByReadyTimeout = rematchWaitDecision.canForceContinueMatch;
+  const canContinueMatchByReadyTimeout = !isSpectator && rematchWaitDecision.canForceContinueMatch;
   const canContinueMatch = canContinueMatchByOffline || canContinueMatchByReadyTimeout;
   const continueMatchReason =
     canContinueMatchByOffline ? "opponentOffline" : canContinueMatchByReadyTimeout ? "readyTimeout" : null;
@@ -567,14 +576,27 @@ export function GameRoomPage({
     primaryIntent,
     snapshot.winner
   ]);
+  const activePrimaryIntent = useMemo(() => {
+    if (!isSpectator) {
+      return effectivePrimaryIntent;
+    }
+    return {
+      ...effectivePrimaryIntent,
+      actionType: "wait" as const,
+      label: "观战中",
+      enabled: false,
+      reason: "观战模式仅可查看棋局与参与聊天",
+      target: null
+    };
+  }, [effectivePrimaryIntent, isSpectator]);
   const onboardingGuide = useMemo(
     () =>
       createOnboardingGuideState({
         enabled: shouldShowOnboarding,
-        canUsePrimaryAction: effectivePrimaryIntent.enabled,
+        canUsePrimaryAction: activePrimaryIntent.enabled,
         progress: onboardingProgress
       }),
-    [effectivePrimaryIntent.enabled, onboardingProgress, shouldShowOnboarding]
+    [activePrimaryIntent.enabled, onboardingProgress, shouldShowOnboarding]
   );
   const renderBootstrapDecision = useMemo(
     () =>
@@ -641,7 +663,7 @@ export function GameRoomPage({
       }),
     [snapshot.lastMove?.moveNumber, snapshot.lastMove?.timestamp, snapshot.roomId, snapshot.winner]
   );
-  const isMyTurn = snapshot.turn === myMark && snapshot.winner === null;
+  const isMyTurn = !isSpectator && snapshot.turn === myMark && snapshot.winner === null;
   const turnRemainingMs = useMemo(() => {
     if (snapshot.winner || turnDeadlineAt === null) {
       return null;
@@ -931,14 +953,23 @@ export function GameRoomPage({
     setWinLineCinematicActive(false);
   }, [clearWinLineCinematicTimer]);
   const handleContinueMatchAction = useCallback(() => {
+    if (isSpectator) {
+      return;
+    }
     stopWinLineCinematic();
     onContinueMatch();
-  }, [onContinueMatch, stopWinLineCinematic]);
+  }, [isSpectator, onContinueMatch, stopWinLineCinematic]);
   const handleRematchAction = useCallback(() => {
+    if (isSpectator) {
+      return;
+    }
     stopWinLineCinematic();
     onRematch();
-  }, [onRematch, stopWinLineCinematic]);
+  }, [isSpectator, onRematch, stopWinLineCinematic]);
   const handleSurrenderAction = useCallback(() => {
+    if (isSpectator) {
+      return;
+    }
     if (snapshot.winner || connectionStatus !== "online") {
       return;
     }
@@ -950,14 +981,20 @@ export function GameRoomPage({
     }
     stopWinLineCinematic();
     onSurrender();
-  }, [connectionStatus, onSurrender, snapshot.winner, stopWinLineCinematic]);
+  }, [connectionStatus, isSpectator, onSurrender, snapshot.winner, stopWinLineCinematic]);
 
   const handleToggleTimeoutAssist = useCallback(() => {
+    if (isSpectator) {
+      return;
+    }
     onTimeoutAssistEnabledChange(!timeoutAssistEnabled);
-  }, [onTimeoutAssistEnabledChange, timeoutAssistEnabled]);
+  }, [isSpectator, onTimeoutAssistEnabledChange, timeoutAssistEnabled]);
   const handleToggleTurnNudge = useCallback(() => {
+    if (isSpectator) {
+      return;
+    }
     onTurnNudgeEnabledChange(!turnNudgeEnabled);
-  }, [onTurnNudgeEnabledChange, turnNudgeEnabled]);
+  }, [isSpectator, onTurnNudgeEnabledChange, turnNudgeEnabled]);
   const syncTurnNudgeNotificationPermission = useCallback(() => {
     setTurnNudgeNotificationPermission(resolveTurnNudgeNotificationPermission());
   }, []);
@@ -986,21 +1023,30 @@ export function GameRoomPage({
     onTurnNudgePermissionSnoozedUntilMsChange(Date.now() + TURN_NUDGE_PERMISSION_SNOOZE_MS);
   }, [onTurnNudgePermissionSnoozedUntilMsChange]);
   const handleCancelAutoRematch = useCallback(() => {
+    if (isSpectator) {
+      return;
+    }
     if (!snapshot.winner) {
       return;
     }
     autoRematchCancelledRoundKeyRef.current = autoRematchRoundKey;
     setAutoRematchCountdownStartedAtMs(null);
     onRematchCancel();
-  }, [autoRematchRoundKey, onRematchCancel, snapshot.winner]);
+  }, [autoRematchRoundKey, isSpectator, onRematchCancel, snapshot.winner]);
   const handleCancelAutoContinue = useCallback(() => {
+    if (isSpectator) {
+      return;
+    }
     if (!snapshot.winner) {
       return;
     }
     autoContinueCancelledRoundKeyRef.current = autoContinueRoundKey;
     setAutoContinueCountdownStartedAtMs(null);
-  }, [autoContinueRoundKey, snapshot.winner]);
+  }, [autoContinueRoundKey, isSpectator, snapshot.winner]);
   const handleToggleAutoRematch = useCallback(() => {
+    if (isSpectator) {
+      return;
+    }
     const nextEnabled = !autoRematchEnabled;
     onAutoRematchEnabledChange(nextEnabled);
     if (!nextEnabled && autoRematchDecision.canCancel) {
@@ -1010,6 +1056,7 @@ export function GameRoomPage({
     autoRematchDecision.canCancel,
     autoRematchEnabled,
     handleCancelAutoRematch,
+    isSpectator,
     onAutoRematchEnabledChange
   ]);
 
@@ -1143,39 +1190,40 @@ export function GameRoomPage({
     triggerBoardSceneReload
   ]);
   const handlePrimaryAction = useCallback(() => {
-    if (!effectivePrimaryIntent.enabled) {
+    if (isSpectator || !activePrimaryIntent.enabled) {
       return;
     }
-    if (effectivePrimaryIntent.actionType === "enableAssist") {
+    if (activePrimaryIntent.actionType === "enableAssist") {
       setAssistEnabled(true);
       return;
     }
-    if (effectivePrimaryIntent.actionType === "continueMatch") {
+    if (activePrimaryIntent.actionType === "continueMatch") {
       handleContinueMatchAction();
       return;
     }
     if (
-      effectivePrimaryIntent.actionType === "rematch" ||
-      effectivePrimaryIntent.actionType === "opponentReady"
+      activePrimaryIntent.actionType === "rematch" ||
+      activePrimaryIntent.actionType === "opponentReady"
     ) {
       handleRematchAction();
       return;
     }
     if (
-      effectivePrimaryIntent.actionType === "win" ||
-      effectivePrimaryIntent.actionType === "block" ||
-      effectivePrimaryIntent.actionType === "suggest"
+      activePrimaryIntent.actionType === "win" ||
+      activePrimaryIntent.actionType === "block" ||
+      activePrimaryIntent.actionType === "suggest"
     ) {
       stopWinLineCinematic();
-      if (!effectivePrimaryIntent.target) {
+      if (!activePrimaryIntent.target) {
         return;
       }
-      onPlace(effectivePrimaryIntent.target);
+      onPlace(activePrimaryIntent.target);
     }
   }, [
-    effectivePrimaryIntent,
+    activePrimaryIntent,
     handleContinueMatchAction,
     handleRematchAction,
+    isSpectator,
     onPlace,
     stopWinLineCinematic
   ]);
@@ -1312,8 +1360,8 @@ export function GameRoomPage({
     winLineDirectorTriggeredRoundKeyRef.current = null;
     focusGuardTriggeredTurnKeyRef.current = null;
     turnNudgeTriggeredTurnKeyRef.current = null;
-    wasMyTurnRef.current = snapshot.turn === myMark && snapshot.winner === null;
-    focusGuardWasMyTurnRef.current = snapshot.turn === myMark && snapshot.winner === null;
+    wasMyTurnRef.current = !isSpectator && snapshot.turn === myMark && snapshot.winner === null;
+    focusGuardWasMyTurnRef.current = !isSpectator && snapshot.turn === myMark && snapshot.winner === null;
     clearTurnNudgeTitle();
     stopWinLineCinematic();
     layerNavLastInputAtMsRef.current = 0;
@@ -1329,7 +1377,7 @@ export function GameRoomPage({
       setWindowFocused(document.hasFocus());
     }
     setOnboardingProgress(createDefaultOnboardingProgress());
-  }, [clearTurnNudgeTitle, snapshot.roomId, stopWinLineCinematic]);
+  }, [clearTurnNudgeTitle, isSpectator, myMark, snapshot.roomId, stopWinLineCinematic]);
 
   useEffect(() => {
     setSettlementStartedAtMs((current) =>
@@ -1927,7 +1975,7 @@ export function GameRoomPage({
       if (event.code !== "Space" || event.repeat) {
         return;
       }
-      if (!effectivePrimaryIntent.enabled) {
+      if (!activePrimaryIntent.enabled) {
         return;
       }
       event.preventDefault();
@@ -1936,7 +1984,7 @@ export function GameRoomPage({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
-    effectivePrimaryIntent.enabled,
+    activePrimaryIntent.enabled,
     handleLayerStep,
     handlePrimaryAction,
     layerHotkeys,
@@ -2010,6 +2058,7 @@ export function GameRoomPage({
         layoutMode={layoutMode}
         roomId={snapshot.roomId}
         boardSize={snapshot.size}
+        viewerRole={viewerRole}
         myMark={myMark}
         turn={snapshot.turn}
         winner={snapshot.winner}
@@ -2021,7 +2070,7 @@ export function GameRoomPage({
         focusLayer={focusLayer}
         focusMode={focusMode}
         layerQuickNav={layerQuickNav}
-        primaryAction={effectivePrimaryIntent}
+        primaryAction={activePrimaryIntent}
         onboardingGuide={onboardingGuide.visible ? onboardingGuide : null}
         settingsOpen={settingsOpen}
         layerHotkeys={layerHotkeys}
@@ -2030,7 +2079,7 @@ export function GameRoomPage({
         calmModeActive={autoCalmMode}
         renderBootstrapPhase={renderBootstrapDecision.phase}
         averageFps={averageFps}
-        myConnected={snapshot.players[myMark].connected}
+        myConnected={isSpectator ? connectionStatus === "online" : snapshot.players[myMark].connected}
         opponentLabel={opponentLabel}
         opponentConnected={opponentConnected}
         botThinking={botThinking}
@@ -2077,13 +2126,14 @@ export function GameRoomPage({
         onToggleAssist={handleAssistToggle}
         onNonFocusLayerOpacityChange={handleNonFocusLayerOpacityChange}
         onQualityModeChange={onQualityModeChange}
-        canSurrender={!snapshot.winner && connectionStatus === "online"}
+        canSurrender={!isSpectator && !snapshot.winner && connectionStatus === "online"}
         onSurrender={handleSurrenderAction}
         onRematch={handleRematchAction}
         onLeave={onLeave}
       />
       <GameChatPanel
         layoutMode={layoutMode}
+        viewerRole={viewerRole}
         myMark={myMark}
         messages={chatMessages}
         disabled={connectionStatus !== "online"}

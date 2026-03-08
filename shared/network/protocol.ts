@@ -132,7 +132,8 @@ export interface ResumePayload {
 
 export interface RequestStatePayload {
   roomId: string;
-  seatToken: string;
+  seatToken?: string;
+  spectatorToken?: string;
 }
 
 export type LobbyPresenceStatus = "idle" | "queuing" | "in-game" | "challenge";
@@ -190,17 +191,35 @@ export interface ChallengeResolvedPayload {
 
 export interface RoomChatSendPayload {
   roomId: string;
-  seatToken: string;
+  seatToken?: string;
+  spectatorToken?: string;
   message: string;
 }
+
+export type RoomChatSenderRole = "player" | "spectator";
 
 export interface RoomChatMessage {
   id: string;
   roomId: string;
-  senderMark: PlayerMark;
+  senderMark: PlayerMark | null;
+  senderRole: RoomChatSenderRole;
   senderDisplayName: string;
   message: string;
   sentAt: number;
+}
+
+export interface SpectateJoinPayload {
+  targetSocketId: string;
+}
+
+export interface SpectateJoinedPayload {
+  roomId: string;
+  spectatorToken: string;
+  snapshot: RoomSnapshot;
+}
+
+export interface SpectateJoinFailedPayload {
+  reason: string;
 }
 
 export interface RoomChatMessagePayload {
@@ -227,6 +246,7 @@ export interface ClientToServerEvents {
   "game:rematch": (payload: RematchPayload) => void;
   "game:rematch:cancel": (payload: RematchCancelPayload) => void;
   "room:resume": (payload: ResumePayload) => void;
+  "room:spectate:join": (payload: SpectateJoinPayload) => void;
   "room:state:request": (payload: RequestStatePayload) => void;
   "room:chat:send": (payload: RoomChatSendPayload) => void;
 }
@@ -242,6 +262,8 @@ export interface ServerToClientEvents {
   "room:update": (payload: RoomUpdatePayload) => void;
   "room:resumed": (payload: RoomResumedPayload) => void;
   "room:resume-failed": (payload: ResumeFailedPayload) => void;
+  "room:spectate:joined": (payload: SpectateJoinedPayload) => void;
+  "room:spectate:join-failed": (payload: SpectateJoinFailedPayload) => void;
   "room:chat:message": (payload: RoomChatMessagePayload) => void;
   "room:chat:history": (payload: RoomChatHistoryPayload) => void;
   "game:move:ack": (payload: MoveAckPayload) => void;

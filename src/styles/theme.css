@@ -435,6 +435,16 @@ body {
   flex-shrink: 0;
 }
 
+.match-online-action.spectate {
+  border-color: rgba(143, 238, 255, 0.58);
+  background: linear-gradient(102deg, rgba(57, 126, 206, 0.42), rgba(77, 100, 204, 0.36));
+  color: #e8f6ff;
+}
+
+.match-online-action.spectate:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
 .match-online-name {
   margin: 0;
   font-size: 13px;
@@ -1085,6 +1095,11 @@ body {
 .game-chat-message.opponent {
   border-color: rgba(255, 202, 133, 0.44);
   background: linear-gradient(126deg, rgba(117, 73, 34, 0.34), rgba(124, 61, 104, 0.3));
+}
+
+.game-chat-message.spectator {
+  border-color: rgba(166, 255, 232, 0.44);
+  background: linear-gradient(126deg, rgba(40, 106, 98, 0.34), rgba(46, 73, 133, 0.28));
 }
 
 .game-chat-message-meta {

@@ -29,6 +29,7 @@ interface HUDProps {
   layoutMode: LayoutMode;
   roomId: string;
   boardSize: number;
+  viewerRole: "player" | "spectator";
   myMark: PlayerMark;
   turn: PlayerMark;
   winner: Winner;
@@ -102,12 +103,19 @@ interface HUDProps {
   onLeave: () => void;
 }
 
-function winnerText(winner: Winner, myMark: PlayerMark): string {
+function winnerText(
+  winner: Winner,
+  myMark: PlayerMark,
+  viewerRole: "player" | "spectator"
+): string {
   if (!winner) {
     return "继续战斗";
   }
   if (winner === "draw") {
     return "平局";
+  }
+  if (viewerRole === "spectator") {
+    return `${winner} 方胜利`;
   }
   if (winner === myMark) {
     return "你赢了";
@@ -151,6 +159,7 @@ export function HUD({
   layoutMode,
   roomId,
   boardSize,
+  viewerRole,
   myMark,
   turn,
   winner,
@@ -237,6 +246,7 @@ export function HUD({
     offsetY: number;
   } | null>(null);
   const isMobileLayout = layoutMode === "mobile";
+  const isSpectator = viewerRole === "spectator";
 
   const clampSettingsPanelOffset = useCallback((candidateX: number, candidateY: number) => {
     if (isMobileLayout) {
@@ -364,14 +374,25 @@ export function HUD({
     setSettingsPanelDragging(false);
   }, []);
 
-  const canRematch = Boolean(winner) && opponentConnected && !myRematchReady;
-  const turnText = winner
-    ? winnerText(winner, myMark)
+  const canRematch = !isSpectator && Boolean(winner) && opponentConnected && !myRematchReady;
+  const turnOwnerText = isSpectator
+    ? botThinking
+      ? "AI 回合"
+      : `${turn} 方回合`
     : turn === myMark
-      ? "轮到你落子"
+      ? "你的回合"
       : botThinking
-        ? "AI 思考中..."
-        : "等待对手落子";
+        ? "AI 回合"
+        : "对手回合";
+  const turnText = winner
+    ? winnerText(winner, myMark, viewerRole)
+    : isSpectator
+      ? turnOwnerText
+      : turn === myMark
+        ? "轮到你落子"
+        : botThinking
+          ? "AI 思考中..."
+          : "等待对手落子";
   const reconnectDeadlineSeconds =
     opponentReconnectRemainingMs === null ? null : Math.max(0, Math.ceil(opponentReconnectRemainingMs / 1000));
   const showReconnectDeadline = !winner && reconnectDeadlineSeconds !== null && !opponentConnected;
@@ -449,9 +470,7 @@ export function HUD({
         return `对手掉线，${reconnectDeadlineSeconds ?? 0}s 内未重连将自动判负`;
       }
       if (item.id === "turn-clock") {
-        return `${turn === myMark ? "你的回合" : botThinking ? "AI 回合" : "对手回合"} · 剩余 ${
-          turnRemainingSeconds ?? 0
-        }s`;
+        return `${turnOwnerText} · 剩余 ${turnRemainingSeconds ?? 0}s`;
       }
       if (item.id === "win-line") {
         return winLineSummary ? `胜线解析：${winLineSummary}` : null;
@@ -497,8 +516,7 @@ export function HUD({
         <div className="hud-turn">{turnText}</div>
         {showTurnClock ? (
           <div className={`hud-turn-clock ${turnUrgent ? "urgent" : ""}`}>
-            {turn === myMark ? "你的回合" : botThinking ? "AI 回合" : "对手回合"} · 剩余{" "}
-            {turnRemainingSeconds}s（以服务器结算为准）
+            {turnOwnerText} · 剩余 {turnRemainingSeconds}s（以服务器结算为准）
           </div>
         ) : null}
         {showMinimalConnectionSpotlight ? (
@@ -619,15 +637,15 @@ export function HUD({
               <span>{roomId}</span>
             </div>
             <div className="hud-row">
-              <span>你的棋子</span>
-              <span>{myMark}</span>
+              <span>{isSpectator ? "身份" : "你的棋子"}</span>
+              <span>{isSpectator ? "观战" : myMark}</span>
             </div>
             <div className="hud-row">
               <span>网络</span>
               <span>{connectionGuidance.statusLabel}</span>
             </div>
             <div className="hud-row">
-              <span>你</span>
+              <span>{isSpectator ? "观战连接" : "你"}</span>
               <span>{myConnected ? "在线" : "掉线"}</span>
             </div>
             <div className="hud-row">

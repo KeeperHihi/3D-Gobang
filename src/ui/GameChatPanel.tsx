@@ -4,6 +4,7 @@ import type { LayoutMode } from "../game/interaction/deviceMode";
 
 interface GameChatPanelProps {
   layoutMode: LayoutMode;
+  viewerRole: "player" | "spectator";
   myMark: PlayerMark;
   messages: RoomChatMessage[];
   onSendMessage: (message: string) => void;
@@ -24,6 +25,7 @@ function formatMessageTime(sentAt: number): string {
 
 export function GameChatPanel({
   layoutMode,
+  viewerRole,
   myMark,
   messages,
   onSendMessage,
@@ -62,15 +64,28 @@ export function GameChatPanel({
           <p className="game-chat-empty">开局先打个招呼吧，按 Enter 即可发送。</p>
         ) : (
           messages.map((message) => {
-            const isSelf = message.senderMark === myMark;
+            const isSelf =
+              viewerRole === "player" &&
+              message.senderRole === "player" &&
+              message.senderMark === myMark;
+            const roleClassName = isSelf
+              ? "self"
+              : message.senderRole === "spectator"
+                ? "spectator"
+                : "opponent";
+            const ariaLabel = isSelf
+              ? "我方消息"
+              : message.senderRole === "spectator"
+                ? "观战消息"
+                : "玩家消息";
             return (
               <article
                 key={message.id}
-                className={`game-chat-message ${isSelf ? "self" : "opponent"}`}
-                aria-label={isSelf ? "我方消息" : "对手消息"}
+                className={`game-chat-message ${roleClassName}`}
+                aria-label={ariaLabel}
               >
                 <div className="game-chat-message-meta">
-                  <span>{isSelf ? "你" : "对手"}</span>
+                  <span>{message.senderDisplayName}</span>
                   <span>{formatMessageTime(message.sentAt)}</span>
                 </div>
                 <p>{message.message}</p>

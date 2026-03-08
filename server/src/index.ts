@@ -64,6 +64,8 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
 const matchmaker = new Matchmaker();
 const rooms = new Map<string, RoomState>();
 const seatTokenMap = new Map<string, { roomId: string; mark: PlayerMark }>();
+const spectatorTokenMap = new Map<string, { roomId: string; socketId: string }>();
+const spectatorSocketMap = new Map<string, { roomId: string; spectatorToken: string }>();
 const socketRoomMap = new Map<string, string>();
 const reconnectForfeitTimers = new Map<string, NodeJS.Timeout>();
 const turnForfeitTimers = new Map<string, NodeJS.Timeout>();
@@ -91,6 +93,18 @@ interface ChallengeState {
   expiresAt: number;
   timeout: NodeJS.Timeout;
 }
+
+type ChatSenderIdentity =
+  | {
+      room: RoomState;
+      senderRole: "player";
+      senderMark: PlayerMark;
+    }
+  | {
+      room: RoomState;
+      senderRole: "spectator";
+      senderMark: null;
+    };
 
 const lobbyProfiles = new Map<string, LobbyProfile>();
 const challenges = new Map<string, ChallengeState>();
@@ -207,6 +221,120 @@ function emitRoomChatHistoryToSocket(
     roomId,
     messages
   });
+}
+
+function emitSpectateJoinFailed(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  reason: string
+): void {
+  socket.emit("room:spectate:join-failed", {
+    reason
+  });
+}
+
+function clearSpectatorSessionBySocket(socketId: string): void {
+  const session = spectatorSocketMap.get(socketId);
+  if (!session) {
+    return;
+  }
+  spectatorSocketMap.delete(socketId);
+  const tokenRecord = spectatorTokenMap.get(session.spectatorToken);
+  if (tokenRecord && tokenRecord.socketId === socketId) {
+    spectatorTokenMap.delete(session.spectatorToken);
+  }
+  socketRoomMap.delete(socketId);
+}
+
+function clearSpectatorSessionByToken(spectatorToken: string): void {
+  const tokenRecord = spectatorTokenMap.get(spectatorToken);
+  if (!tokenRecord) {
+    return;
+  }
+  spectatorTokenMap.delete(spectatorToken);
+  const socketRecord = spectatorSocketMap.get(tokenRecord.socketId);
+  if (socketRecord && socketRecord.spectatorToken === spectatorToken) {
+    spectatorSocketMap.delete(tokenRecord.socketId);
+    socketRoomMap.delete(tokenRecord.socketId);
+  }
+}
+
+function bindSpectatorTokenToSocket(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  roomId: string,
+  spectatorToken: string
+): boolean {
+  const tokenRecord = spectatorTokenMap.get(spectatorToken);
+  if (!tokenRecord || tokenRecord.roomId !== roomId) {
+    return false;
+  }
+
+  const previousSocketId = tokenRecord.socketId;
+  if (previousSocketId !== socket.id) {
+    const previousSocketRecord = spectatorSocketMap.get(previousSocketId);
+    if (previousSocketRecord && previousSocketRecord.spectatorToken === spectatorToken) {
+      spectatorSocketMap.delete(previousSocketId);
+      socketRoomMap.delete(previousSocketId);
+    }
+
+    const previousSocket = io.sockets.sockets.get(previousSocketId);
+    if (previousSocket) {
+      previousSocket.disconnect(true);
+    }
+  }
+
+  spectatorTokenMap.set(spectatorToken, {
+    roomId,
+    socketId: socket.id
+  });
+  spectatorSocketMap.set(socket.id, {
+    roomId,
+    spectatorToken
+  });
+  attachSocketToRoom(socket, roomId);
+  setLobbyStatus(socket.id, "in-game");
+  return true;
+}
+
+function resolveRoomBySpectatorToken(roomId: string, spectatorToken: string): RoomState | null {
+  const tokenRecord = spectatorTokenMap.get(spectatorToken);
+  if (!tokenRecord || tokenRecord.roomId !== roomId) {
+    return null;
+  }
+  const room = rooms.get(roomId);
+  if (!room) {
+    clearSpectatorSessionByToken(spectatorToken);
+    return null;
+  }
+  return room;
+}
+
+function clearSpectatorsForRoom(roomId: string): void {
+  const tokensToClear: string[] = [];
+  let clearedAny = false;
+  spectatorTokenMap.forEach((tokenRecord, spectatorToken) => {
+    if (tokenRecord.roomId === roomId) {
+      tokensToClear.push(spectatorToken);
+    }
+  });
+
+  for (const spectatorToken of tokensToClear) {
+    const tokenRecord = spectatorTokenMap.get(spectatorToken);
+    if (!tokenRecord) {
+      continue;
+    }
+    clearedAny = true;
+    const spectatorSocket = io.sockets.sockets.get(tokenRecord.socketId);
+    clearSpectatorSessionByToken(spectatorToken);
+    if (!spectatorSocket) {
+      continue;
+    }
+    spectatorSocket.leave(roomId);
+    setLobbyStatus(spectatorSocket.id, "idle");
+    emitGameError(spectatorSocket, "对局已结束，观战已退出");
+  }
+  if (clearedAny) {
+    broadcastLobbyPresence();
+  }
 }
 
 function resolveChallenge(
@@ -472,6 +600,7 @@ function detachRoomIfAbandoned(roomId: string): void {
 
   seatTokenMap.delete(room.players.X.seatToken);
   seatTokenMap.delete(room.players.O.seatToken);
+  clearSpectatorsForRoom(roomId);
   clearReconnectForfeitTimersForRoom(roomId);
   clearTurnForfeitTimer(roomId);
   clearBotMoveTimer(roomId);
@@ -515,6 +644,50 @@ function resolveRoomAndMark(
     room,
     mark
   };
+}
+
+function tryResolveChatSenderIdentity(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  roomId: string,
+  seatToken: string | undefined,
+  spectatorToken: string | undefined
+): ChatSenderIdentity | null {
+  if (seatToken) {
+    const resolvedPlayer = resolveRoomAndMark(roomId, seatToken);
+    if (resolvedPlayer) {
+      const assignedSocketId = resolvedPlayer.room.players[resolvedPlayer.mark].socketId;
+      if (assignedSocketId && assignedSocketId !== socket.id) {
+        return null;
+      }
+      setPlayerConnection(resolvedPlayer.room, resolvedPlayer.mark, socket.id, true);
+      clearReconnectForfeitTimer(roomId, resolvedPlayer.mark);
+      clearReconnectDeadline(resolvedPlayer.room, resolvedPlayer.mark);
+      attachSocketToRoom(socket, roomId);
+      setLobbyStatus(socket.id, "in-game");
+      return {
+        room: resolvedPlayer.room,
+        senderRole: "player",
+        senderMark: resolvedPlayer.mark
+      };
+    }
+  }
+
+  if (spectatorToken) {
+    const spectatorRoom = resolveRoomBySpectatorToken(roomId, spectatorToken);
+    if (!spectatorRoom) {
+      return null;
+    }
+    if (!bindSpectatorTokenToSocket(socket, roomId, spectatorToken)) {
+      return null;
+    }
+    return {
+      room: spectatorRoom,
+      senderRole: "spectator",
+      senderMark: null
+    };
+  }
+
+  return null;
 }
 
 function startRoomMatch(
@@ -900,6 +1073,62 @@ io.on("connection", (socket) => {
     enqueueSocketForMatch(socket, continueEnqueueOptions);
   });
 
+  socket.on("room:spectate:join", ({ targetSocketId }) => {
+    if (!targetSocketId || targetSocketId === socket.id) {
+      emitSpectateJoinFailed(socket, "请选择正在对局的玩家");
+      return;
+    }
+
+    if (socketRoomMap.has(socket.id)) {
+      emitSpectateJoinFailed(socket, "你已在房间中，请先离开当前对局");
+      return;
+    }
+
+    const targetSocket = io.sockets.sockets.get(targetSocketId);
+    if (!targetSocket) {
+      emitSpectateJoinFailed(socket, "目标玩家已离线");
+      return;
+    }
+
+    const roomId = socketRoomMap.get(targetSocket.id);
+    if (!roomId) {
+      emitSpectateJoinFailed(socket, "目标玩家当前不在对局中");
+      return;
+    }
+
+    const room = rooms.get(roomId);
+    if (!room) {
+      emitSpectateJoinFailed(socket, "目标对局已结束");
+      return;
+    }
+
+    cancelChallengeForSocket(socket.id, "cancelled", "挑战已取消");
+    clearContinueAvoidRetryTimer(socket.id);
+    matchmaker.remove(socket.id);
+
+    const spectatorToken = randomUUID();
+    spectatorTokenMap.set(spectatorToken, {
+      roomId,
+      socketId: socket.id
+    });
+    spectatorSocketMap.set(socket.id, {
+      roomId,
+      spectatorToken
+    });
+
+    attachSocketToRoom(socket, roomId);
+    setLobbyStatus(socket.id, "in-game");
+
+    socket.emit("room:spectate:joined", {
+      roomId,
+      spectatorToken,
+      snapshot: snapshotFromRoomState(room)
+    });
+    emitRoomChatHistoryToSocket(socket, roomId);
+    emitRoomUpdate(roomId);
+    broadcastLobbyPresence();
+  });
+
   socket.on("room:resume", ({ roomId, seatToken }) => {
     const tokenRecord = seatTokenMap.get(seatToken);
     if (!tokenRecord || tokenRecord.roomId !== roomId) {
@@ -928,6 +1157,7 @@ io.on("connection", (socket) => {
     }
 
     cancelChallengeForSocket(socket.id, "cancelled", "挑战已取消");
+    clearSpectatorSessionBySocket(socket.id);
     setPlayerConnection(room, mark, socket.id, true);
     clearReconnectForfeitTimer(roomId, mark);
     clearReconnectDeadline(room, mark);
@@ -946,27 +1176,38 @@ io.on("connection", (socket) => {
     broadcastLobbyPresence();
   });
 
-  socket.on("room:state:request", ({ roomId, seatToken }) => {
-    const resolved = resolveRoomAndMark(roomId, seatToken);
-    if (!resolved) {
+  socket.on("room:state:request", ({ roomId, seatToken, spectatorToken }) => {
+    if (seatToken) {
+      const resolvedPlayer = resolveRoomAndMark(roomId, seatToken);
+      if (resolvedPlayer) {
+        socket.emit("room:update", {
+          snapshot: snapshotFromRoomState(resolvedPlayer.room)
+        });
+        emitRoomChatHistoryToSocket(socket, roomId);
+        return;
+      }
+    }
+
+    if (!spectatorToken) {
+      return;
+    }
+    const spectatorRoom = resolveRoomBySpectatorToken(roomId, spectatorToken);
+    if (!spectatorRoom) {
+      return;
+    }
+    if (!bindSpectatorTokenToSocket(socket, roomId, spectatorToken)) {
       return;
     }
     socket.emit("room:update", {
-      snapshot: snapshotFromRoomState(resolved.room)
+      snapshot: snapshotFromRoomState(spectatorRoom)
     });
     emitRoomChatHistoryToSocket(socket, roomId);
   });
 
-  socket.on("room:chat:send", ({ roomId, seatToken, message }) => {
-    const resolved = resolveRoomAndMark(roomId, seatToken);
-    if (!resolved) {
+  socket.on("room:chat:send", ({ roomId, seatToken, spectatorToken, message }) => {
+    const senderIdentity = tryResolveChatSenderIdentity(socket, roomId, seatToken, spectatorToken);
+    if (!senderIdentity) {
       emitGameError(socket, "无效聊天请求");
-      return;
-    }
-
-    const assignedSocketId = resolved.room.players[resolved.mark].socketId;
-    if (assignedSocketId && assignedSocketId !== socket.id) {
-      emitGameError(socket, "该席位已在其他设备在线");
       return;
     }
 
@@ -981,17 +1222,16 @@ io.on("connection", (socket) => {
       return;
     }
 
-    setPlayerConnection(resolved.room, resolved.mark, socket.id, true);
-    clearReconnectForfeitTimer(roomId, resolved.mark);
-    clearReconnectDeadline(resolved.room, resolved.mark);
-    attachSocketToRoom(socket, roomId);
-    setLobbyStatus(socket.id, "in-game");
+    const baseDisplayName = ensureLobbyProfile(socket.id).displayName;
+    const senderDisplayName =
+      senderIdentity.senderRole === "spectator" ? `${baseDisplayName}(观战)` : baseDisplayName;
 
     const messagePayload: RoomChatMessage = {
       id: randomUUID().slice(0, 12),
       roomId,
-      senderMark: resolved.mark,
-      senderDisplayName: ensureLobbyProfile(socket.id).displayName,
+      senderMark: senderIdentity.senderMark,
+      senderRole: senderIdentity.senderRole,
+      senderDisplayName,
       message: normalizedMessage,
       sentAt: nowMs
     };
@@ -1174,6 +1414,7 @@ io.on("connection", (socket) => {
     clearContinueAvoidRetryTimer(socket.id);
     matchmaker.remove(socket.id);
     cancelChallengeForSocket(socket.id, "cancelled", "对方已离线，挑战已取消");
+    clearSpectatorSessionBySocket(socket.id);
     lobbyProfiles.delete(socket.id);
     roomChatRateLimitMap.delete(socket.id);
 
