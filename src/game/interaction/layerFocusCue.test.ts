@@ -10,6 +10,8 @@ function createDecision(overrides?: Partial<Parameters<typeof evaluateLayerFocus
     source: "tap-focus",
     fromLayer: 2,
     toLayer: 4,
+    canPlaceNow: true,
+    blockReason: "unknown",
     nowMs: 10_000,
     lastShownAtMs: null,
     ...overrides
@@ -63,5 +65,45 @@ describe("evaluateLayerFocusCue", () => {
 
     expect(decision.shouldShow).toBe(true);
     expect(decision.message).toBe("已切到 L5，再次点击空位即可落子");
+  });
+
+  it("shows opponent-turn waiting message when cannot place", () => {
+    const decision = createDecision({
+      canPlaceNow: false,
+      blockReason: "opponent-turn"
+    });
+
+    expect(decision.shouldShow).toBe(true);
+    expect(decision.message).toBe("已切到 L5，当前是对手回合");
+  });
+
+  it("shows offline waiting message when disconnected", () => {
+    const decision = createDecision({
+      canPlaceNow: false,
+      blockReason: "offline"
+    });
+
+    expect(decision.shouldShow).toBe(true);
+    expect(decision.message).toBe("已切到 L5，网络恢复后可继续落子");
+  });
+
+  it("shows pending message when previous move is still submitting", () => {
+    const decision = createDecision({
+      canPlaceNow: false,
+      blockReason: "pending"
+    });
+
+    expect(decision.shouldShow).toBe(true);
+    expect(decision.message).toBe("已切到 L5，正在提交上一步落子");
+  });
+
+  it("shows match-ended message when winner is settled", () => {
+    const decision = createDecision({
+      canPlaceNow: false,
+      blockReason: "winner"
+    });
+
+    expect(decision.shouldShow).toBe(true);
+    expect(decision.message).toBe("已切到 L5，本局已结束");
   });
 });

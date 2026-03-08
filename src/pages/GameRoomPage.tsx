@@ -1035,6 +1035,16 @@ export function GameRoomPage({
         source: "tap-focus",
         fromLayer: focusLayer,
         toLayer: nextLayer,
+        canPlaceNow: canPlace,
+        blockReason: snapshot.winner
+          ? "winner"
+          : connectionStatus !== "online"
+            ? "offline"
+            : hasPendingMove
+              ? "pending"
+              : snapshot.turn !== myMark
+                ? "opponent-turn"
+                : "unknown",
         nowMs: now,
         lastShownAtMs: layerFocusCueLastShownAtMsRef.current
       });
@@ -1045,7 +1055,16 @@ export function GameRoomPage({
       setLayerFocusCueMessage(cueDecision.message);
       setLayerFocusCueExpiresAtMs(cueDecision.expiresAtMs);
     },
-    [focusLayer, snapshot.size]
+    [
+      canPlace,
+      connectionStatus,
+      focusLayer,
+      hasPendingMove,
+      myMark,
+      snapshot.size,
+      snapshot.turn,
+      snapshot.winner
+    ]
   );
   const clearBoardAutoRetryTimer = useCallback(() => {
     if (typeof window === "undefined") {
