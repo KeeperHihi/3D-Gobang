@@ -79,6 +79,7 @@ import {
   createFocusGuardTurnKey,
   evaluateFocusGuard
 } from "../game/interaction/focusGuard";
+import { evaluateFocusGuardCue } from "../game/interaction/focusGuardCue";
 import { createPrimaryIntentState } from "../game/interaction/primaryIntent";
 import { evaluateHudSpotlight } from "../game/interaction/hudSpotlight";
 import { evaluateLayerQuickNav } from "../game/interaction/layerQuickNav";
@@ -260,6 +261,7 @@ export function GameRoomPage({
   );
   const focusGuardTriggeredTurnKeyRef = useRef<string | null>(null);
   const focusGuardWasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
+  const focusGuardCueLastShownAtMsRef = useRef<number | null>(null);
   const layerNavLastInputAtMsRef = useRef(0);
   const layerNavLastRotateAtMsRef = useRef(0);
   const layerFocusCueLastShownAtMsRef = useRef<number | null>(null);
@@ -338,6 +340,8 @@ export function GameRoomPage({
     number | null
   >(null);
   const [winLineCinematicActive, setWinLineCinematicActive] = useState(false);
+  const [focusGuardCueMessage, setFocusGuardCueMessage] = useState<string | null>(null);
+  const [focusGuardCueExpiresAtMs, setFocusGuardCueExpiresAtMs] = useState<number | null>(null);
   const [layerFocusCueMessage, setLayerFocusCueMessage] = useState<string | null>(null);
   const [layerFocusCueExpiresAtMs, setLayerFocusCueExpiresAtMs] = useState<number | null>(null);
   const [settlementStartedAtMs, setSettlementStartedAtMs] = useState<number | null>(null);
@@ -1314,6 +1318,9 @@ export function GameRoomPage({
     setFocusMode("auto");
     setFocusLayer(Math.floor(snapshot.size / 2));
     setAdvancedOpen(false);
+    focusGuardCueLastShownAtMsRef.current = null;
+    setFocusGuardCueMessage(null);
+    setFocusGuardCueExpiresAtMs(null);
     layerFocusCueLastShownAtMsRef.current = null;
     setLayerFocusCueMessage(null);
     setLayerFocusCueExpiresAtMs(null);
@@ -1514,6 +1521,17 @@ export function GameRoomPage({
       focusGuardTriggeredTurnKeyRef.current = focusGuardTurnKey;
       setFocusMode("auto");
       setFocusLayer(focusGuardDecision.targetLayer);
+      const cueDecision = evaluateFocusGuardCue({
+        reason: focusGuardDecision.reason,
+        targetLayer: focusGuardDecision.targetLayer,
+        nowMs,
+        lastShownAtMs: focusGuardCueLastShownAtMsRef.current
+      });
+      if (cueDecision.shouldShow) {
+        focusGuardCueLastShownAtMsRef.current = cueDecision.shownAtMs;
+        setFocusGuardCueMessage(cueDecision.message);
+        setFocusGuardCueExpiresAtMs(cueDecision.expiresAtMs);
+      }
     }
 
     focusGuardWasMyTurnRef.current = isMyTurn;
@@ -1645,6 +1663,26 @@ export function GameRoomPage({
     }
     setAdvancedOpen(false);
   }, [layoutMode]);
+
+  useEffect(() => {
+    if (focusGuardCueExpiresAtMs === null) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const remainingMs = focusGuardCueExpiresAtMs - Date.now();
+    if (remainingMs <= 0) {
+      setFocusGuardCueMessage(null);
+      setFocusGuardCueExpiresAtMs(null);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setFocusGuardCueMessage(null);
+      setFocusGuardCueExpiresAtMs(null);
+    }, remainingMs);
+    return () => window.clearTimeout(timer);
+  }, [focusGuardCueExpiresAtMs]);
 
   useEffect(() => {
     if (layerFocusCueExpiresAtMs === null) {
@@ -1937,8 +1975,14 @@ export function GameRoomPage({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [effectivePrimaryIntent.enabled, handlePrimaryAction, layoutMode]);
 
-  const gameToastType = errorMessage ? "error" : layerFocusCueMessage ? "focus-cue" : null;
-  const gameToastMessage = errorMessage ?? layerFocusCueMessage;
+  const gameToastType = errorMessage
+    ? "error"
+    : focusGuardCueMessage
+      ? "focus-guard-cue"
+      : layerFocusCueMessage
+        ? "focus-cue"
+        : null;
+  const gameToastMessage = errorMessage ?? focusGuardCueMessage ?? layerFocusCueMessage;
 
   return (
     <main className={`game-page ${layoutMode === "mobile" ? "mobile" : "desktop"}`}>
@@ -2062,7 +2106,15 @@ export function GameRoomPage({
         onLeave={onLeave}
       />
       {gameToastMessage ? (
-        <div className={`game-toast ${gameToastType === "focus-cue" ? "focus-cue" : "error"}`}>
+        <div
+          className={`game-toast ${
+            gameToastType === "focus-cue"
+              ? "focus-cue"
+              : gameToastType === "focus-guard-cue"
+                ? "focus-guard-cue"
+                : "error"
+          }`}
+        >
           {gameToastMessage}
         </div>
       ) : null}

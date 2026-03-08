@@ -1189,6 +1189,13 @@ body {
   animation: game-toast-focus-cue 180ms ease-out;
 }
 
+.game-toast.focus-guard-cue {
+  border-color: rgba(255, 230, 133, 0.58);
+  color: #fff4c9;
+  background: rgba(51, 39, 15, 0.82);
+  animation: game-toast-focus-cue 180ms ease-out;
+}
+
 @keyframes game-toast-focus-cue {
   from {
     opacity: 0;
