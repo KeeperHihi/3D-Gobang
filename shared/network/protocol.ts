@@ -136,7 +136,7 @@ export interface RequestStatePayload {
   spectatorToken?: string;
 }
 
-export type LobbyPresenceStatus = "idle" | "queuing" | "in-game" | "challenge";
+export type LobbyPresenceStatus = "idle" | "queuing" | "in-game" | "spectating" | "challenge";
 
 export interface LobbyPlayerSnapshot {
   socketId: string;

@@ -15,6 +15,10 @@ import {
 } from "../game/interaction/boardInstancing";
 import { createWinningLinePositionBuffer } from "../game/interaction/winningLineGeometry";
 import { evaluateLayerTapAssist } from "../game/interaction/layerTapAssist";
+import {
+  isQuickPrimaryClick,
+  measurePointerTravel
+} from "../game/interaction/primaryClickIntent";
 
 const BOARD_SPACING = 1.4;
 const LazyBoardSceneVfx = lazy(() =>
@@ -164,6 +168,13 @@ interface HoverCellOverlayProps {
   emphasized: boolean;
 }
 
+interface PrimaryMousePress {
+  pointerId: number;
+  startedAtMs: number;
+  startX: number;
+  startY: number;
+}
+
 function HoverCellOverlay({ position, color, emphasized }: HoverCellOverlayProps) {
   const ringRef = useRef<Mesh>(null);
   const ringScale = emphasized ? 1.19 : 1.12;
@@ -295,6 +306,8 @@ function BoardSceneComponent({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [ambientReveal, setAmbientReveal] = useState(ambientEnabled ? 1 : 0);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const activePrimaryMousePressRef = useRef<PrimaryMousePress | null>(null);
+  const pendingPlaceIntentRef = useRef<boolean | null>(null);
   const cellSegments = Math.max(10, qualityProfile.cellSegments);
   const visibleHintMoves = useMemo(
     () => hintMoves.slice(0, qualityProfile.maxHintPulseCount),
@@ -438,10 +451,63 @@ function BoardSceneComponent({
 
   const ambientMix = ambientEnabled ? ambientReveal : 0;
   const shouldMountVfxLayer = vfxStage !== "off";
+  const consumePlaceIntent = (event: ThreeEvent<MouseEvent>): boolean => {
+    if (event.nativeEvent.button !== 0) {
+      return false;
+    }
+    const pendingDecision = pendingPlaceIntentRef.current;
+    pendingPlaceIntentRef.current = null;
+    return pendingDecision ?? true;
+  };
 
   return (
     <div
       className="board-scene"
+      onPointerDownCapture={(event) => {
+        if (event.pointerType !== "mouse" || event.button !== 0) {
+          return;
+        }
+        activePrimaryMousePressRef.current = {
+          pointerId: event.pointerId,
+          startedAtMs: performance.now(),
+          startX: event.clientX,
+          startY: event.clientY
+        };
+        pendingPlaceIntentRef.current = null;
+      }}
+      onPointerUpCapture={(event) => {
+        if (event.pointerType !== "mouse" || event.button !== 0) {
+          pendingPlaceIntentRef.current = true;
+          return;
+        }
+        const press = activePrimaryMousePressRef.current;
+        activePrimaryMousePressRef.current = null;
+        if (!press || press.pointerId !== event.pointerId) {
+          pendingPlaceIntentRef.current = false;
+          return;
+        }
+        const pressDurationMs = performance.now() - press.startedAtMs;
+        const travelDistancePx = measurePointerTravel(
+          press.startX,
+          press.startY,
+          event.clientX,
+          event.clientY
+        );
+        pendingPlaceIntentRef.current = isQuickPrimaryClick({
+          pointerType: event.pointerType,
+          button: event.button,
+          pressDurationMs,
+          travelDistancePx
+        });
+      }}
+      onPointerCancelCapture={(event) => {
+        const press = activePrimaryMousePressRef.current;
+        if (!press || press.pointerId !== event.pointerId) {
+          return;
+        }
+        activePrimaryMousePressRef.current = null;
+        pendingPlaceIntentRef.current = false;
+      }}
       onTouchStart={(event) => {
         const touch = event.changedTouches[0];
         if (!touch) {
@@ -564,25 +630,30 @@ function BoardSceneComponent({
                     : undefined
                 }
                 onClick={
-                  (event) => {
-                    event.stopPropagation();
-                    const hit = resolveBoardInstanceCell(bucket, event.instanceId);
-                    if (!hit) {
-                      return;
-                    }
-                    const inFocusLayer = focusLayer === null || hit.coordinate.z === focusLayer;
-                    const isEmpty = board[hit.boardIndex] === 0;
-                    const tapAssistDecision = evaluateLayerTapAssist({
-                      canPlace,
-                      isEmpty,
-                      inFocusLayer,
-                      targetLayer: hit.coordinate.z,
-                      currentLayer: focusLayer
-                    });
-                    if (tapAssistDecision.action === "place") {
-                      onPlace(hit.coordinate);
-                    }
-                  }
+                  interactive
+                    ? (event) => {
+                        event.stopPropagation();
+                        if (!consumePlaceIntent(event)) {
+                          return;
+                        }
+                        const hit = resolveBoardInstanceCell(bucket, event.instanceId);
+                        if (!hit) {
+                          return;
+                        }
+                        const inFocusLayer = focusLayer === null || hit.coordinate.z === focusLayer;
+                        const isEmpty = board[hit.boardIndex] === 0;
+                        const tapAssistDecision = evaluateLayerTapAssist({
+                          canPlace,
+                          isEmpty,
+                          inFocusLayer,
+                          targetLayer: hit.coordinate.z,
+                          currentLayer: focusLayer
+                        });
+                        if (tapAssistDecision.action === "place") {
+                          onPlace(hit.coordinate);
+                        }
+                      }
+                    : undefined
                 }
               />
             );

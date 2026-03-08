@@ -465,6 +465,10 @@ body {
   color: rgba(151, 232, 255, 0.92);
 }
 
+.match-online-status.spectating {
+  color: rgba(191, 210, 255, 0.92);
+}
+
 .match-online-status.in-game,
 .match-online-status.challenge {
   color: rgba(255, 223, 156, 0.9);

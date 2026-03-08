@@ -101,6 +101,9 @@ function presenceStatusText(status: LobbyPlayerSnapshot["status"]): string {
   if (status === "in-game") {
     return "对局中";
   }
+  if (status === "spectating") {
+    return "观战中";
+  }
   return "处理中";
 }
 
@@ -449,10 +452,17 @@ export function MatchPage({
                   ? "发起挑战"
                   : player.status === "in-game"
                     ? "观战"
+                    : player.status === "spectating"
+                      ? "观战中"
                     : player.status === "queuing"
                       ? "匹配中"
                       : "处理中";
-              const actionDisabled = player.status === "idle" ? !canChallenge : !canSpectate;
+              const actionDisabled =
+                player.status === "idle"
+                  ? !canChallenge
+                  : player.status === "in-game"
+                    ? !canSpectate
+                    : true;
               const actionClassName =
                 player.status === "in-game"
                   ? "secondary-button match-online-action spectate"
@@ -460,6 +470,9 @@ export function MatchPage({
               const onActionClick = () => {
                 if (player.status === "in-game") {
                   onSpectate(player.socketId);
+                  return;
+                }
+                if (player.status !== "idle") {
                   return;
                 }
                 onSendChallenge(player.socketId);

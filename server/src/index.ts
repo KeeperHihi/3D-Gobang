@@ -83,7 +83,7 @@ const ROOM_CHAT_RATE_LIMIT_MAX_MESSAGES = 8;
 
 interface LobbyProfile {
   displayName: string;
-  status: "idle" | "queuing" | "in-game";
+  status: "idle" | "queuing" | "in-game" | "spectating";
 }
 
 interface ChallengeState {
@@ -291,7 +291,7 @@ function bindSpectatorTokenToSocket(
     spectatorToken
   });
   attachSocketToRoom(socket, roomId);
-  setLobbyStatus(socket.id, "in-game");
+  setLobbyStatus(socket.id, "spectating");
   return true;
 }
 
@@ -1117,7 +1117,7 @@ io.on("connection", (socket) => {
     });
 
     attachSocketToRoom(socket, roomId);
-    setLobbyStatus(socket.id, "in-game");
+    setLobbyStatus(socket.id, "spectating");
 
     socket.emit("room:spectate:joined", {
       roomId,
