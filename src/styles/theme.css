@@ -286,6 +286,13 @@ body {
   box-shadow: 0 16px 40px rgba(131, 172, 255, 0.46);
 }
 
+.match-primary-disabled-reason {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(203, 233, 255, 0.82);
+}
+
 .secondary-button {
   width: 100%;
   margin-top: 10px;

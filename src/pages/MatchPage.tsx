@@ -50,7 +50,7 @@ export function MatchPage({
     waitingSeconds: queueElapsedSeconds,
     queueSize
   });
-  const startDisabled = connectionStatus !== "online" || isQueuing || isRecoveringSession;
+  const startDisabled = guide.primaryActionDisabledReason !== null;
   const cancelDisabled = connectionStatus !== "online" || !isQueuing || isRecoveringSession;
   const retryWarmupDisabled =
     connectionStatus !== "online" || sceneWarmupStatus !== "failed" || isRecoveringSession;
@@ -93,8 +93,11 @@ export function MatchPage({
           onTouchStart={onPrepareArena}
           disabled={startDisabled}
         >
-          {isRecoveringSession ? "正在恢复对局..." : isQueuing ? "正在匹配对手..." : "一键开始匹配"}
+          {guide.primaryActionLabel}
         </button>
+        {startDisabled && guide.primaryActionDisabledReason ? (
+          <p className="match-primary-disabled-reason">{guide.primaryActionDisabledReason}</p>
+        ) : null}
         {sceneWarmupStatus === "failed" ? (
           <div className="match-warmup-actions">
             <button
