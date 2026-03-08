@@ -41,14 +41,16 @@ interface SmartActionInput {
   opponentRematchReady: boolean;
 }
 
+const OBSERVATION_HINT = "可点击棋盘切层观察";
+
 function connectionReason(status: ConnectionStatus): string {
   if (status === "connecting") {
     return "正在连接服务器";
   }
   if (status === "reconnecting") {
-    return "网络重连中，请稍候";
+    return `网络重连中，请稍候，${OBSERVATION_HINT}`;
   }
-  return "当前离线，暂不可操作";
+  return `当前离线，暂不可操作，${OBSERVATION_HINT}`;
 }
 
 function winnerReason(winner: Winner, myMark: PlayerMark): string {
@@ -153,7 +155,7 @@ export function createSmartActionState(input: SmartActionInput): SmartActionStat
       actionType: "wait",
       label: "等待对手",
       enabled: false,
-      reason: "当前不是你的回合",
+      reason: `当前不是你的回合，${OBSERVATION_HINT}`,
       target: null
     };
   }
@@ -163,7 +165,7 @@ export function createSmartActionState(input: SmartActionInput): SmartActionStat
       actionType: "pending",
       label: "提交中...",
       enabled: false,
-      reason: "正在等待服务器确认本次落子",
+      reason: `正在等待服务器确认本次落子，可先切层观察局面变化`,
       target: null
     };
   }

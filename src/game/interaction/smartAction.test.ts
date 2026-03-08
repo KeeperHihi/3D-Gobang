@@ -95,6 +95,7 @@ describe("createSmartActionState", () => {
     expect(state.actionType).toBe("wait");
     expect(state.label).toBe("等待对手");
     expect(state.enabled).toBe(false);
+    expect(state.reason).toContain("切层观察");
   });
 
   it("still returns wait when assist is disabled but not my turn", () => {
@@ -116,6 +117,7 @@ describe("createSmartActionState", () => {
     expect(state.actionType).toBe("pending");
     expect(state.enabled).toBe(false);
     expect(state.label).toBe("提交中...");
+    expect(state.reason).toContain("切层观察");
   });
 
   it("returns rematch action when game ended", () => {
@@ -206,5 +208,17 @@ describe("createSmartActionState", () => {
     expect(state.actionType).toBe("connection");
     expect(state.enabled).toBe(false);
     expect(state.reason).toContain("重连");
+    expect(state.reason).toContain("切层观察");
+  });
+
+  it("keeps actionable observation hint when offline", () => {
+    const state = createStateFixture({
+      connectionStatus: "offline"
+    });
+
+    expect(state.actionType).toBe("connection");
+    expect(state.enabled).toBe(false);
+    expect(state.reason).toContain("离线");
+    expect(state.reason).toContain("切层观察");
   });
 });
