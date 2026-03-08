@@ -293,6 +293,17 @@ body {
   color: rgba(203, 233, 255, 0.82);
 }
 
+.match-primary-blocker-reason {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(137, 210, 255, 0.48);
+  background: linear-gradient(90deg, rgba(45, 92, 152, 0.3), rgba(56, 78, 143, 0.25));
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(222, 244, 255, 0.95);
+}
+
 .match-secondary-disabled-reason {
   margin: 8px 2px 0;
   font-size: 12px;

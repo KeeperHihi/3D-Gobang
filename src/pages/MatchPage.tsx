@@ -1,4 +1,5 @@
 import { createMatchQueueGuide } from "../game/interaction/matchQueueGuide";
+import { createMatchBlockerOrchestrator } from "../game/interaction/matchBlockerOrchestrator";
 import { createMatchSecondaryActions } from "../game/interaction/matchSecondaryActions";
 import {
   sceneWarmupHint,
@@ -57,6 +58,15 @@ export function MatchPage({
     isRecoveringSession,
     sceneWarmupStatus
   });
+  const blockerDecision = createMatchBlockerOrchestrator({
+    connectionStatus,
+    isQueuing,
+    isRecoveringSession,
+    sceneWarmupStatus,
+    primaryActionDisabledReason: guide.primaryActionDisabledReason,
+    cancelAction: secondaryActions.cancelAction,
+    retryWarmupAction: secondaryActions.retryWarmupAction
+  });
   const startDisabled = guide.primaryActionDisabledReason !== null;
   const warmupHint = sceneWarmupHint(sceneWarmupStatus, {
     intentOnlyMode: warmupIntentOnlyMode,
@@ -99,8 +109,8 @@ export function MatchPage({
         >
           {guide.primaryActionLabel}
         </button>
-        {startDisabled && guide.primaryActionDisabledReason ? (
-          <p className="match-primary-disabled-reason">{guide.primaryActionDisabledReason}</p>
+        {blockerDecision.primaryBlockerReason ? (
+          <p className="match-primary-blocker-reason">{blockerDecision.primaryBlockerReason}</p>
         ) : null}
         {secondaryActions.retryWarmupAction.visible ? (
           <div className="match-warmup-actions">
@@ -113,7 +123,8 @@ export function MatchPage({
               {secondaryActions.retryWarmupAction.label}
             </button>
             {!secondaryActions.retryWarmupAction.enabled &&
-            secondaryActions.retryWarmupAction.disabledReason ? (
+            secondaryActions.retryWarmupAction.disabledReason &&
+            !blockerDecision.suppressRetryWarmupReason ? (
               <p className="match-secondary-disabled-reason">
                 {secondaryActions.retryWarmupAction.disabledReason}
               </p>
@@ -135,7 +146,8 @@ export function MatchPage({
         ) : null}
         {secondaryActions.cancelAction.visible &&
         !secondaryActions.cancelAction.enabled &&
-        secondaryActions.cancelAction.disabledReason ? (
+        secondaryActions.cancelAction.disabledReason &&
+        !blockerDecision.suppressCancelReason ? (
           <p className="match-secondary-disabled-reason">
             {secondaryActions.cancelAction.disabledReason}
           </p>
