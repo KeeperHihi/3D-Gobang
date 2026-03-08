@@ -381,7 +381,7 @@ export default function App() {
   const warmupPolicyDecision = useMemo(
     () =>
       evaluateWarmupPolicy({
-        connectionStatus,
+        connectionStatus: connectionState,
         matchPhase,
         sceneWarmupStatus,
         effectiveType: warmupNetworkSnapshot.effectiveType,
@@ -391,7 +391,7 @@ export default function App() {
         retryCount: warmupRetryCount
       }),
     [
-      connectionStatus,
+      connectionState,
       hasWarmupIntent,
       matchPhase,
       pageVisible,
