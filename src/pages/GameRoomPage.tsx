@@ -91,6 +91,7 @@ import {
   evaluateBoardLoadRecovery,
   type BoardLoadErrorKind
 } from "../game/interaction/boardLoadRecovery";
+import { shouldAllowAdaptiveRenderTuning } from "../game/interaction/foregroundAdaptation";
 import { BoardLoadingPanel } from "../ui/BoardLoadingPanel";
 import { createLazyBoardScene } from "../ui/boardSceneLoader";
 import { HUD } from "../ui/HUD";
@@ -252,6 +253,10 @@ export function GameRoomPage({
   const winLineDirectorTriggeredRoundKeyRef = useRef<string | null>(null);
   const winLineDirectorTimerRef = useRef<number | null>(null);
   const boardAutoRetryTimerRef = useRef<number | null>(null);
+  const wasForegroundActiveRef = useRef(
+    (typeof document === "undefined" ? true : document.visibilityState === "visible") &&
+      (typeof document === "undefined" ? true : document.hasFocus())
+  );
   const focusGuardTriggeredTurnKeyRef = useRef<string | null>(null);
   const focusGuardWasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
   const layerNavLastInputAtMsRef = useRef(0);
@@ -323,6 +328,7 @@ export function GameRoomPage({
   const [windowFocused, setWindowFocused] = useState<boolean>(() =>
     typeof document === "undefined" ? true : document.hasFocus()
   );
+  const [foregroundReturnedAtMs, setForegroundReturnedAtMs] = useState<number | null>(null);
   const [turnNudgeNotificationPermission, setTurnNudgeNotificationPermission] =
     useState<TurnNudgeNotificationPermission>(() => resolveTurnNudgeNotificationPermission());
   const [turnNudgePermissionRequestPending, setTurnNudgePermissionRequestPending] = useState(false);
@@ -367,6 +373,17 @@ export function GameRoomPage({
     }
     return Math.max(0, boardAutoRetryScheduledAtMs - nowMs);
   }, [boardAutoRetryScheduledAtMs, nowMs]);
+  const adaptiveRenderTuningDecision = useMemo(
+    () =>
+      shouldAllowAdaptiveRenderTuning({
+        pageVisible,
+        windowFocused,
+        returnedToForegroundAtMs: foregroundReturnedAtMs,
+        nowMs,
+        averageFps
+      }),
+    [averageFps, foregroundReturnedAtMs, nowMs, pageVisible, windowFocused]
+  );
   const hintsWinLinesIndex = useMemo(
     () => createWinLinesIndex(snapshot.size, snapshot.connect),
     [snapshot.connect, snapshot.size]
@@ -1482,6 +1499,17 @@ export function GameRoomPage({
   }, [syncTurnNudgeNotificationPermission]);
 
   useEffect(() => {
+    const foregroundActive = pageVisible && windowFocused;
+    if (foregroundActive && !wasForegroundActiveRef.current) {
+      setForegroundReturnedAtMs(Date.now());
+    }
+    if (!foregroundActive && foregroundReturnedAtMs !== null) {
+      setForegroundReturnedAtMs(null);
+    }
+    wasForegroundActiveRef.current = foregroundActive;
+  }, [foregroundReturnedAtMs, pageVisible, windowFocused]);
+
+  useEffect(() => {
     const shouldNudge = shouldTriggerTurnNudge({
       enabled: turnNudgeEnabled,
       connectionStatus,
@@ -1607,6 +1635,10 @@ export function GameRoomPage({
     setBoardAutoRetrying(false);
     setBoardAutoRetryAttempt(0);
     setBoardLoadErrorKind("transient");
+    setForegroundReturnedAtMs(null);
+    wasForegroundActiveRef.current =
+      (typeof document === "undefined" ? true : document.visibilityState === "visible") &&
+      (typeof document === "undefined" ? true : document.hasFocus());
     setBoardSceneReady(false);
     setBoardSceneLoadFailed(false);
   }, [clearBoardAutoRetryTimer, snapshot.roomId]);
@@ -1619,6 +1651,9 @@ export function GameRoomPage({
       nowMs,
       averageFps
     });
+    if (!adaptiveRenderTuningDecision.allow) {
+      return;
+    }
     if (!transition.switched || transition.nextStage === vfxStage) {
       return;
     }
@@ -1631,7 +1666,14 @@ export function GameRoomPage({
     }
     setVfxStage(transition.nextStage);
     setVfxStageStartedAtMs(nowMs);
-  }, [averageFps, nowMs, targetVfxStage, vfxStage, vfxStageStartedAtMs]);
+  }, [
+    adaptiveRenderTuningDecision.allow,
+    averageFps,
+    nowMs,
+    targetVfxStage,
+    vfxStage,
+    vfxStageStartedAtMs
+  ]);
 
   useEffect(() => {
     if (renderCapabilitySampledRoomIdRef.current === snapshot.roomId) {
@@ -1726,11 +1768,16 @@ export function GameRoomPage({
   ]);
 
   useEffect(() => {
-    if (qualityMode === "auto" && renderBootstrapDecision.phase === "boot") {
-      return;
+    const nowMs = Date.now();
+    if (qualityMode === "auto") {
+      if (renderBootstrapDecision.phase === "boot") {
+        return;
+      }
+      if (!adaptiveRenderTuningDecision.allow) {
+        return;
+      }
     }
 
-    const nowMs = Date.now();
     const nextLevel = selectQualityLevel({
       mode: qualityMode,
       currentLevel: qualityLevel,
@@ -1743,7 +1790,14 @@ export function GameRoomPage({
     }
     setQualityLevel(nextLevel);
     setQualityLastSwitchAtMs(nowMs);
-  }, [averageFps, qualityLastSwitchAtMs, qualityLevel, qualityMode, renderBootstrapDecision.phase]);
+  }, [
+    adaptiveRenderTuningDecision.allow,
+    averageFps,
+    qualityLastSwitchAtMs,
+    qualityLevel,
+    qualityMode,
+    renderBootstrapDecision.phase
+  ]);
 
   useEffect(() => {
     if (qualityMode !== "auto") {
@@ -1758,6 +1812,9 @@ export function GameRoomPage({
       }
       return;
     }
+    if (!adaptiveRenderTuningDecision.allow) {
+      return;
+    }
     if (averageFps === null || !Number.isFinite(averageFps)) {
       return;
     }
@@ -1768,7 +1825,13 @@ export function GameRoomPage({
     if (autoCalmMode && averageFps > CALM_MODE_EXIT_FPS) {
       setAutoCalmMode(false);
     }
-  }, [autoCalmMode, averageFps, qualityMode, renderBootstrapDecision.phase]);
+  }, [
+    adaptiveRenderTuningDecision.allow,
+    autoCalmMode,
+    averageFps,
+    qualityMode,
+    renderBootstrapDecision.phase
+  ]);
 
   useEffect(() => {
     if (layoutMode === "mobile") {
