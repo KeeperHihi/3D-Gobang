@@ -82,6 +82,7 @@ import {
 import { createPrimaryIntentState } from "../game/interaction/primaryIntent";
 import { evaluateHudSpotlight } from "../game/interaction/hudSpotlight";
 import { evaluateLayerQuickNav } from "../game/interaction/layerQuickNav";
+import { evaluateLayerFocusCue } from "../game/interaction/layerFocusCue";
 import {
   createWinLineDirectorRoundKey,
   evaluateWinLineDirector
@@ -261,6 +262,7 @@ export function GameRoomPage({
   const focusGuardWasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
   const layerNavLastInputAtMsRef = useRef(0);
   const layerNavLastRotateAtMsRef = useRef(0);
+  const layerFocusCueLastShownAtMsRef = useRef<number | null>(null);
   const turnNudgeTriggeredTurnKeyRef = useRef<string | null>(null);
   const turnNudgeTitleActiveRef = useRef(false);
   const wasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
@@ -336,6 +338,8 @@ export function GameRoomPage({
     number | null
   >(null);
   const [winLineCinematicActive, setWinLineCinematicActive] = useState(false);
+  const [layerFocusCueMessage, setLayerFocusCueMessage] = useState<string | null>(null);
+  const [layerFocusCueExpiresAtMs, setLayerFocusCueExpiresAtMs] = useState<number | null>(null);
   const [settlementStartedAtMs, setSettlementStartedAtMs] = useState<number | null>(null);
   const [autoRematchCountdownStartedAtMs, setAutoRematchCountdownStartedAtMs] = useState<number | null>(
     null
@@ -1012,7 +1016,8 @@ export function GameRoomPage({
   }, [focusLayer, layerQuickNav.smartJumpLayer]);
   const handleLayerTapFocus = useCallback(
     (targetLayer: number) => {
-      if (targetLayer === focusLayer) {
+      const nextLayer = clampLayer(targetLayer, snapshot.size);
+      if (nextLayer === focusLayer) {
         return;
       }
       const now = Date.now();
@@ -1024,7 +1029,21 @@ export function GameRoomPage({
       }
       layerNavLastInputAtMsRef.current = now;
       setFocusMode("manual");
-      setFocusLayer(clampLayer(targetLayer, snapshot.size));
+      setFocusLayer(nextLayer);
+
+      const cueDecision = evaluateLayerFocusCue({
+        source: "tap-focus",
+        fromLayer: focusLayer,
+        toLayer: nextLayer,
+        nowMs: now,
+        lastShownAtMs: layerFocusCueLastShownAtMsRef.current
+      });
+      if (!cueDecision.shouldShow) {
+        return;
+      }
+      layerFocusCueLastShownAtMsRef.current = cueDecision.shownAtMs;
+      setLayerFocusCueMessage(cueDecision.message);
+      setLayerFocusCueExpiresAtMs(cueDecision.expiresAtMs);
     },
     [focusLayer, snapshot.size]
   );
@@ -1276,6 +1295,9 @@ export function GameRoomPage({
     setFocusMode("auto");
     setFocusLayer(Math.floor(snapshot.size / 2));
     setAdvancedOpen(false);
+    layerFocusCueLastShownAtMsRef.current = null;
+    setLayerFocusCueMessage(null);
+    setLayerFocusCueExpiresAtMs(null);
   }, [snapshot.roomId, snapshot.size]);
 
   useEffect(() => {
@@ -1606,6 +1628,26 @@ export function GameRoomPage({
   }, [layoutMode]);
 
   useEffect(() => {
+    if (layerFocusCueExpiresAtMs === null) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const remainingMs = layerFocusCueExpiresAtMs - Date.now();
+    if (remainingMs <= 0) {
+      setLayerFocusCueMessage(null);
+      setLayerFocusCueExpiresAtMs(null);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setLayerFocusCueMessage(null);
+      setLayerFocusCueExpiresAtMs(null);
+    }, remainingMs);
+    return () => window.clearTimeout(timer);
+  }, [layerFocusCueExpiresAtMs]);
+
+  useEffect(() => {
     let rafId = 0;
     let frameCount = 0;
     let windowStart = performance.now();
@@ -1876,7 +1918,8 @@ export function GameRoomPage({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [effectivePrimaryIntent.enabled, handlePrimaryAction, layoutMode]);
 
-  const gameToastMessage = errorMessage;
+  const gameToastType = errorMessage ? "error" : layerFocusCueMessage ? "focus-cue" : null;
+  const gameToastMessage = errorMessage ?? layerFocusCueMessage;
 
   return (
     <main className={`game-page ${layoutMode === "mobile" ? "mobile" : "desktop"}`}>
@@ -1998,7 +2041,11 @@ export function GameRoomPage({
         onRematch={handleRematchAction}
         onLeave={onLeave}
       />
-      {gameToastMessage ? <div className="game-toast">{gameToastMessage}</div> : null}
+      {gameToastMessage ? (
+        <div className={`game-toast ${gameToastType === "focus-cue" ? "focus-cue" : "error"}`}>
+          {gameToastMessage}
+        </div>
+      ) : null}
     </main>
   );
 }

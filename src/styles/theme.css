@@ -1182,6 +1182,24 @@ body {
   z-index: 9;
 }
 
+.game-toast.focus-cue {
+  border-color: rgba(118, 230, 255, 0.55);
+  color: #d6f8ff;
+  background: rgba(16, 38, 66, 0.82);
+  animation: game-toast-focus-cue 180ms ease-out;
+}
+
+@keyframes game-toast-focus-cue {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 .game-page.mobile .game-toast {
   bottom: calc(118px + env(safe-area-inset-bottom, 0px));
 }
