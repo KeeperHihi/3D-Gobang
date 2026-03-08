@@ -49,7 +49,7 @@ describe("evaluateHudSpotlight", () => {
     expect(decision.secondaryItems[0]?.id).toBe("turn-nudge-prompt");
   });
 
-  it("prioritizes connection failure over every non-critical hint", () => {
+  it("keeps offline status as top critical spotlight", () => {
     const decision = createDecision({
       connectionStatus: "offline",
       showTurnCountdown: true,
@@ -60,8 +60,36 @@ describe("evaluateHudSpotlight", () => {
     });
 
     expect(decision.primaryCard?.id).toBe("connection");
+    expect(decision.primaryCard?.tone).toBe("critical");
     expect(decision.secondaryItems.length).toBe(2);
     expect(decision.secondaryItems[0]?.id).toBe("turn-clock");
+  });
+
+  it("does not over-prioritize initial connecting state", () => {
+    const decision = createDecision({
+      connectionStatus: "connecting",
+      showTurnCountdown: true,
+      turnUrgent: true,
+      showAutoContinueHint: true,
+      autoContinuePhase: "countdown"
+    });
+
+    expect(decision.primaryCard?.id).toBe("turn-clock");
+    expect(decision.secondaryItems[0]?.id).toBe("auto-continue");
+    expect(decision.secondaryItems[1]?.id).toBe("connection");
+  });
+
+  it("keeps reconnecting state above non-critical hints", () => {
+    const decision = createDecision({
+      connectionStatus: "reconnecting",
+      showAutoContinueHint: true,
+      autoContinuePhase: "countdown",
+      turnNudgePermissionPhase: "prompt"
+    });
+
+    expect(decision.primaryCard?.id).toBe("connection");
+    expect(decision.primaryCard?.tone).toBe("critical");
+    expect(decision.secondaryItems[0]?.id).toBe("auto-continue");
   });
 
   it("respects max secondary item cap", () => {

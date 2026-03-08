@@ -88,7 +88,7 @@ export function createSmartActionState(input: SmartActionInput): SmartActionStat
     });
     return {
       actionType: "connection",
-      label: "连接中",
+      label: connectionGuidance.actionLabel,
       enabled: false,
       reason: connectionGuidance.primaryHint ?? "正在连接服务器",
       target: null

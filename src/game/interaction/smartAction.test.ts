@@ -209,6 +209,7 @@ describe("createSmartActionState", () => {
     });
 
     expect(state.actionType).toBe("connection");
+    expect(state.label).toBe("重连中");
     expect(state.enabled).toBe(false);
     expect(state.reason).toContain("重连");
     expect(state.reason).toContain("切层观察");
@@ -221,6 +222,7 @@ describe("createSmartActionState", () => {
     });
 
     expect(state.actionType).toBe("connection");
+    expect(state.label).toBe("重连中");
     expect(state.reason).toBe("网络重连中，请稍候");
   });
 
@@ -231,6 +233,7 @@ describe("createSmartActionState", () => {
     });
 
     expect(state.actionType).toBe("connection");
+    expect(state.label).toBe("离线中");
     expect(state.enabled).toBe(false);
     expect(state.reason).toContain("离线");
     expect(state.reason).toContain("切层观察");
@@ -243,6 +246,7 @@ describe("createSmartActionState", () => {
     });
 
     expect(state.actionType).toBe("connection");
+    expect(state.label).toBe("离线中");
     expect(state.reason).toBe("当前离线，暂不可操作");
   });
 
@@ -253,6 +257,7 @@ describe("createSmartActionState", () => {
     });
 
     expect(state.actionType).toBe("connection");
+    expect(state.label).toBe("连接中");
     expect(state.reason).toBe("正在连接服务器");
   });
 });

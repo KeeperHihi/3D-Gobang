@@ -94,19 +94,6 @@ interface HUDProps {
   onLeave: () => void;
 }
 
-function connectionLabel(status: HUDProps["connectionStatus"]): string {
-  if (status === "online") {
-    return "在线";
-  }
-  if (status === "reconnecting") {
-    return "重连中";
-  }
-  if (status === "connecting") {
-    return "连接中";
-  }
-  return "离线";
-}
-
 function winnerText(winner: Winner, myMark: PlayerMark): string {
   if (!winner) {
     return "继续战斗";
@@ -333,6 +320,8 @@ export function HUD({
     connectionStatus,
     canObserveBoard
   });
+  const connectionSpotlightToneClass =
+    connectionGuidance.spotlightTone === "critical" ? "critical" : "info";
   const spotlightToneClass =
     hudSpotlight.primaryCard?.tone === "critical"
       ? "critical"
@@ -411,7 +400,7 @@ export function HUD({
             </div>
             <div className="hud-row">
               <span>网络</span>
-              <span>{connectionLabel(connectionStatus)}</span>
+              <span>{connectionGuidance.statusLabel}</span>
             </div>
             <div className="hud-row">
               <span>你</span>
@@ -425,7 +414,7 @@ export function HUD({
         ) : null}
         <div className="hud-turn">{turnText}</div>
         {showMinimalConnectionSpotlight ? (
-          <div className="hud-spotlight-note critical">
+          <div className={`hud-spotlight-note ${connectionSpotlightToneClass}`}>
             {connectionGuidance.primaryHint}
           </div>
         ) : null}
@@ -476,7 +465,7 @@ export function HUD({
               </div>
             ) : null}
             {showConnectionSpotlight ? (
-              <div className="hud-spotlight-note critical">
+              <div className={`hud-spotlight-note ${connectionSpotlightToneClass}`}>
                 {connectionGuidance.primaryHint}
               </div>
             ) : null}
@@ -707,7 +696,7 @@ export function HUD({
                 </div>
                 <div className="hud-row">
                   <span>网络</span>
-                  <span>{connectionLabel(connectionStatus)}</span>
+                  <span>{connectionGuidance.statusLabel}</span>
                 </div>
                 <div className="hud-row">
                   <span>你</span>

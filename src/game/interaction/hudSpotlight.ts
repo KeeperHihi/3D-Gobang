@@ -1,5 +1,6 @@
 import type { AutoContinueAfterFallbackPhase } from "./autoContinueAfterFallback";
 import type { AutoRematchPhase } from "./autoRematch";
+import { evaluateConnectionSemantic } from "./connectionGuidance";
 import type { ConnectionStatus } from "./smartAction";
 import type { TimeoutAssistUrgency } from "./timeoutAssist";
 import type { TurnNudgePermissionPhase } from "./turnNudgePermission";
@@ -98,6 +99,7 @@ function priorityForAutoContinue(phase: AutoContinueAfterFallbackPhase): number 
 
 function createCandidates(input: HudSpotlightInput): Candidate[] {
   const candidates: Candidate[] = [];
+  const connectionSemantic = evaluateConnectionSemantic(input.connectionStatus);
   const push = (candidate: Candidate | null) => {
     if (candidate !== null) {
       candidates.push(candidate);
@@ -105,12 +107,12 @@ function createCandidates(input: HudSpotlightInput): Candidate[] {
   };
 
   push(
-    input.connectionStatus === "online"
+    connectionSemantic.spotlightPriority <= 0
       ? null
       : {
           id: "connection",
-          tone: "critical",
-          priority: 100
+          tone: connectionSemantic.spotlightTone,
+          priority: connectionSemantic.spotlightPriority
         }
   );
 

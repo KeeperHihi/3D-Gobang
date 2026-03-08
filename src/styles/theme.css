@@ -540,6 +540,12 @@ body {
   background: linear-gradient(90deg, rgba(151, 59, 34, 0.45), rgba(141, 45, 68, 0.34));
 }
 
+.hud-spotlight-note.info {
+  color: rgba(225, 242, 255, 0.96);
+  border-color: rgba(138, 202, 248, 0.56);
+  background: linear-gradient(90deg, rgba(47, 95, 155, 0.34), rgba(52, 79, 141, 0.28));
+}
+
 .hud-winline-director {
   margin-bottom: 10px;
   border-radius: 11px;
