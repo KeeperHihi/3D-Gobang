@@ -310,6 +310,32 @@ body {
   color: rgba(255, 177, 177, 0.98);
 }
 
+.match-display-name-toast {
+  margin: 6px 2px 0;
+  border-radius: 9px;
+  padding: 6px 10px;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: #dff9ff;
+  border: 1px solid rgba(132, 229, 255, 0.58);
+  background: linear-gradient(96deg, rgba(41, 119, 196, 0.36), rgba(86, 88, 196, 0.34));
+  box-shadow:
+    0 8px 20px rgba(44, 112, 194, 0.24),
+    0 0 16px rgba(102, 181, 255, 0.22);
+  animation: match-display-name-toast-in 180ms ease-out;
+}
+
+@keyframes match-display-name-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .match-challenge-notice {
   margin: 12px 0 0;
   border-radius: 10px;
@@ -1229,33 +1255,40 @@ body {
   margin-top: -2px;
 }
 
-.hud-settings-modal {
+.hud-settings-drawer {
   position: absolute;
-  inset: 8px;
-  border-radius: 14px;
-  border: 1px solid rgba(109, 211, 255, 0.34);
+  top: 0;
+  left: calc(100% + 14px);
+  width: min(500px, calc(100vw - 42px));
+  border-radius: 16px;
+  border: 1px solid rgba(109, 211, 255, 0.4);
   background: linear-gradient(155deg, rgba(9, 20, 42, 0.94), rgba(6, 10, 25, 0.9));
   box-shadow:
-    0 12px 34px rgba(10, 33, 95, 0.35),
+    0 16px 40px rgba(10, 33, 95, 0.42),
     0 0 0 1px rgba(255, 255, 255, 0.04) inset;
   opacity: 0;
-  transform: translateY(8px) scale(0.985);
   transition:
     opacity 0.24s ease,
     transform 0.24s ease;
   pointer-events: none;
 }
 
-.hud-settings-modal.is-open {
+.hud-settings-drawer.is-open {
   opacity: 1;
-  transform: translateY(0) scale(1);
   pointer-events: auto;
 }
 
-.hud-settings-modal.is-closing {
+.hud-settings-drawer.is-closing {
   opacity: 0;
-  transform: translateY(8px) scale(0.985);
   pointer-events: none;
+}
+
+.hud-settings-drawer.is-dragging {
+  transition: opacity 0.24s ease;
+  box-shadow:
+    0 18px 48px rgba(17, 56, 128, 0.5),
+    0 0 24px rgba(113, 214, 255, 0.24),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
 }
 
 .hud-settings-header {
@@ -1268,6 +1301,29 @@ body {
   font-weight: 700;
   letter-spacing: 0.08em;
   color: rgba(217, 241, 255, 0.94);
+  user-select: none;
+  cursor: grab;
+  touch-action: none;
+}
+
+.hud-settings-drawer.is-dragging .hud-settings-header {
+  cursor: grabbing;
+}
+
+.hud-settings-header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-settings-drag-tip {
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  color: rgba(199, 237, 255, 0.88);
+  border: 1px solid rgba(130, 214, 255, 0.34);
+  background: rgba(58, 96, 158, 0.28);
 }
 
 .hud-settings-close {
@@ -1290,7 +1346,7 @@ body {
   margin-top: 8px;
   border-top: 1px solid rgba(111, 206, 255, 0.24);
   padding: 10px 12px 12px;
-  max-height: min(58vh, 500px);
+  max-height: min(76vh, 700px);
   overflow-y: auto;
 }
 
@@ -1518,22 +1574,24 @@ body {
   min-height: 44px;
 }
 
-.hud-root.mobile .hud-settings-modal {
+.hud-root.mobile .hud-settings-drawer {
   position: absolute;
   left: 0;
   right: 0;
   bottom: calc(100% + 10px);
+  width: auto;
   border-radius: 16px;
   background: linear-gradient(155deg, rgba(9, 20, 42, 0.88), rgba(6, 10, 25, 0.86));
   box-shadow: 0 -8px 34px rgba(11, 34, 96, 0.35);
-  inset: auto;
 }
 
 .hud-root.mobile .hud-settings-header {
   padding-top: 12px;
+  cursor: default;
+  touch-action: auto;
 }
 
-.hud-root.mobile .hud-settings-modal .hud-advanced-panel {
+.hud-root.mobile .hud-settings-drawer .hud-advanced-panel {
   margin-top: 6px;
   max-height: min(62vh, 520px);
 }

@@ -42,7 +42,6 @@ interface BoardSceneProps {
     player: PlayerMark;
   } | null;
   onPlace: (coordinate: Coordinate3D) => void;
-  onLayerWheel?: (deltaY: number) => boolean;
   onLayerSwipe?: (deltaY: number) => void;
   onUserRotate?: () => void;
 }
@@ -289,7 +288,6 @@ function BoardSceneComponent({
   hintMoves,
   pendingMove,
   onPlace,
-  onLayerWheel,
   onLayerSwipe,
   onUserRotate
 }: BoardSceneProps) {
@@ -444,18 +442,6 @@ function BoardSceneComponent({
   return (
     <div
       className="board-scene"
-      onWheel={(event) => {
-        if (!onLayerWheel) {
-          return;
-        }
-        if (event.deltaY === 0) {
-          return;
-        }
-        const handled = onLayerWheel(event.deltaY);
-        if (handled) {
-          event.preventDefault();
-        }
-      }}
       onTouchStart={(event) => {
         const touch = event.changedTouches[0];
         if (!touch) {

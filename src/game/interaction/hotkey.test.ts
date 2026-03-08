@@ -73,8 +73,8 @@ describe("sanitizeLayerHotkeys", () => {
 
 describe("resolveLayerHotkeyAction", () => {
   it("maps configured keys to layer navigation direction", () => {
-    expect(resolveLayerHotkeyAction("a", DEFAULT_LAYER_HOTKEYS)).toBe(-1);
-    expect(resolveLayerHotkeyAction("D", DEFAULT_LAYER_HOTKEYS)).toBe(1);
+    expect(resolveLayerHotkeyAction("d", DEFAULT_LAYER_HOTKEYS)).toBe(-1);
+    expect(resolveLayerHotkeyAction("A", DEFAULT_LAYER_HOTKEYS)).toBe(1);
   });
 
   it("returns null for unconfigured keys", () => {

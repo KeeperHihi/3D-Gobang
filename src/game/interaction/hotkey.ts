@@ -15,8 +15,8 @@ export interface LayerHotkeys {
 }
 
 export const DEFAULT_LAYER_HOTKEYS: LayerHotkeys = {
-  up: "a",
-  down: "d"
+  up: "d",
+  down: "a"
 };
 
 function normalizeSingleHotkey(value: string | undefined): string | null {

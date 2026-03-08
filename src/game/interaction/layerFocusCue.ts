@@ -1,6 +1,5 @@
 export type LayerFocusCueSource =
   | "tap-focus"
-  | "wheel"
   | "swipe"
   | "button"
   | "smart-jump"

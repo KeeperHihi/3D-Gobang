@@ -93,12 +93,6 @@ import { createPrimaryIntentState } from "../game/interaction/primaryIntent";
 import { evaluateHudSpotlight } from "../game/interaction/hudSpotlight";
 import { evaluateLayerQuickNav } from "../game/interaction/layerQuickNav";
 import {
-  DEFAULT_LAYER_WHEEL_DIRECTION,
-  resolveLayerStepFromWheelDelta,
-  sanitizeLayerWheelDirection,
-  type LayerWheelDirection
-} from "../game/interaction/layerWheel";
-import {
   createWinLineDirectorRoundKey,
   evaluateWinLineDirector
 } from "../game/interaction/winLineDirector";
@@ -230,7 +224,6 @@ const RENDER_PROFILE_SAMPLE_INTERVAL_MS = 2_500;
 const RENDER_PROFILE_LOW_FPS_SAMPLE_FPS = 40;
 const EMPTY_HINT_MOVES: MoveHint[] = [];
 const LAYER_HOTKEY_STORAGE_KEY = "nebula-cube-layer-hotkeys-v1";
-const LAYER_WHEEL_DIRECTION_STORAGE_KEY = "nebula-cube-layer-wheel-direction-v1";
 
 function readLayerHotkeysFromStorage(): LayerHotkeys {
   if (typeof localStorage === "undefined") {
@@ -253,20 +246,6 @@ function persistLayerHotkeysToStorage(hotkeys: LayerHotkeys): void {
     return;
   }
   localStorage.setItem(LAYER_HOTKEY_STORAGE_KEY, JSON.stringify(hotkeys));
-}
-
-function readLayerWheelDirectionFromStorage(): LayerWheelDirection {
-  if (typeof localStorage === "undefined") {
-    return DEFAULT_LAYER_WHEEL_DIRECTION;
-  }
-  return sanitizeLayerWheelDirection(localStorage.getItem(LAYER_WHEEL_DIRECTION_STORAGE_KEY));
-}
-
-function persistLayerWheelDirectionToStorage(direction: LayerWheelDirection): void {
-  if (typeof localStorage === "undefined") {
-    return;
-  }
-  localStorage.setItem(LAYER_WHEEL_DIRECTION_STORAGE_KEY, direction);
 }
 
 export function GameRoomPage({
@@ -358,12 +337,9 @@ export function GameRoomPage({
   );
   const [focusMode, setFocusMode] = useState<"auto" | "manual">("manual");
   const [focusLayer, setFocusLayer] = useState(Math.floor(snapshot.size / 2));
-  const [nonFocusLayerOpacity, setNonFocusLayerOpacity] = useState(0.22);
+  const [nonFocusLayerOpacity, setNonFocusLayerOpacity] = useState(1);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [layerHotkeys, setLayerHotkeys] = useState<LayerHotkeys>(() => readLayerHotkeysFromStorage());
-  const [layerWheelDirection, setLayerWheelDirection] = useState<LayerWheelDirection>(() =>
-    readLayerWheelDirectionFromStorage()
-  );
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
     if (typeof window === "undefined") {
       return "desktop";
@@ -1058,29 +1034,18 @@ export function GameRoomPage({
     setFocusMode("manual");
     setFocusLayer((current) => clampLayer(current + step, snapshot.size));
   }, [snapshot.size]);
-  const handleLayerWheel = useCallback(
-    (deltaY: number): boolean => {
-      if (settingsOpen) {
-        return false;
+  const handleLayerSwipe = useCallback(
+    (deltaY: number) => {
+      if (settingsOpen || !Number.isFinite(deltaY) || deltaY === 0) {
+        return;
       }
       const now = Date.now();
       if (now - layerNavLastInputAtMsRef.current < LAYER_NAV_INPUT_THROTTLE_MS) {
-        return false;
+        return;
       }
-      const step = resolveLayerStepFromWheelDelta(deltaY, layerWheelDirection);
-      if (step === null) {
-        return false;
-      }
-      handleLayerStep(step);
-      return true;
+      handleLayerStep(deltaY > 0 ? 1 : -1);
     },
-    [handleLayerStep, layerWheelDirection, settingsOpen]
-  );
-  const handleLayerSwipe = useCallback(
-    (deltaY: number) => {
-      handleLayerWheel(deltaY);
-    },
-    [handleLayerWheel]
+    [handleLayerStep, settingsOpen]
   );
 
   const clearBoardAutoRetryTimer = useCallback(() => {
@@ -1216,9 +1181,6 @@ export function GameRoomPage({
       })
     );
   }, []);
-  const handleLayerWheelDirectionChange = useCallback((direction: LayerWheelDirection) => {
-    setLayerWheelDirection(sanitizeLayerWheelDirection(direction));
-  }, []);
 
   const handleResetLayerHotkeys = useCallback(() => {
     setLayerHotkeys(DEFAULT_LAYER_HOTKEYS);
@@ -1308,9 +1270,6 @@ export function GameRoomPage({
   useEffect(() => {
     persistLayerHotkeysToStorage(layerHotkeys);
   }, [layerHotkeys]);
-  useEffect(() => {
-    persistLayerWheelDirectionToStorage(layerWheelDirection);
-  }, [layerWheelDirection]);
 
   useEffect(() => {
     setFocusMode("manual");
@@ -2017,7 +1976,6 @@ export function GameRoomPage({
                   hintMoves={hintMovesForBoard}
                   pendingMove={pendingMove}
                   onPlace={onPlace}
-                  onLayerWheel={handleLayerWheel}
                   onLayerSwipe={handleLayerSwipe}
                   onUserRotate={handleBoardRotate}
                 />
@@ -2045,7 +2003,6 @@ export function GameRoomPage({
         onboardingGuide={onboardingGuide.visible ? onboardingGuide : null}
         settingsOpen={settingsOpen}
         layerHotkeys={layerHotkeys}
-        layerWheelDirection={layerWheelDirection}
         qualityMode={qualityMode}
         qualityLevel={effectiveQualityLevel}
         calmModeActive={autoCalmMode}
@@ -2092,7 +2049,6 @@ export function GameRoomPage({
         onCloseSettings={handleCloseSettings}
         onLayerStep={handleLayerStep}
         onLayerHotkeyChange={handleLayerHotkeyChange}
-        onLayerWheelDirectionChange={handleLayerWheelDirectionChange}
         onResetLayerHotkeys={handleResetLayerHotkeys}
         onToggleAssist={handleAssistToggle}
         onNonFocusLayerOpacityChange={handleNonFocusLayerOpacityChange}

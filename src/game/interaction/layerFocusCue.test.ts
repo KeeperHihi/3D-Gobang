@@ -30,7 +30,7 @@ describe("evaluateLayerFocusCue", () => {
 
   it("does not show cue for non-tap sources", () => {
     const decision = createDecision({
-      source: "wheel"
+      source: "button"
     });
 
     expect(decision.shouldShow).toBe(false);

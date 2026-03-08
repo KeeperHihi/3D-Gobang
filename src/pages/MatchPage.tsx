@@ -115,7 +115,9 @@ export function MatchPage({
   const challengablePlayers = onlinePlayers.filter((player) => !player.isSelf);
   const [displayNameDraft, setDisplayNameDraft] = useState(displayName);
   const [displayNameError, setDisplayNameError] = useState<string | null>(null);
+  const [displayNameSavedToastVisible, setDisplayNameSavedToastVisible] = useState(false);
   const committedDraftRef = useRef(displayName);
+  const displayNameSavedToastTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     setDisplayNameDraft(displayName);
@@ -123,14 +125,38 @@ export function MatchPage({
     setDisplayNameError(null);
   }, [displayName]);
 
+  const clearDisplayNameSavedToastTimer = () => {
+    if (typeof window === "undefined" || displayNameSavedToastTimerRef.current === null) {
+      return;
+    }
+    window.clearTimeout(displayNameSavedToastTimerRef.current);
+    displayNameSavedToastTimerRef.current = null;
+  };
+
+  const showDisplayNameSavedToast = () => {
+    setDisplayNameSavedToastVisible(true);
+    if (typeof window === "undefined") {
+      return;
+    }
+    clearDisplayNameSavedToastTimer();
+    displayNameSavedToastTimerRef.current = window.setTimeout(() => {
+      setDisplayNameSavedToastVisible(false);
+      displayNameSavedToastTimerRef.current = null;
+    }, 1600);
+  };
+
+  useEffect(() => () => clearDisplayNameSavedToastTimer(), []);
+
   const handleDisplayNameCommit = () => {
     const committed = displayNameDraft.trim();
     if (!committed) {
       setDisplayNameError("昵称不能为空");
+      setDisplayNameSavedToastVisible(false);
       return;
     }
     if (committed !== committedDraftRef.current) {
       onDisplayNameChange(committed);
+      showDisplayNameSavedToast();
     }
     committedDraftRef.current = committed;
     setDisplayNameDraft(committed);
@@ -177,6 +203,11 @@ export function MatchPage({
             </button>
           </div>
           {displayNameError ? <p className="match-display-name-error">{displayNameError}</p> : null}
+          {displayNameSavedToastVisible ? (
+            <p className="match-display-name-toast" role="status" aria-live="polite">
+              保存成功 · 昵称已同步
+            </p>
+          ) : null}
         </div>
         {isQueuing ? (
           <div className="match-queue-panel">
