@@ -42,6 +42,7 @@ interface BoardSceneProps {
     player: PlayerMark;
   } | null;
   onPlace: (coordinate: Coordinate3D) => void;
+  onFocusLayerByTap?: (layer: number) => void;
   onLayerWheel?: (deltaY: number) => boolean;
   onLayerSwipe?: (deltaY: number) => void;
   onUserRotate?: () => void;
@@ -289,6 +290,7 @@ function BoardSceneComponent({
   hintMoves,
   pendingMove,
   onPlace,
+  onFocusLayerByTap,
   onLayerWheel,
   onLayerSwipe,
   onUserRotate
@@ -578,27 +580,32 @@ function BoardSceneComponent({
                     : undefined
                 }
                 onClick={
-                  interactive
-                    ? (event) => {
-                        event.stopPropagation();
-                        const hit = resolveBoardInstanceCell(bucket, event.instanceId);
-                        if (!hit) {
-                          return;
-                        }
-                        const inFocusLayer = focusLayer === null || hit.coordinate.z === focusLayer;
-                        const isEmpty = board[hit.boardIndex] === 0;
-                        const tapAssistDecision = evaluateLayerTapAssist({
-                          canPlace,
-                          isEmpty,
-                          inFocusLayer,
-                          targetLayer: hit.coordinate.z,
-                          currentLayer: focusLayer
-                        });
-                        if (tapAssistDecision.action === "place") {
-                          onPlace(hit.coordinate);
-                        }
-                      }
-                    : undefined
+                  (event) => {
+                    event.stopPropagation();
+                    const hit = resolveBoardInstanceCell(bucket, event.instanceId);
+                    if (!hit) {
+                      return;
+                    }
+                    const inFocusLayer = focusLayer === null || hit.coordinate.z === focusLayer;
+                    const isEmpty = board[hit.boardIndex] === 0;
+                    const tapAssistDecision = evaluateLayerTapAssist({
+                      canPlace,
+                      isEmpty,
+                      inFocusLayer,
+                      targetLayer: hit.coordinate.z,
+                      currentLayer: focusLayer
+                    });
+                    if (tapAssistDecision.action === "place") {
+                      onPlace(hit.coordinate);
+                      return;
+                    }
+                    if (
+                      tapAssistDecision.action === "focus" &&
+                      tapAssistDecision.nextFocusLayer !== null
+                    ) {
+                      onFocusLayerByTap?.(tapAssistDecision.nextFocusLayer);
+                    }
+                  }
                 }
               />
             );

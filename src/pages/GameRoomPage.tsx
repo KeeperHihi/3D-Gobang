@@ -1010,6 +1010,24 @@ export function GameRoomPage({
     setFocusMode("manual");
     setFocusLayer(layerQuickNav.smartJumpLayer);
   }, [focusLayer, layerQuickNav.smartJumpLayer]);
+  const handleLayerTapFocus = useCallback(
+    (targetLayer: number) => {
+      if (targetLayer === focusLayer) {
+        return;
+      }
+      const now = Date.now();
+      if (
+        now - layerNavLastInputAtMsRef.current < LAYER_NAV_INPUT_THROTTLE_MS ||
+        now - layerNavLastRotateAtMsRef.current < LAYER_NAV_INPUT_THROTTLE_MS
+      ) {
+        return;
+      }
+      layerNavLastInputAtMsRef.current = now;
+      setFocusMode("manual");
+      setFocusLayer(clampLayer(targetLayer, snapshot.size));
+    },
+    [focusLayer, snapshot.size]
+  );
   const clearBoardAutoRetryTimer = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -1901,6 +1919,7 @@ export function GameRoomPage({
                   hintMoves={hintMovesForBoard}
                   pendingMove={pendingMove}
                   onPlace={onPlace}
+                  onFocusLayerByTap={handleLayerTapFocus}
                   onLayerWheel={handleLayerWheel}
                   onLayerSwipe={handleLayerSwipe}
                   onUserRotate={handleBoardRotate}

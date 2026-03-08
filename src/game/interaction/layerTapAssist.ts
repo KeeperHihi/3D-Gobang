@@ -29,7 +29,7 @@ export function evaluateLayerTapAssist(input: LayerTapAssistInput): LayerTapAssi
   }
 
   return {
-    action: "ignore",
-    nextFocusLayer: null
+    action: "focus",
+    nextFocusLayer: input.targetLayer
   };
 }

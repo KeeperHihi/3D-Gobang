@@ -24,15 +24,15 @@ describe("evaluateLayerTapAssist", () => {
     expect(decision.nextFocusLayer).toBeNull();
   });
 
-  it("returns ignore for empty cell in non-focus layer", () => {
+  it("returns focus for empty cell in non-focus layer", () => {
     const decision = createDecision({
       inFocusLayer: false,
       targetLayer: 4,
       currentLayer: 2
     });
 
-    expect(decision.action).toBe("ignore");
-    expect(decision.nextFocusLayer).toBeNull();
+    expect(decision.action).toBe("focus");
+    expect(decision.nextFocusLayer).toBe(4);
   });
 
   it("returns ignore when cell is occupied", () => {
@@ -51,5 +51,16 @@ describe("evaluateLayerTapAssist", () => {
     });
 
     expect(decision.action).toBe("ignore");
+  });
+
+  it("returns place when current layer already equals target layer", () => {
+    const decision = createDecision({
+      inFocusLayer: false,
+      currentLayer: 1,
+      targetLayer: 1
+    });
+
+    expect(decision.action).toBe("place");
+    expect(decision.nextFocusLayer).toBeNull();
   });
 });
