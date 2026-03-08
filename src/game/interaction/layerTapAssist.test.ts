@@ -24,18 +24,18 @@ describe("evaluateLayerTapAssist", () => {
     expect(decision.nextFocusLayer).toBeNull();
   });
 
-  it("returns focus for empty cell in non-focus layer", () => {
+  it("returns ignore for empty cell in non-focus layer", () => {
     const decision = createDecision({
       inFocusLayer: false,
       targetLayer: 4,
       currentLayer: 2
     });
 
-    expect(decision.action).toBe("focus");
-    expect(decision.nextFocusLayer).toBe(4);
+    expect(decision.action).toBe("ignore");
+    expect(decision.nextFocusLayer).toBeNull();
   });
 
-  it("returns focus for occupied cell in non-focus layer", () => {
+  it("returns ignore for occupied cell in non-focus layer", () => {
     const decision = createDecision({
       inFocusLayer: false,
       isEmpty: false,
@@ -43,11 +43,11 @@ describe("evaluateLayerTapAssist", () => {
       currentLayer: 1
     });
 
-    expect(decision.action).toBe("focus");
-    expect(decision.nextFocusLayer).toBe(5);
+    expect(decision.action).toBe("ignore");
+    expect(decision.nextFocusLayer).toBeNull();
   });
 
-  it("returns focus for non-focus layer even when placement is unavailable", () => {
+  it("returns ignore for non-focus layer even when placement is unavailable", () => {
     const decision = createDecision({
       canPlace: false,
       inFocusLayer: false,
@@ -55,8 +55,8 @@ describe("evaluateLayerTapAssist", () => {
       currentLayer: 0
     });
 
-    expect(decision.action).toBe("focus");
-    expect(decision.nextFocusLayer).toBe(6);
+    expect(decision.action).toBe("ignore");
+    expect(decision.nextFocusLayer).toBeNull();
   });
 
   it("returns ignore when occupied in current focus layer", () => {

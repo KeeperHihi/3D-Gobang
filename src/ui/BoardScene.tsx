@@ -42,7 +42,6 @@ interface BoardSceneProps {
     player: PlayerMark;
   } | null;
   onPlace: (coordinate: Coordinate3D) => void;
-  onFocusLayerByTap?: (layer: number) => void;
   onLayerWheel?: (deltaY: number) => boolean;
   onLayerSwipe?: (deltaY: number) => void;
   onUserRotate?: () => void;
@@ -290,7 +289,6 @@ function BoardSceneComponent({
   hintMoves,
   pendingMove,
   onPlace,
-  onFocusLayerByTap,
   onLayerWheel,
   onLayerSwipe,
   onUserRotate
@@ -597,13 +595,6 @@ function BoardSceneComponent({
                     });
                     if (tapAssistDecision.action === "place") {
                       onPlace(hit.coordinate);
-                      return;
-                    }
-                    if (
-                      tapAssistDecision.action === "focus" &&
-                      tapAssistDecision.nextFocusLayer !== null
-                    ) {
-                      onFocusLayerByTap?.(tapAssistDecision.nextFocusLayer);
                     }
                   }
                 }

@@ -256,6 +256,152 @@ body {
   color: #e5f7ff;
 }
 
+.match-display-name-row {
+  margin: -6px 0 14px;
+}
+
+.match-display-name-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: rgba(188, 229, 255, 0.84);
+}
+
+.match-display-name-input {
+  width: 100%;
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid rgba(136, 214, 255, 0.42);
+  background: rgba(19, 44, 90, 0.52);
+  color: #e7f6ff;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+.match-challenge-notice {
+  margin: 12px 0 0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  border: 1px solid rgba(130, 222, 255, 0.4);
+  background: rgba(46, 96, 168, 0.26);
+  color: rgba(225, 245, 255, 0.95);
+}
+
+.match-challenge-card {
+  margin-top: 12px;
+  border-radius: 12px;
+  padding: 12px;
+  border: 1px solid rgba(138, 215, 255, 0.36);
+  background: rgba(37, 78, 142, 0.22);
+}
+
+.match-challenge-card.incoming {
+  border-color: rgba(160, 244, 255, 0.5);
+  background: linear-gradient(140deg, rgba(41, 91, 157, 0.32), rgba(51, 76, 144, 0.22));
+}
+
+.match-challenge-card.outgoing {
+  border-color: rgba(255, 213, 133, 0.5);
+  background: linear-gradient(140deg, rgba(116, 73, 31, 0.34), rgba(130, 63, 112, 0.24));
+}
+
+.match-challenge-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: #e5f5ff;
+}
+
+.match-challenge-detail {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(212, 238, 255, 0.88);
+}
+
+.match-challenge-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+}
+
+.match-challenge-actions .primary-button,
+.match-challenge-actions .secondary-button {
+  margin-top: 0;
+  height: 42px;
+  font-size: 13px;
+  flex: 1;
+}
+
+.match-online-list {
+  margin-top: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(125, 204, 255, 0.3);
+  background: rgba(28, 58, 109, 0.24);
+  padding: 10px;
+}
+
+.match-online-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: rgba(196, 230, 251, 0.86);
+  margin-bottom: 8px;
+}
+
+.match-online-empty {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(191, 221, 243, 0.78);
+}
+
+.match-online-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(125, 204, 255, 0.24);
+  background: rgba(19, 44, 89, 0.42);
+  padding: 9px 10px;
+  margin-top: 8px;
+}
+
+.match-online-item .secondary-button {
+  width: 118px;
+  height: 38px;
+  margin-top: 0;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.match-online-name {
+  margin: 0;
+  font-size: 13px;
+  color: #e7f5ff;
+}
+
+.match-online-status {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: rgba(186, 219, 241, 0.8);
+}
+
+.match-online-status.idle {
+  color: rgba(155, 252, 216, 0.9);
+}
+
+.match-online-status.queuing {
+  color: rgba(151, 232, 255, 0.92);
+}
+
+.match-online-status.in-game,
+.match-online-status.challenge {
+  color: rgba(255, 223, 156, 0.9);
+}
+
 .primary-button {
   width: 100%;
   height: 56px;
@@ -1047,13 +1193,52 @@ body {
   margin-bottom: 0;
 }
 
+.hud-settings-modal {
+  position: absolute;
+  inset: 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(109, 211, 255, 0.34);
+  background: linear-gradient(155deg, rgba(9, 20, 42, 0.94), rgba(6, 10, 25, 0.9));
+  box-shadow:
+    0 12px 34px rgba(10, 33, 95, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  animation: hud-panel-in 0.2s ease;
+}
+
+.hud-settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(217, 241, 255, 0.94);
+}
+
+.hud-settings-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(145, 219, 255, 0.46);
+  background: rgba(31, 62, 118, 0.52);
+  color: #e8f5ff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.hud-settings-close:hover {
+  filter: brightness(1.08);
+}
+
 .hud-advanced-panel {
-  margin-top: 4px;
+  margin-top: 8px;
   border-top: 1px solid rgba(111, 206, 255, 0.24);
-  padding-top: 10px;
+  padding: 10px 12px 12px;
   max-height: min(58vh, 500px);
   overflow-y: auto;
-  animation: hud-panel-in 0.2s ease;
 }
 
 .hud-advanced-panel::-webkit-scrollbar {
@@ -1168,6 +1353,19 @@ body {
   accent-color: #77eeff;
 }
 
+.hud-hotkey-input {
+  width: 64px;
+  border: 1px solid rgba(124, 214, 255, 0.44);
+  border-radius: 9px;
+  background: rgba(22, 52, 106, 0.68);
+  color: #dff4ff;
+  padding: 6px 8px;
+  text-align: center;
+  text-transform: lowercase;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .hud-button {
   flex: 1;
   border: none;
@@ -1278,19 +1476,24 @@ body {
   min-height: 44px;
 }
 
-.hud-root.mobile .hud-advanced-panel {
+.hud-root.mobile .hud-settings-modal {
   position: absolute;
   left: 0;
   right: 0;
   bottom: calc(100% + 10px);
-  margin-top: 0;
   border-radius: 16px;
-  border: 1px solid rgba(108, 213, 255, 0.34);
-  padding: 12px;
-  max-height: min(62vh, 520px);
-  overflow-y: auto;
   background: linear-gradient(155deg, rgba(9, 20, 42, 0.88), rgba(6, 10, 25, 0.86));
   box-shadow: 0 -8px 34px rgba(11, 34, 96, 0.35);
+  inset: auto;
+}
+
+.hud-root.mobile .hud-settings-header {
+  padding-top: 12px;
+}
+
+.hud-root.mobile .hud-settings-modal .hud-advanced-panel {
+  margin-top: 6px;
+  max-height: min(62vh, 520px);
 }
 
 @media (max-width: 900px) {
@@ -1316,6 +1519,19 @@ body {
   .match-queue-panel {
     flex-direction: column;
     gap: 8px;
+  }
+
+  .match-challenge-actions {
+    flex-direction: column;
+  }
+
+  .match-online-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .match-online-item .secondary-button {
+    width: 100%;
   }
 
   .secondary-button {

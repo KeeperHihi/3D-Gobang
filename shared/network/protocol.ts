@@ -123,10 +123,68 @@ export interface RequestStatePayload {
   seatToken: string;
 }
 
+export type LobbyPresenceStatus = "idle" | "queuing" | "in-game" | "challenge";
+
+export interface LobbyPlayerSnapshot {
+  socketId: string;
+  displayName: string;
+  status: LobbyPresenceStatus;
+  isSelf: boolean;
+}
+
+export interface LobbyPresencePayload {
+  selfSocketId: string;
+  players: LobbyPlayerSnapshot[];
+}
+
+export interface LobbyNicknameUpdatePayload {
+  displayName: string;
+}
+
+export interface ChallengeSendPayload {
+  targetSocketId: string;
+}
+
+export interface ChallengeRespondPayload {
+  challengeId: string;
+  accept: boolean;
+}
+
+export interface ChallengeCancelPayload {
+  challengeId: string;
+}
+
+export interface ChallengeIncomingPayload {
+  challengeId: string;
+  fromSocketId: string;
+  fromDisplayName: string;
+  expiresAt: number;
+}
+
+export interface ChallengeOutgoingPayload {
+  challengeId: string;
+  targetSocketId: string;
+  targetDisplayName: string;
+  expiresAt: number;
+}
+
+export type ChallengeResolvedOutcome = "accepted" | "declined" | "cancelled" | "expired";
+
+export interface ChallengeResolvedPayload {
+  challengeId: string;
+  outcome: ChallengeResolvedOutcome;
+  message: string;
+}
+
 export interface ClientToServerEvents {
   "queue:join": (payload: QueueJoinPayload) => void;
   "queue:leave": (payload: QueueLeavePayload) => void;
   "queue:continue": (payload: QueueContinuePayload) => void;
+  "lobby:presence:request": () => void;
+  "lobby:nickname:update": (payload: LobbyNicknameUpdatePayload) => void;
+  "challenge:send": (payload: ChallengeSendPayload) => void;
+  "challenge:respond": (payload: ChallengeRespondPayload) => void;
+  "challenge:cancel": (payload: ChallengeCancelPayload) => void;
   "game:place": (payload: PlaceMovePayload) => void;
   "game:rematch": (payload: RematchPayload) => void;
   "game:rematch:cancel": (payload: RematchCancelPayload) => void;
@@ -138,6 +196,10 @@ export interface ServerToClientEvents {
   "queue:joined": (payload: QueueJoinedPayload) => void;
   "queue:left": (payload: QueueLeftPayload) => void;
   "queue:matched": (payload: QueueMatchedPayload) => void;
+  "lobby:presence": (payload: LobbyPresencePayload) => void;
+  "challenge:incoming": (payload: ChallengeIncomingPayload) => void;
+  "challenge:outgoing": (payload: ChallengeOutgoingPayload) => void;
+  "challenge:resolved": (payload: ChallengeResolvedPayload) => void;
   "room:update": (payload: RoomUpdatePayload) => void;
   "room:resumed": (payload: RoomResumedPayload) => void;
   "room:resume-failed": (payload: ResumeFailedPayload) => void;

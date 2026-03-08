@@ -21,6 +21,7 @@ import type { TurnNudgePermissionPhase } from "../game/interaction/turnNudgePerm
 import type { HudSpotlightCardId, HudSpotlightDecision } from "../game/interaction/hudSpotlight";
 import type { LayerQuickNavDecision } from "../game/interaction/layerQuickNav";
 import { evaluateConnectionGuidance } from "../game/interaction/connectionGuidance";
+import type { LayerHotkeys } from "../game/interaction/hotkey";
 import { SmartActionBar } from "./SmartActionBar";
 
 interface HUDProps {
@@ -40,7 +41,8 @@ interface HUDProps {
   layerQuickNav: LayerQuickNavDecision;
   primaryAction: PrimaryIntentState;
   onboardingGuide: OnboardingGuideState | null;
-  advancedOpen: boolean;
+  settingsOpen: boolean;
+  layerHotkeys: LayerHotkeys;
   qualityMode: QualityMode;
   qualityLevel: QualityLevel;
   calmModeActive: boolean;
@@ -83,10 +85,11 @@ interface HUDProps {
   onCancelAutoContinue: () => void;
   onOnboardingPrimaryAction: () => void;
   onOnboardingSkip: () => void;
-  onToggleAdvanced: () => void;
+  onOpenSettings: () => void;
+  onCloseSettings: () => void;
   onLayerStep: (step: -1 | 1) => void;
-  onLayerSmartJump: () => void;
-  onAutoFocus: () => void;
+  onLayerHotkeyChange: (kind: "up" | "down", key: string) => void;
+  onResetLayerHotkeys: () => void;
   onToggleAssist: () => void;
   onNonFocusLayerOpacityChange: (opacity: number) => void;
   onQualityModeChange: (mode: QualityMode) => void;
@@ -158,7 +161,8 @@ export function HUD({
   layerQuickNav,
   primaryAction,
   onboardingGuide,
-  advancedOpen,
+  settingsOpen,
+  layerHotkeys,
   qualityMode,
   qualityLevel,
   calmModeActive,
@@ -201,10 +205,11 @@ export function HUD({
   onCancelAutoContinue,
   onOnboardingPrimaryAction,
   onOnboardingSkip,
-  onToggleAdvanced,
+  onOpenSettings,
+  onCloseSettings,
   onLayerStep,
-  onLayerSmartJump,
-  onAutoFocus,
+  onLayerHotkeyChange,
+  onResetLayerHotkeys,
   onToggleAssist,
   onNonFocusLayerOpacityChange,
   onQualityModeChange,
@@ -223,13 +228,9 @@ export function HUD({
   const showReconnectDeadline = !winner && reconnectDeadlineSeconds !== null && !opponentConnected;
   const showRematchReadyCheck = Boolean(winner) && opponentConnected;
   const reconnectUrgent = reconnectDeadlineSeconds !== null && reconnectDeadlineSeconds <= 10;
-  const advancedToggleLabel = advancedOpen
-    ? "收起操作面板"
-    : isMobileLayout
-      ? "更多状态"
-      : "展开更多状态";
   const turnRemainingSeconds =
     turnRemainingMs === null ? null : Math.max(0, Math.ceil(turnRemainingMs / 1000));
+  const showTurnClock = !winner && turnRemainingSeconds !== null;
   const timeoutAssistThresholdSeconds = Math.max(1, Math.ceil(timeoutAssistThresholdMs / 1000));
   const autoRematchCountdownSeconds =
     autoRematchCountdownRemainingMs === null
@@ -243,7 +244,6 @@ export function HUD({
     rematchWaitRemainingMs === null ? null : Math.max(0, Math.ceil(rematchWaitRemainingMs / 1000));
   const nonFocusOpacityPercent = Math.round(Math.max(2, Math.min(100, nonFocusLayerOpacity * 100)));
   const primaryCardId = hudSpotlight.primaryCard?.id ?? null;
-  const showTurnCountdown = primaryCardId === "turn-clock" && !winner && turnRemainingSeconds !== null;
   const showTimeoutAssistHint = primaryCardId === "timeout-assist" && !winner && turn === myMark;
   const showWinLineSummary =
     primaryCardId === "win-line" && Boolean(winner && winner !== "draw" && winLineSummary);
@@ -371,24 +371,15 @@ export function HUD({
       return null;
     })
     .filter((item): item is string => Boolean(item));
-  const smartJumpDisabled = layerQuickNav.smartJumpLayer === focusLayer;
-  const smartJumpLabel =
-    layerQuickNav.smartJumpSource === "recommended"
-      ? "跳到推荐层"
-      : layerQuickNav.smartJumpSource === "recent"
-        ? "跳到最近层"
-        : layerQuickNav.smartJumpSource === "auto"
-          ? "智能跳层"
-          : "已在目标层";
-  const showMinimalConnectionSpotlight = !advancedOpen && showConnectionSpotlight;
-  const showMinimalReconnectSpotlight = !advancedOpen && showReconnectSpotlight;
-  const showMinimalOnboarding = !advancedOpen && showOnboardingSpotlight && onboardingGuide;
+  const showMinimalConnectionSpotlight = !settingsOpen && showConnectionSpotlight;
+  const showMinimalReconnectSpotlight = !settingsOpen && showReconnectSpotlight;
+  const showMinimalOnboarding = !settingsOpen && showOnboardingSpotlight && onboardingGuide;
 
   return (
     <div className={`hud-root ${isMobileLayout ? "mobile" : "desktop"}`}>
       <div className="hud-card">
         <div className="hud-title">NEBULA CUBE</div>
-        {advancedOpen && !isMobileLayout ? (
+        {settingsOpen && !isMobileLayout ? (
           <>
             <div className="hud-row">
               <span>房间</span>
@@ -413,6 +404,11 @@ export function HUD({
           </>
         ) : null}
         <div className="hud-turn">{turnText}</div>
+        {showTurnClock ? (
+          <div className={`hud-turn-clock ${turnUrgent ? "urgent" : ""}`}>
+            {turn === myMark ? "你的回合" : "对手回合"} · 剩余 {turnRemainingSeconds}s（以服务器结算为准）
+          </div>
+        ) : null}
         {showMinimalConnectionSpotlight ? (
           <div className={`hud-spotlight-note ${connectionSpotlightToneClass}`}>
             {connectionGuidance.primaryHint}
@@ -449,7 +445,7 @@ export function HUD({
             </div>
           </div>
         ) : null}
-        {advancedOpen ? (
+        {settingsOpen ? (
           <>
             {hudSpotlight.primaryCard ? (
               <div className={`hud-spotlight-shell ${spotlightToneClass}`}>
@@ -467,11 +463,6 @@ export function HUD({
             {showConnectionSpotlight ? (
               <div className={`hud-spotlight-note ${connectionSpotlightToneClass}`}>
                 {connectionGuidance.primaryHint}
-              </div>
-            ) : null}
-            {showTurnCountdown ? (
-              <div className={`hud-turn-clock ${turnUrgent ? "urgent" : ""}`}>
-                {turn === myMark ? "你的回合" : "对手回合"} · 剩余 {turnRemainingSeconds}s（以服务器结算为准）
               </div>
             ) : null}
             {showTimeoutAssistHint ? (
@@ -639,28 +630,12 @@ export function HUD({
               上一层
             </button>
             <button
-              className={`hud-mini-button ${!smartJumpDisabled ? "active" : ""}`}
-              type="button"
-              onClick={onLayerSmartJump}
-              disabled={smartJumpDisabled}
-            >
-              {smartJumpLabel}
-            </button>
-            <button
               className="hud-mini-button"
               type="button"
               onClick={() => onLayerStep(1)}
               disabled={!layerQuickNav.canGoNext}
             >
               下一层
-            </button>
-            <button
-              className="hud-mini-button"
-              type="button"
-              onClick={onAutoFocus}
-              disabled={focusMode === "auto"}
-            >
-              自动
             </button>
           </div>
           <div className="hud-layer-rail-tags">
@@ -678,169 +653,200 @@ export function HUD({
         </div>
         <SmartActionBar action={primaryAction} onAction={onPrimaryAction} layoutMode={layoutMode} />
         <div className="hud-actions">
-          <button className="hud-button ghost" type="button" onClick={onToggleAdvanced}>
-            {advancedToggleLabel}
+          <button className="hud-button ghost" type="button" onClick={onOpenSettings}>
+            设置
           </button>
         </div>
-        {advancedOpen ? (
-          <div className="hud-advanced-panel">
-            {isMobileLayout ? (
-              <>
-                <div className="hud-row">
-                  <span>房间</span>
-                  <span>{roomId}</span>
-                </div>
-                <div className="hud-row">
-                  <span>你的棋子</span>
-                  <span>{myMark}</span>
-                </div>
-                <div className="hud-row">
-                  <span>网络</span>
-                  <span>{connectionGuidance.statusLabel}</span>
-                </div>
-                <div className="hud-row">
-                  <span>你</span>
-                  <span>{myConnected ? "在线" : "掉线"}</span>
-                </div>
-                <div className="hud-row">
-                  <span>对手</span>
-                  <span>{opponentConnected ? "在线" : "掉线"}</span>
-                </div>
-              </>
-            ) : null}
-            <div className="hud-row">
-              <span>聚焦层</span>
-              <span>
-                L{focusLayer + 1}/{boardSize} · {focusMode === "auto" ? "自动" : "手动"}
-              </span>
-            </div>
-            <div className="hud-row">
-              <span>渲染档位</span>
-              <span>{qualityLevelLabel(qualityLevel)}</span>
-            </div>
-            <div className="hud-row">
-              <span>冷静模式</span>
-              <span>{calmModeActive ? "已触发" : "未触发"}</span>
-            </div>
-            <div className="hud-row">
-              <span>启动渲染</span>
-              <span>{renderBootstrapPhase === "boot" ? "稳帧启动中" : "完整特效"}</span>
-            </div>
-            <div className="hud-row">
-              <span>实时帧率</span>
-              <span>{averageFps === null ? "采样中..." : `${Math.round(averageFps)} FPS`}</span>
-            </div>
-            <div className="hud-setting-row">
-              <label className="hud-setting-label" htmlFor="hud-quality-mode">
-                渲染模式
-              </label>
-              <select
-                id="hud-quality-mode"
-                className="hud-select"
-                value={qualityMode}
-                onChange={(event) => onQualityModeChange(event.target.value as QualityMode)}
+        {settingsOpen ? (
+          <div className="hud-settings-modal" role="dialog" aria-label="设置面板">
+            <div className="hud-settings-header">
+              <span>设置</span>
+              <button
+                className="hud-settings-close"
+                type="button"
+                aria-label="关闭设置"
+                onClick={onCloseSettings}
               >
-                <option value="auto">{qualityModeLabel("auto")}</option>
-                <option value="quality">{qualityModeLabel("quality")}</option>
-                <option value="smooth">{qualityModeLabel("smooth")}</option>
-              </select>
+                ×
+              </button>
             </div>
-            <div className="hud-slider-group">
-              <div className="hud-slider-head">
-                <span>未聚焦层清晰度</span>
-                <strong>{nonFocusOpacityPercent}%</strong>
+            <div className="hud-advanced-panel">
+              {isMobileLayout ? (
+                <>
+                  <div className="hud-row">
+                    <span>房间</span>
+                    <span>{roomId}</span>
+                  </div>
+                  <div className="hud-row">
+                    <span>你的棋子</span>
+                    <span>{myMark}</span>
+                  </div>
+                  <div className="hud-row">
+                    <span>网络</span>
+                    <span>{connectionGuidance.statusLabel}</span>
+                  </div>
+                  <div className="hud-row">
+                    <span>你</span>
+                    <span>{myConnected ? "在线" : "掉线"}</span>
+                  </div>
+                  <div className="hud-row">
+                    <span>对手</span>
+                    <span>{opponentConnected ? "在线" : "掉线"}</span>
+                  </div>
+                </>
+              ) : null}
+              <div className="hud-row">
+                <span>聚焦层</span>
+                <span>
+                  L{focusLayer + 1}/{boardSize} · {focusMode === "auto" ? "自动" : "手动"}
+                </span>
               </div>
-              <input
-                className="hud-slider"
-                type="range"
-                min={2}
-                max={100}
-                step={1}
-                value={nonFocusOpacityPercent}
-                onChange={(event) => onNonFocusLayerOpacityChange(Number(event.target.value) / 100)}
-              />
-            </div>
-            <div className="hud-setting-list">
+              <div className="hud-row">
+                <span>渲染档位</span>
+                <span>{qualityLevelLabel(qualityLevel)}</span>
+              </div>
+              <div className="hud-row">
+                <span>冷静模式</span>
+                <span>{calmModeActive ? "已触发" : "未触发"}</span>
+              </div>
+              <div className="hud-row">
+                <span>启动渲染</span>
+                <span>{renderBootstrapPhase === "boot" ? "稳帧启动中" : "完整特效"}</span>
+              </div>
+              <div className="hud-row">
+                <span>实时帧率</span>
+                <span>{averageFps === null ? "采样中..." : `${Math.round(averageFps)} FPS`}</span>
+              </div>
               <div className="hud-setting-row">
-                <span className="hud-setting-label">战术辅助提示</span>
-                <button
-                  className={`hud-mini-button ${assistEnabled ? "active" : ""}`}
-                  type="button"
-                  onClick={onToggleAssist}
+                <label className="hud-setting-label" htmlFor="hud-quality-mode">
+                  渲染模式
+                </label>
+                <select
+                  id="hud-quality-mode"
+                  className="hud-select"
+                  value={qualityMode}
+                  onChange={(event) => onQualityModeChange(event.target.value as QualityMode)}
                 >
-                  {assistEnabled ? "已开启" : "已关闭"}
-                </button>
+                  <option value="auto">{qualityModeLabel("auto")}</option>
+                  <option value="quality">{qualityModeLabel("quality")}</option>
+                  <option value="smooth">{qualityModeLabel("smooth")}</option>
+                </select>
               </div>
-              <div className="hud-setting-row">
-                <span className="hud-setting-label">连战模式</span>
-                <button
-                  className={`hud-mini-button ${autoRematchEnabled ? "active" : ""}`}
-                  type="button"
-                  onClick={onToggleAutoRematch}
-                >
-                  {autoRematchEnabled ? "已开启" : "已关闭"}
-                </button>
+              <div className="hud-slider-group">
+                <div className="hud-slider-head">
+                  <span>未聚焦层清晰度</span>
+                  <strong>{nonFocusOpacityPercent}%</strong>
+                </div>
+                <input
+                  className="hud-slider"
+                  type="range"
+                  min={2}
+                  max={100}
+                  step={1}
+                  value={nonFocusOpacityPercent}
+                  onChange={(event) => onNonFocusLayerOpacityChange(Number(event.target.value) / 100)}
+                />
               </div>
-              <div className="hud-setting-row">
-                <span className="hud-setting-label">超时护航</span>
-                <button
-                  className={`hud-mini-button ${timeoutAssistEnabled ? "active" : ""}`}
-                  type="button"
-                  onClick={onToggleTimeoutAssist}
-                >
-                  {timeoutAssistEnabled ? "已开启" : "已关闭"}
-                </button>
-              </div>
-              <div className="hud-setting-row">
-                <span className="hud-setting-label">回合唤醒</span>
-                <button
-                  className={`hud-mini-button ${turnNudgeEnabled ? "active" : ""}`}
-                  type="button"
-                  onClick={onToggleTurnNudge}
-                >
-                  {turnNudgeEnabled ? "已开启" : "已关闭"}
-                </button>
-              </div>
-              {canRematch ? (
+              <div className="hud-setting-list">
                 <div className="hud-setting-row">
-                  <span className="hud-setting-label">结算操作</span>
-                  <button className="hud-mini-button active" type="button" onClick={onRematch}>
-                    再来一局
+                  <span className="hud-setting-label">切换上层按键</span>
+                  <input
+                    className="hud-hotkey-input"
+                    type="text"
+                    maxLength={1}
+                    value={layerHotkeys.up}
+                    onChange={(event) => onLayerHotkeyChange("up", event.target.value)}
+                  />
+                </div>
+                <div className="hud-setting-row">
+                  <span className="hud-setting-label">切换下层按键</span>
+                  <input
+                    className="hud-hotkey-input"
+                    type="text"
+                    maxLength={1}
+                    value={layerHotkeys.down}
+                    onChange={(event) => onLayerHotkeyChange("down", event.target.value)}
+                  />
+                </div>
+                <div className="hud-setting-row">
+                  <span className="hud-setting-label">快捷键默认值</span>
+                  <button className="hud-mini-button" type="button" onClick={onResetLayerHotkeys}>
+                    恢复 a / d
                   </button>
                 </div>
-              ) : null}
-              <div className="hud-setting-row">
-                <span className="hud-setting-label">离开房间</span>
-                <button className="hud-mini-button danger" type="button" onClick={onLeave}>
-                  离开
+                <div className="hud-setting-row">
+                  <span className="hud-setting-label">战术辅助提示</span>
+                  <button
+                    className={`hud-mini-button ${assistEnabled ? "active" : ""}`}
+                    type="button"
+                    onClick={onToggleAssist}
+                  >
+                    {assistEnabled ? "已开启" : "已关闭"}
+                  </button>
+                </div>
+                <div className="hud-setting-row">
+                  <span className="hud-setting-label">连战模式</span>
+                  <button
+                    className={`hud-mini-button ${autoRematchEnabled ? "active" : ""}`}
+                    type="button"
+                    onClick={onToggleAutoRematch}
+                  >
+                    {autoRematchEnabled ? "已开启" : "已关闭"}
+                  </button>
+                </div>
+                <div className="hud-setting-row">
+                  <span className="hud-setting-label">超时护航</span>
+                  <button
+                    className={`hud-mini-button ${timeoutAssistEnabled ? "active" : ""}`}
+                    type="button"
+                    onClick={onToggleTimeoutAssist}
+                  >
+                    {timeoutAssistEnabled ? "已开启" : "已关闭"}
+                  </button>
+                </div>
+                <div className="hud-setting-row">
+                  <span className="hud-setting-label">回合唤醒</span>
+                  <button
+                    className={`hud-mini-button ${turnNudgeEnabled ? "active" : ""}`}
+                    type="button"
+                    onClick={onToggleTurnNudge}
+                  >
+                    {turnNudgeEnabled ? "已开启" : "已关闭"}
+                  </button>
+                </div>
+                {canRematch ? (
+                  <div className="hud-setting-row">
+                    <span className="hud-setting-label">结算操作</span>
+                    <button className="hud-mini-button active" type="button" onClick={onRematch}>
+                      再来一局
+                    </button>
+                  </div>
+                ) : null}
+                <div className="hud-setting-row">
+                  <span className="hud-setting-label">离开房间</span>
+                  <button className="hud-mini-button danger" type="button" onClick={onLeave}>
+                    离开
+                  </button>
+                </div>
+              </div>
+              <div className="hud-actions">
+                <button
+                  className="hud-mini-button"
+                  type="button"
+                  onClick={() => onLayerStep(-1)}
+                  disabled={focusLayer <= 0}
+                >
+                  上一层
+                </button>
+                <button
+                  className="hud-mini-button"
+                  type="button"
+                  onClick={() => onLayerStep(1)}
+                  disabled={focusLayer >= boardSize - 1}
+                >
+                  下一层
                 </button>
               </div>
-            </div>
-            <div className="hud-actions">
-              <button
-                className="hud-mini-button"
-                type="button"
-                onClick={() => onLayerStep(-1)}
-                disabled={focusLayer <= 0}
-              >
-                上一层
-              </button>
-              <button
-                className="hud-mini-button"
-                type="button"
-                onClick={() => onLayerStep(1)}
-                disabled={focusLayer >= boardSize - 1}
-              >
-                下一层
-              </button>
-              <button
-                className="hud-mini-button"
-                type="button"
-                onClick={onAutoFocus}
-                disabled={focusMode === "auto"}
-              >
-                自动聚焦
-              </button>
             </div>
           </div>
         ) : null}

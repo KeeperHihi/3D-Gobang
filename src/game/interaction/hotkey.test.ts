@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { shouldBlockGlobalSpaceHotkey } from "./hotkey";
+import {
+  DEFAULT_LAYER_HOTKEYS,
+  resolveLayerHotkeyAction,
+  sanitizeLayerHotkeys,
+  shouldBlockGlobalSpaceHotkey
+} from "./hotkey";
 
 describe("shouldBlockGlobalSpaceHotkey", () => {
   it("returns false for null target", () => {
@@ -39,5 +44,40 @@ describe("shouldBlockGlobalSpaceHotkey", () => {
     } as unknown as EventTarget;
 
     expect(shouldBlockGlobalSpaceHotkey(neutral)).toBe(false);
+  });
+});
+
+describe("sanitizeLayerHotkeys", () => {
+  it("returns defaults for empty input", () => {
+    expect(sanitizeLayerHotkeys(null)).toEqual(DEFAULT_LAYER_HOTKEYS);
+  });
+
+  it("normalizes custom shortcuts as single lowercase characters", () => {
+    expect(sanitizeLayerHotkeys({ up: " W ", down: "S" })).toEqual({
+      up: "w",
+      down: "s"
+    });
+  });
+
+  it("resolves duplicated hotkeys with a distinct fallback", () => {
+    expect(sanitizeLayerHotkeys({ up: "d", down: "d" })).toEqual({
+      up: "d",
+      down: "f"
+    });
+  });
+
+  it("ignores invalid shortcuts", () => {
+    expect(sanitizeLayerHotkeys({ up: "  ", down: "ab" })).toEqual(DEFAULT_LAYER_HOTKEYS);
+  });
+});
+
+describe("resolveLayerHotkeyAction", () => {
+  it("maps configured keys to layer navigation direction", () => {
+    expect(resolveLayerHotkeyAction("a", DEFAULT_LAYER_HOTKEYS)).toBe(-1);
+    expect(resolveLayerHotkeyAction("D", DEFAULT_LAYER_HOTKEYS)).toBe(1);
+  });
+
+  it("returns null for unconfigured keys", () => {
+    expect(resolveLayerHotkeyAction("x", DEFAULT_LAYER_HOTKEYS)).toBeNull();
   });
 });

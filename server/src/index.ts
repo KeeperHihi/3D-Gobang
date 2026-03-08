@@ -6,6 +6,8 @@ import { Server, type Socket } from "socket.io";
 import { Matchmaker, type MatchEnqueueOptions } from "./matchmaker";
 import type {
   ClientToServerEvents,
+  ChallengeResolvedOutcome,
+  LobbyPresenceStatus,
   PlayerMark,
   ServerToClientEvents
 } from "../../shared/network/protocol";
@@ -63,6 +65,137 @@ const turnForfeitTimers = new Map<string, NodeJS.Timeout>();
 const continueAvoidRetryTimers = new Map<string, NodeJS.Timeout>();
 const RECONNECT_GRACE_PERIOD_MS = 30_000;
 const CONTINUE_AVOID_OPPONENT_MS = 20_000;
+const CHALLENGE_TIMEOUT_MS = 30_000;
+const DISPLAY_NAME_MAX_LENGTH = 16;
+
+interface LobbyProfile {
+  displayName: string;
+  status: "idle" | "queuing" | "in-game";
+}
+
+interface ChallengeState {
+  challengeId: string;
+  fromSocketId: string;
+  toSocketId: string;
+  expiresAt: number;
+  timeout: NodeJS.Timeout;
+}
+
+const lobbyProfiles = new Map<string, LobbyProfile>();
+const challenges = new Map<string, ChallengeState>();
+const challengeBySocket = new Map<string, string>();
+
+function fallbackDisplayName(socketId: string): string {
+  return `玩家-${socketId.slice(0, 4)}`;
+}
+
+function normalizeDisplayName(rawName: string | undefined, fallback: string): string {
+  const trimmed = (rawName ?? "").trim();
+  if (!trimmed) {
+    return fallback;
+  }
+  return trimmed.slice(0, DISPLAY_NAME_MAX_LENGTH);
+}
+
+function ensureLobbyProfile(socketId: string): LobbyProfile {
+  const existing = lobbyProfiles.get(socketId);
+  if (existing) {
+    return existing;
+  }
+  const profile: LobbyProfile = {
+    displayName: fallbackDisplayName(socketId),
+    status: "idle"
+  };
+  lobbyProfiles.set(socketId, profile);
+  return profile;
+}
+
+function setLobbyStatus(socketId: string, status: LobbyProfile["status"]): void {
+  const profile = ensureLobbyProfile(socketId);
+  profile.status = status;
+}
+
+function resolveLobbyPresenceStatus(socketId: string): LobbyPresenceStatus {
+  const profile = ensureLobbyProfile(socketId);
+  if (challengeBySocket.has(socketId) && profile.status === "idle") {
+    return "challenge";
+  }
+  return profile.status;
+}
+
+function emitLobbyPresenceToSocket(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>
+): void {
+  const players = Array.from(io.sockets.sockets.keys())
+    .map((socketId) => {
+      const profile = ensureLobbyProfile(socketId);
+      return {
+        socketId,
+        displayName: profile.displayName,
+        status: resolveLobbyPresenceStatus(socketId),
+        isSelf: socketId === socket.id
+      };
+    })
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, "zh-Hans-CN"));
+
+  socket.emit("lobby:presence", {
+    selfSocketId: socket.id,
+    players
+  });
+}
+
+function broadcastLobbyPresence(): void {
+  io.sockets.sockets.forEach((connectedSocket) => {
+    emitLobbyPresenceToSocket(connectedSocket);
+  });
+}
+
+function resolveChallenge(
+  challengeId: string,
+  outcome: ChallengeResolvedOutcome,
+  message: string
+): ChallengeState | null {
+  const challenge = challenges.get(challengeId);
+  if (!challenge) {
+    return null;
+  }
+
+  clearTimeout(challenge.timeout);
+  challenges.delete(challengeId);
+  if (challengeBySocket.get(challenge.fromSocketId) === challengeId) {
+    challengeBySocket.delete(challenge.fromSocketId);
+  }
+  if (challengeBySocket.get(challenge.toSocketId) === challengeId) {
+    challengeBySocket.delete(challenge.toSocketId);
+  }
+
+  const payload = {
+    challengeId,
+    outcome,
+    message
+  };
+  const senderSocket = io.sockets.sockets.get(challenge.fromSocketId);
+  const receiverSocket = io.sockets.sockets.get(challenge.toSocketId);
+  senderSocket?.emit("challenge:resolved", payload);
+  if (receiverSocket && receiverSocket.id !== senderSocket?.id) {
+    receiverSocket.emit("challenge:resolved", payload);
+  }
+
+  broadcastLobbyPresence();
+  return challenge;
+}
+
+function cancelChallengeForSocket(
+  socketId: string,
+  outcome: ChallengeResolvedOutcome,
+  message: string
+): void {
+  const challengeId = challengeBySocket.get(socketId);
+  if (!challengeId) {
+    return;
+  }
+  resolveChallenge(challengeId, outcome, message);
+}
 
 function createRoomId(): string {
   return randomUUID().slice(0, 8);
@@ -237,30 +370,16 @@ function resolveRoomAndMark(
   };
 }
 
-function handleMatchPair(pair: { firstSocketId: string; secondSocketId: string }): void {
-  clearContinueAvoidRetryTimer(pair.firstSocketId);
-  clearContinueAvoidRetryTimer(pair.secondSocketId);
-
-  const firstSocket = io.sockets.sockets.get(pair.firstSocketId);
-  const secondSocket = io.sockets.sockets.get(pair.secondSocketId);
-
-  if (!firstSocket || !secondSocket) {
-    if (firstSocket) {
-      matchmaker.enqueue(firstSocket.id);
-      firstSocket.emit("queue:joined", {
-        waitingForOpponent: true,
-        queueSize: matchmaker.waitingCount
-      });
-    }
-    if (secondSocket) {
-      matchmaker.enqueue(secondSocket.id);
-      secondSocket.emit("queue:joined", {
-        waitingForOpponent: true,
-        queueSize: matchmaker.waitingCount
-      });
-    }
-    return;
-  }
+function startRoomMatch(
+  firstSocket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  secondSocket: Socket<ClientToServerEvents, ServerToClientEvents>
+): void {
+  clearContinueAvoidRetryTimer(firstSocket.id);
+  clearContinueAvoidRetryTimer(secondSocket.id);
+  matchmaker.remove(firstSocket.id);
+  matchmaker.remove(secondSocket.id);
+  cancelChallengeForSocket(firstSocket.id, "cancelled", "挑战已取消");
+  cancelChallengeForSocket(secondSocket.id, "cancelled", "挑战已取消");
 
   const roomId = createRoomId();
   const xSeatToken = randomUUID();
@@ -281,6 +400,9 @@ function handleMatchPair(pair: { firstSocketId: string; secondSocketId: string }
   attachSocketToRoom(secondSocket, roomId);
   scheduleTurnForfeit(roomId);
 
+  setLobbyStatus(firstSocket.id, "in-game");
+  setLobbyStatus(secondSocket.id, "in-game");
+
   const snapshot = snapshotFromRoomState(room);
   firstSocket.emit("queue:matched", {
     roomId,
@@ -294,6 +416,38 @@ function handleMatchPair(pair: { firstSocketId: string; secondSocketId: string }
     seatToken: oSeatToken,
     snapshot
   });
+
+  broadcastLobbyPresence();
+}
+
+function handleMatchPair(pair: { firstSocketId: string; secondSocketId: string }): void {
+  clearContinueAvoidRetryTimer(pair.firstSocketId);
+  clearContinueAvoidRetryTimer(pair.secondSocketId);
+
+  const firstSocket = io.sockets.sockets.get(pair.firstSocketId);
+  const secondSocket = io.sockets.sockets.get(pair.secondSocketId);
+
+  if (!firstSocket || !secondSocket) {
+    if (firstSocket) {
+      matchmaker.enqueue(firstSocket.id);
+      setLobbyStatus(firstSocket.id, "queuing");
+      firstSocket.emit("queue:joined", {
+        waitingForOpponent: true,
+        queueSize: matchmaker.waitingCount
+      });
+    }
+    if (secondSocket) {
+      matchmaker.enqueue(secondSocket.id);
+      setLobbyStatus(secondSocket.id, "queuing");
+      secondSocket.emit("queue:joined", {
+        waitingForOpponent: true,
+        queueSize: matchmaker.waitingCount
+      });
+    }
+    broadcastLobbyPresence();
+    return;
+  }
+  startRoomMatch(firstSocket, secondSocket);
 }
 
 function tryMatchQueuedSockets(): void {
@@ -320,6 +474,7 @@ function enqueueSocketForMatch(
   socket: Socket<ClientToServerEvents, ServerToClientEvents>,
   options?: MatchEnqueueOptions
 ): void {
+  setLobbyStatus(socket.id, "queuing");
   const pair = matchmaker.enqueue(socket.id, options);
   if (!pair) {
     if (options?.avoidUntilMs !== null && options?.avoidUntilMs !== undefined) {
@@ -332,6 +487,7 @@ function enqueueSocketForMatch(
       waitingForOpponent: true,
       queueSize: matchmaker.waitingCount
     });
+    broadcastLobbyPresence();
     return;
   }
 
@@ -339,12 +495,152 @@ function enqueueSocketForMatch(
 }
 
 io.on("connection", (socket) => {
-  socket.on("queue:join", () => {
+  const initialProfile = ensureLobbyProfile(socket.id);
+  initialProfile.displayName = normalizeDisplayName(
+    initialProfile.displayName,
+    fallbackDisplayName(socket.id)
+  );
+  setLobbyStatus(socket.id, socketRoomMap.has(socket.id) ? "in-game" : "idle");
+  emitLobbyPresenceToSocket(socket);
+  broadcastLobbyPresence();
+
+  socket.on("lobby:presence:request", () => {
+    emitLobbyPresenceToSocket(socket);
+  });
+
+  socket.on("lobby:nickname:update", ({ displayName }) => {
+    const profile = ensureLobbyProfile(socket.id);
+    const nextDisplayName = normalizeDisplayName(displayName, profile.displayName);
+    if (nextDisplayName === profile.displayName) {
+      return;
+    }
+    profile.displayName = nextDisplayName;
+    broadcastLobbyPresence();
+  });
+
+  socket.on("challenge:send", ({ targetSocketId }) => {
+    if (!targetSocketId || targetSocketId === socket.id) {
+      emitGameError(socket, "请选择可挑战的在线玩家");
+      return;
+    }
+    if (socketRoomMap.has(socket.id) || matchmaker.has(socket.id)) {
+      emitGameError(socket, "当前状态无法发起挑战");
+      return;
+    }
+    if (challengeBySocket.has(socket.id)) {
+      emitGameError(socket, "你有尚未处理的挑战请求");
+      return;
+    }
+
+    const targetSocket = io.sockets.sockets.get(targetSocketId);
+    if (!targetSocket) {
+      emitGameError(socket, "目标玩家已离线");
+      return;
+    }
+    if (socketRoomMap.has(targetSocketId) || matchmaker.has(targetSocketId)) {
+      emitGameError(socket, "目标玩家当前不可挑战");
+      return;
+    }
+    if (challengeBySocket.has(targetSocketId)) {
+      emitGameError(socket, "目标玩家正在处理其他挑战");
+      return;
+    }
+
+    const senderProfile = ensureLobbyProfile(socket.id);
+    const targetProfile = ensureLobbyProfile(targetSocketId);
+    if (senderProfile.status !== "idle" || targetProfile.status !== "idle") {
+      emitGameError(socket, "当前无法发起挑战");
+      return;
+    }
+
+    const challengeId = randomUUID().slice(0, 12);
+    const expiresAt = Date.now() + CHALLENGE_TIMEOUT_MS;
+    const timeout = setTimeout(() => {
+      resolveChallenge(challengeId, "expired", "挑战已超时");
+    }, CHALLENGE_TIMEOUT_MS);
+
+    const challenge: ChallengeState = {
+      challengeId,
+      fromSocketId: socket.id,
+      toSocketId: targetSocketId,
+      expiresAt,
+      timeout
+    };
+    challenges.set(challengeId, challenge);
+    challengeBySocket.set(socket.id, challengeId);
+    challengeBySocket.set(targetSocketId, challengeId);
+
+    socket.emit("challenge:outgoing", {
+      challengeId,
+      targetSocketId,
+      targetDisplayName: targetProfile.displayName,
+      expiresAt
+    });
+    targetSocket.emit("challenge:incoming", {
+      challengeId,
+      fromSocketId: socket.id,
+      fromDisplayName: senderProfile.displayName,
+      expiresAt
+    });
+    broadcastLobbyPresence();
+  });
+
+  socket.on("challenge:respond", ({ challengeId, accept }) => {
+    const challenge = challenges.get(challengeId);
+    if (!challenge) {
+      emitGameError(socket, "挑战请求已失效");
+      return;
+    }
+    if (challenge.toSocketId !== socket.id) {
+      emitGameError(socket, "只有被挑战方可以应答");
+      return;
+    }
+
+    const senderSocket = io.sockets.sockets.get(challenge.fromSocketId);
+    if (!senderSocket) {
+      resolveChallenge(challengeId, "cancelled", "对方已离线，挑战已取消");
+      return;
+    }
+    if (!accept) {
+      resolveChallenge(challengeId, "declined", "对方已拒绝挑战");
+      return;
+    }
+    if (
+      socketRoomMap.has(challenge.fromSocketId) ||
+      socketRoomMap.has(challenge.toSocketId) ||
+      matchmaker.has(challenge.fromSocketId) ||
+      matchmaker.has(challenge.toSocketId)
+    ) {
+      resolveChallenge(challengeId, "cancelled", "玩家状态已变化，挑战已取消");
+      return;
+    }
+
+    resolveChallenge(challengeId, "accepted", "挑战已接受，正在进入对局");
+    startRoomMatch(senderSocket, socket);
+  });
+
+  socket.on("challenge:cancel", ({ challengeId }) => {
+    const challenge = challenges.get(challengeId);
+    if (!challenge) {
+      return;
+    }
+    if (challenge.fromSocketId !== socket.id && challenge.toSocketId !== socket.id) {
+      return;
+    }
+    resolveChallenge(challengeId, "cancelled", "挑战已取消");
+  });
+
+  socket.on("queue:join", ({ displayName }) => {
     if (socketRoomMap.has(socket.id)) {
       emitGameError(socket, "你已在房间中，请先离开当前对局");
       return;
     }
 
+    if (displayName !== undefined) {
+      const profile = ensureLobbyProfile(socket.id);
+      profile.displayName = normalizeDisplayName(displayName, profile.displayName);
+    }
+    cancelChallengeForSocket(socket.id, "cancelled", "挑战已取消");
     enqueueSocketForMatch(socket);
   });
 
@@ -354,11 +650,14 @@ io.on("connection", (socket) => {
       return;
     }
 
+    cancelChallengeForSocket(socket.id, "cancelled", "挑战已取消");
     clearContinueAvoidRetryTimer(socket.id);
     matchmaker.remove(socket.id);
+    setLobbyStatus(socket.id, "idle");
     socket.emit("queue:left", {
       queueSize: matchmaker.waitingCount
     });
+    broadcastLobbyPresence();
   });
 
   socket.on("queue:continue", ({ roomId, seatToken }) => {
@@ -387,6 +686,7 @@ io.on("connection", (socket) => {
         }
       : undefined;
 
+    cancelChallengeForSocket(socket.id, "cancelled", "挑战已取消");
     clearReconnectForfeitTimer(roomId, resolved.mark);
     clearReconnectDeadline(resolved.room, resolved.mark);
 
@@ -428,10 +728,12 @@ io.on("connection", (socket) => {
       }
     }
 
+    cancelChallengeForSocket(socket.id, "cancelled", "挑战已取消");
     setPlayerConnection(room, mark, socket.id, true);
     clearReconnectForfeitTimer(roomId, mark);
     clearReconnectDeadline(room, mark);
     attachSocketToRoom(socket, roomId);
+    setLobbyStatus(socket.id, "in-game");
 
     socket.emit("room:resumed", {
       roomId,
@@ -440,6 +742,7 @@ io.on("connection", (socket) => {
       snapshot: snapshotFromRoomState(room)
     });
     emitRoomUpdate(roomId);
+    broadcastLobbyPresence();
   });
 
   socket.on("room:state:request", ({ roomId, seatToken }) => {
@@ -496,6 +799,7 @@ io.on("connection", (socket) => {
     clearReconnectForfeitTimer(roomId, mark);
     clearReconnectDeadline(room, mark);
     attachSocketToRoom(socket, roomId);
+    setLobbyStatus(socket.id, "in-game");
 
     const applyResult = applyMoveToRoom(room, mark, { x, y, z });
     if (!applyResult.accepted) {
@@ -546,6 +850,7 @@ io.on("connection", (socket) => {
     clearReconnectForfeitTimer(roomId, resolved.mark);
     clearReconnectDeadline(resolved.room, resolved.mark);
     attachSocketToRoom(socket, roomId);
+    setLobbyStatus(socket.id, "in-game");
 
     const rematchResult = requestRematch(resolved.room, resolved.mark);
     if (!rematchResult.accepted) {
@@ -573,6 +878,7 @@ io.on("connection", (socket) => {
     clearReconnectForfeitTimer(roomId, resolved.mark);
     clearReconnectDeadline(resolved.room, resolved.mark);
     attachSocketToRoom(socket, roomId);
+    setLobbyStatus(socket.id, "in-game");
 
     const cancelResult = cancelRematch(resolved.room, resolved.mark);
     if (!cancelResult.accepted) {
@@ -586,20 +892,25 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     clearContinueAvoidRetryTimer(socket.id);
     matchmaker.remove(socket.id);
+    cancelChallengeForSocket(socket.id, "cancelled", "对方已离线，挑战已取消");
+    lobbyProfiles.delete(socket.id);
 
     const roomId = socketRoomMap.get(socket.id);
     socketRoomMap.delete(socket.id);
     if (!roomId) {
+      broadcastLobbyPresence();
       return;
     }
 
     const room = rooms.get(roomId);
     if (!room) {
+      broadcastLobbyPresence();
       return;
     }
 
     const mark = markForSocket(room, socket.id);
     if (!mark) {
+      broadcastLobbyPresence();
       return;
     }
 
@@ -614,6 +925,7 @@ io.on("connection", (socket) => {
     }
     emitRoomUpdate(roomId);
     detachRoomIfAbandoned(roomId);
+    broadcastLobbyPresence();
   });
 });
 

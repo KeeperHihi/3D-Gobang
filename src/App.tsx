@@ -37,7 +37,10 @@ import {
 } from "./game/interaction/continueTransition";
 import { TURN_NUDGE_PERMISSION_SNOOZE_MS } from "./game/interaction/turnNudgePermission";
 import type {
+  ChallengeIncomingPayload,
+  ChallengeOutgoingPayload,
   Coordinate3D,
+  LobbyPlayerSnapshot,
   MoveAckPayload,
   PlayerMark,
   RoomSnapshot
@@ -72,7 +75,9 @@ const AUTO_REMATCH_STORAGE_KEY = "nebula-cube-auto-rematch-v1";
 const TURN_NUDGE_STORAGE_KEY = "nebula-cube-turn-nudge-v1";
 const TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY = "nebula-cube-turn-nudge-permission-hint-v1";
 const TURN_NUDGE_PERMISSION_SNOOZE_STORAGE_KEY = "nebula-cube-turn-nudge-permission-snooze-v2";
+const DISPLAY_NAME_STORAGE_KEY = "nebula-cube-display-name-v1";
 const WARMUP_IDLE_AUTOSTART_DELAY_MS = 900;
+const DISPLAY_NAME_MAX_LENGTH = 16;
 
 interface NavigatorConnectionLike {
   effectiveType?: string;
@@ -204,6 +209,22 @@ function persistTurnNudgePermissionSnoozedUntilMsToStorage(snoozedUntilMs: numbe
   localStorage.removeItem(TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY);
 }
 
+function normalizeDisplayName(raw: string | null | undefined): string {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) {
+    return "星际玩家";
+  }
+  return trimmed.slice(0, DISPLAY_NAME_MAX_LENGTH);
+}
+
+function readDisplayNameFromStorage(): string {
+  return normalizeDisplayName(localStorage.getItem(DISPLAY_NAME_STORAGE_KEY));
+}
+
+function persistDisplayNameToStorage(displayName: string): void {
+  localStorage.setItem(DISPLAY_NAME_STORAGE_KEY, displayName);
+}
+
 function getNavigatorConnection(): NavigatorConnectionLike | null {
   if (typeof navigator === "undefined") {
     return null;
@@ -255,6 +276,11 @@ export default function App() {
   const [turnNudgePermissionSnoozedUntilMs, setTurnNudgePermissionSnoozedUntilMs] = useState<
     number | null
   >(() => readTurnNudgePermissionSnoozedUntilMsFromStorage(Date.now()));
+  const [displayName, setDisplayName] = useState<string>(() => readDisplayNameFromStorage());
+  const [onlinePlayers, setOnlinePlayers] = useState<LobbyPlayerSnapshot[]>([]);
+  const [incomingChallenge, setIncomingChallenge] = useState<ChallengeIncomingPayload | null>(null);
+  const [outgoingChallenge, setOutgoingChallenge] = useState<ChallengeOutgoingPayload | null>(null);
+  const [challengeNotice, setChallengeNotice] = useState<string | null>(null);
   const [continueTransition, setContinueTransition] = useState(() =>
     createInitialContinueTransitionState()
   );
@@ -284,6 +310,7 @@ export default function App() {
   const pendingMoveSubmittedAtRef = useRef<Map<string, number>>(new Map());
   const continueTransitionRef = useRef(continueTransition);
   const continueMatchBackupRef = useRef<ContinueMatchBackup | null>(null);
+  const displayNameRef = useRef(displayName);
 
   useEffect(() => {
     sessionRef.current = session;
@@ -305,6 +332,16 @@ export default function App() {
   useEffect(() => {
     continueTransitionRef.current = continueTransition;
   }, [continueTransition]);
+
+  useEffect(() => {
+    displayNameRef.current = displayName;
+    persistDisplayNameToStorage(displayName);
+    if (socket.connected) {
+      socket.emit("lobby:nickname:update", {
+        displayName
+      });
+    }
+  }, [displayName, socket]);
 
   const applyContinueTransition = (event: ContinueTransitionEvent) => {
     setContinueTransition((current) => {
@@ -677,6 +714,10 @@ export default function App() {
 
     const handleConnect = () => {
       setConnectionState("online");
+      socket.emit("lobby:nickname:update", {
+        displayName: displayNameRef.current
+      });
+      socket.emit("lobby:presence:request");
       const currentSession = sessionRef.current;
       if (currentSession) {
         socket.emit("room:resume", {
@@ -699,6 +740,8 @@ export default function App() {
       pendingMoveSubmittedAtRef.current.clear();
       continueMatchBackupRef.current = null;
       applyContinueTransition({ type: "RESET" });
+      setIncomingChallenge(null);
+      setOutgoingChallenge(null);
       if (!sessionRef.current) {
         setMatchPhase("idle");
         resetQueueState();
@@ -712,6 +755,35 @@ export default function App() {
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
     socket.on("connect_error", handleConnectionError);
+    socket.on("lobby:presence", ({ players }) => {
+      setOnlinePlayers(players);
+    });
+    socket.on("challenge:incoming", (payload) => {
+      setIncomingChallenge(payload);
+      setOutgoingChallenge((current) =>
+        current && current.challengeId === payload.challengeId ? null : current
+      );
+      setChallengeNotice(`${payload.fromDisplayName} 向你发起挑战`);
+      setErrorMessage(null);
+    });
+    socket.on("challenge:outgoing", (payload) => {
+      setOutgoingChallenge(payload);
+      setChallengeNotice(`已向 ${payload.targetDisplayName} 发起挑战`);
+      setErrorMessage(null);
+    });
+    socket.on("challenge:resolved", ({ challengeId, outcome, message }) => {
+      setIncomingChallenge((current) =>
+        current && current.challengeId === challengeId ? null : current
+      );
+      setOutgoingChallenge((current) =>
+        current && current.challengeId === challengeId ? null : current
+      );
+      if (outcome !== "accepted") {
+        setChallengeNotice(message);
+      } else {
+        setChallengeNotice(null);
+      }
+    });
 
     socket.on("queue:joined", ({ waitingForOpponent, queueSize: nextQueueSize }) => {
       finalizeContinueMatchSuccess();
@@ -748,6 +820,9 @@ export default function App() {
       setErrorMessage(null);
       setPendingMove(null);
       pendingMoveSubmittedAtRef.current.clear();
+      setIncomingChallenge(null);
+      setOutgoingChallenge(null);
+      setChallengeNotice(null);
     });
 
     socket.on("room:resumed", ({ roomId, mark, seatToken, snapshot: nextSnapshot }) => {
@@ -761,6 +836,9 @@ export default function App() {
       setErrorMessage(null);
       setPendingMove(null);
       pendingMoveSubmittedAtRef.current.clear();
+      setIncomingChallenge(null);
+      setOutgoingChallenge(null);
+      setChallengeNotice(null);
     });
 
     socket.on("room:update", ({ snapshot: nextSnapshot }) => {
@@ -899,7 +977,12 @@ export default function App() {
     setQueueStartedAtMs(Date.now());
     setQueueElapsedSeconds(0);
     setErrorMessage(null);
-    socket.emit("queue:join", {});
+    setChallengeNotice(null);
+    setIncomingChallenge(null);
+    setOutgoingChallenge(null);
+    socket.emit("queue:join", {
+      displayName
+    });
   };
 
   const cancelMatch = () => {
@@ -911,6 +994,48 @@ export default function App() {
       return;
     }
     socket.emit("queue:leave", {});
+  };
+
+  const updateDisplayName = (nextDisplayName: string) => {
+    setDisplayName(normalizeDisplayName(nextDisplayName));
+  };
+
+  const requestChallenge = (targetSocketId: string) => {
+    if (!socket.connected) {
+      setErrorMessage("正在连接服务器，请稍后重试");
+      return;
+    }
+    setErrorMessage(null);
+    setChallengeNotice(null);
+    socket.emit("challenge:send", {
+      targetSocketId
+    });
+  };
+
+  const respondChallenge = (accept: boolean) => {
+    if (!incomingChallenge) {
+      return;
+    }
+    if (!socket.connected) {
+      setErrorMessage("正在连接服务器，请稍后重试");
+      return;
+    }
+    socket.emit("challenge:respond", {
+      challengeId: incomingChallenge.challengeId,
+      accept
+    });
+    if (!accept) {
+      setIncomingChallenge(null);
+    }
+  };
+
+  const cancelOutgoingChallenge = () => {
+    if (!outgoingChallenge || !socket.connected) {
+      return;
+    }
+    socket.emit("challenge:cancel", {
+      challengeId: outgoingChallenge.challengeId
+    });
   };
 
   const placePiece = (coordinate: Coordinate3D) => {
@@ -1028,6 +1153,9 @@ export default function App() {
     setQueueStartedAtMs(null);
     setQueueElapsedSeconds(0);
     setErrorMessage(null);
+    setChallengeNotice(null);
+    setIncomingChallenge(null);
+    setOutgoingChallenge(null);
     setPendingMove(null);
     continueMatchBackupRef.current = null;
     applyContinueTransition({ type: "RESET" });
@@ -1053,6 +1181,15 @@ export default function App() {
         isWarmupAutoRetrying={warmupRetryScheduledAtMs !== null}
         onPrepareArena={markWarmupIntent}
         onRetryWarmup={markWarmupIntent}
+        displayName={displayName}
+        onlinePlayers={onlinePlayers}
+        incomingChallenge={incomingChallenge}
+        outgoingChallenge={outgoingChallenge}
+        challengeNotice={challengeNotice}
+        onDisplayNameChange={updateDisplayName}
+        onSendChallenge={requestChallenge}
+        onRespondChallenge={respondChallenge}
+        onCancelOutgoingChallenge={cancelOutgoingChallenge}
       />
     );
   }

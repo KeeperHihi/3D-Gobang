@@ -1,4 +1,4 @@
-export type LayerTapAssistAction = "place" | "focus" | "ignore";
+export type LayerTapAssistAction = "place" | "ignore";
 
 export interface LayerTapAssistInput {
   canPlace: boolean;
@@ -16,8 +16,8 @@ export interface LayerTapAssistDecision {
 export function evaluateLayerTapAssist(input: LayerTapAssistInput): LayerTapAssistDecision {
   if (!input.inFocusLayer && input.currentLayer !== input.targetLayer) {
     return {
-      action: "focus",
-      nextFocusLayer: input.targetLayer
+      action: "ignore",
+      nextFocusLayer: null
     };
   }
 

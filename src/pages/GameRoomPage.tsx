@@ -13,7 +13,13 @@ import { playDropSfx, playTurnNudgeSfx, playWinSfx } from "../audio/sfx";
 import type { BoardCell } from "../game/engine/board";
 import { analyzeMoveHints, type MoveHint } from "../game/engine/moveHints";
 import { createWinLinesIndex } from "../game/engine/winLines";
-import { shouldBlockGlobalSpaceHotkey } from "../game/interaction/hotkey";
+import {
+  DEFAULT_LAYER_HOTKEYS,
+  resolveLayerHotkeyAction,
+  sanitizeLayerHotkeys,
+  shouldBlockGlobalSpaceHotkey,
+  type LayerHotkeys
+} from "../game/interaction/hotkey";
 import { detectLayoutMode, type LayoutMode } from "../game/interaction/deviceMode";
 import {
   DEFAULT_QUALITY_LEVEL,
@@ -79,18 +85,13 @@ import {
   createFocusGuardTurnKey,
   evaluateFocusGuard
 } from "../game/interaction/focusGuard";
-import { evaluateFocusGuardCue } from "../game/interaction/focusGuardCue";
 import {
-  createFocusGuardInteractionCue,
-  createLayerFocusInteractionCue,
   resolveCueAfterTick,
-  resolveNextCue,
   type InteractionCue
 } from "../game/interaction/interactionCue";
 import { createPrimaryIntentState } from "../game/interaction/primaryIntent";
 import { evaluateHudSpotlight } from "../game/interaction/hudSpotlight";
 import { evaluateLayerQuickNav } from "../game/interaction/layerQuickNav";
-import { evaluateLayerFocusCue } from "../game/interaction/layerFocusCue";
 import {
   createWinLineDirectorRoundKey,
   evaluateWinLineDirector
@@ -222,6 +223,30 @@ const RENDER_PROFILE_LEARN_WINDOW_MS = 10_000;
 const RENDER_PROFILE_SAMPLE_INTERVAL_MS = 2_500;
 const RENDER_PROFILE_LOW_FPS_SAMPLE_FPS = 40;
 const EMPTY_HINT_MOVES: MoveHint[] = [];
+const LAYER_HOTKEY_STORAGE_KEY = "nebula-cube-layer-hotkeys-v1";
+
+function readLayerHotkeysFromStorage(): LayerHotkeys {
+  if (typeof localStorage === "undefined") {
+    return DEFAULT_LAYER_HOTKEYS;
+  }
+  const raw = localStorage.getItem(LAYER_HOTKEY_STORAGE_KEY);
+  if (!raw) {
+    return DEFAULT_LAYER_HOTKEYS;
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<LayerHotkeys>;
+    return sanitizeLayerHotkeys(parsed);
+  } catch {
+    return DEFAULT_LAYER_HOTKEYS;
+  }
+}
+
+function persistLayerHotkeysToStorage(hotkeys: LayerHotkeys): void {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
+  localStorage.setItem(LAYER_HOTKEY_STORAGE_KEY, JSON.stringify(hotkeys));
+}
 
 export function GameRoomPage({
   snapshot,
@@ -268,10 +293,8 @@ export function GameRoomPage({
   );
   const focusGuardTriggeredTurnKeyRef = useRef<string | null>(null);
   const focusGuardWasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
-  const focusGuardCueLastShownAtMsRef = useRef<number | null>(null);
   const layerNavLastInputAtMsRef = useRef(0);
   const layerNavLastRotateAtMsRef = useRef(0);
-  const layerFocusCueLastShownAtMsRef = useRef<number | null>(null);
   const turnNudgeTriggeredTurnKeyRef = useRef<string | null>(null);
   const turnNudgeTitleActiveRef = useRef(false);
   const wasMyTurnRef = useRef(snapshot.turn === myMark && snapshot.winner === null);
@@ -312,10 +335,11 @@ export function GameRoomPage({
   const [onboardingProgress, setOnboardingProgress] = useState(() =>
     createDefaultOnboardingProgress()
   );
-  const [focusMode, setFocusMode] = useState<"auto" | "manual">("auto");
+  const [focusMode, setFocusMode] = useState<"auto" | "manual">("manual");
   const [focusLayer, setFocusLayer] = useState(Math.floor(snapshot.size / 2));
   const [nonFocusLayerOpacity, setNonFocusLayerOpacity] = useState(0.22);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [layerHotkeys, setLayerHotkeys] = useState<LayerHotkeys>(() => readLayerHotkeysFromStorage());
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
     if (typeof window === "undefined") {
       return "desktop";
@@ -1011,71 +1035,6 @@ export function GameRoomPage({
     setFocusLayer((current) => clampLayer(current + step, snapshot.size));
   }, [snapshot.size]);
 
-  const handleAutoFocus = useCallback(() => {
-    setFocusMode("auto");
-    setFocusLayer(autoFocusLayer);
-  }, [autoFocusLayer]);
-
-  const handleLayerSmartJump = useCallback(() => {
-    if (layerQuickNav.smartJumpLayer === focusLayer) {
-      return;
-    }
-    layerNavLastInputAtMsRef.current = Date.now();
-    setFocusMode("manual");
-    setFocusLayer(layerQuickNav.smartJumpLayer);
-  }, [focusLayer, layerQuickNav.smartJumpLayer]);
-  const handleLayerTapFocus = useCallback(
-    (targetLayer: number) => {
-      const nextLayer = clampLayer(targetLayer, snapshot.size);
-      if (nextLayer === focusLayer) {
-        return;
-      }
-      const now = Date.now();
-      if (
-        now - layerNavLastInputAtMsRef.current < LAYER_NAV_INPUT_THROTTLE_MS ||
-        now - layerNavLastRotateAtMsRef.current < LAYER_NAV_INPUT_THROTTLE_MS
-      ) {
-        return;
-      }
-      layerNavLastInputAtMsRef.current = now;
-      setFocusMode("manual");
-      setFocusLayer(nextLayer);
-
-      const cueDecision = evaluateLayerFocusCue({
-        source: "tap-focus",
-        fromLayer: focusLayer,
-        toLayer: nextLayer,
-        canPlaceNow: canPlace,
-        blockReason: snapshot.winner
-          ? "winner"
-          : connectionStatus !== "online"
-            ? "offline"
-            : hasPendingMove
-              ? "pending"
-              : snapshot.turn !== myMark
-                ? "opponent-turn"
-                : "unknown",
-        nowMs: now,
-        lastShownAtMs: layerFocusCueLastShownAtMsRef.current
-      });
-      const incomingCue = createLayerFocusInteractionCue(cueDecision, now);
-      if (!incomingCue) {
-        return;
-      }
-      layerFocusCueLastShownAtMsRef.current = cueDecision.shownAtMs;
-      setActiveInteractionCue((current) => resolveNextCue(current, incomingCue, now));
-    },
-    [
-      canPlace,
-      connectionStatus,
-      focusLayer,
-      hasPendingMove,
-      myMark,
-      snapshot.size,
-      snapshot.turn,
-      snapshot.winner
-    ]
-  );
   const clearBoardAutoRetryTimer = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -1154,7 +1113,6 @@ export function GameRoomPage({
     }
     if (effectivePrimaryIntent.actionType === "enableAssist") {
       setAssistEnabled(true);
-      setFocusMode("auto");
       return;
     }
     if (effectivePrimaryIntent.actionType === "continueMatch") {
@@ -1187,56 +1145,33 @@ export function GameRoomPage({
     stopWinLineCinematic
   ]);
 
-  const handleLayerWheel = useCallback(
-    (deltaY: number): boolean => {
-      const now = Date.now();
-      if (
-        now - layerNavLastInputAtMsRef.current < LAYER_NAV_INPUT_THROTTLE_MS ||
-        now - layerNavLastRotateAtMsRef.current < LAYER_NAV_INPUT_THROTTLE_MS
-      ) {
-        return false;
-      }
-      if (Math.abs(deltaY) < 18) {
-        return false;
-      }
-      const step: -1 | 1 = deltaY > 0 ? 1 : -1;
-      if ((step === 1 && !layerQuickNav.canGoNext) || (step === -1 && !layerQuickNav.canGoPrev)) {
-        return false;
-      }
-      handleLayerStep(step);
-      return true;
-    },
-    [handleLayerStep, layerQuickNav.canGoNext, layerQuickNav.canGoPrev]
-  );
-
-  const handleLayerSwipe = useCallback(
-    (deltaY: number) => {
-      const now = Date.now();
-      if (
-        now - layerNavLastInputAtMsRef.current < LAYER_NAV_INPUT_THROTTLE_MS ||
-        now - layerNavLastRotateAtMsRef.current < LAYER_NAV_INPUT_THROTTLE_MS
-      ) {
-        return;
-      }
-      if (Math.abs(deltaY) < 32) {
-        return;
-      }
-      handleLayerStep(deltaY < 0 ? 1 : -1);
-    },
-    [handleLayerStep]
-  );
-
   const handleAssistToggle = useCallback(() => {
     setAssistEnabled((current) => !current);
-    setFocusMode("auto");
   }, []);
   const handleNonFocusLayerOpacityChange = useCallback((nextOpacity: number) => {
     setNonFocusLayerOpacity(clampOpacity(nextOpacity));
   }, []);
 
-  const handleToggleAdvanced = () => {
-    setAdvancedOpen((current) => !current);
-  };
+  const handleOpenSettings = useCallback(() => {
+    setSettingsOpen(true);
+  }, []);
+
+  const handleCloseSettings = useCallback(() => {
+    setSettingsOpen(false);
+  }, []);
+
+  const handleLayerHotkeyChange = useCallback((kind: "up" | "down", key: string) => {
+    setLayerHotkeys((current) =>
+      sanitizeLayerHotkeys({
+        ...current,
+        [kind]: key
+      })
+    );
+  }, []);
+
+  const handleResetLayerHotkeys = useCallback(() => {
+    setLayerHotkeys(DEFAULT_LAYER_HOTKEYS);
+  }, []);
 
   const applyTurnNudgeTitle = useCallback(() => {
     if (typeof document === "undefined" || turnNudgeTitleActiveRef.current) {
@@ -1319,13 +1254,14 @@ export function GameRoomPage({
 
   useEffect(() => () => clearWinLineCinematicTimer(), [clearWinLineCinematicTimer]);
   useEffect(() => () => clearBoardAutoRetryTimer(), [clearBoardAutoRetryTimer]);
+  useEffect(() => {
+    persistLayerHotkeysToStorage(layerHotkeys);
+  }, [layerHotkeys]);
 
   useEffect(() => {
-    setFocusMode("auto");
+    setFocusMode("manual");
     setFocusLayer(Math.floor(snapshot.size / 2));
-    setAdvancedOpen(false);
-    focusGuardCueLastShownAtMsRef.current = null;
-    layerFocusCueLastShownAtMsRef.current = null;
+    setSettingsOpen(false);
     setActiveInteractionCue(null);
   }, [snapshot.roomId, snapshot.size]);
 
@@ -1522,19 +1458,6 @@ export function GameRoomPage({
 
     if (focusGuardDecision.shouldRestoreAuto) {
       focusGuardTriggeredTurnKeyRef.current = focusGuardTurnKey;
-      setFocusMode("auto");
-      setFocusLayer(focusGuardDecision.targetLayer);
-      const cueDecision = evaluateFocusGuardCue({
-        reason: focusGuardDecision.reason,
-        targetLayer: focusGuardDecision.targetLayer,
-        nowMs,
-        lastShownAtMs: focusGuardCueLastShownAtMsRef.current
-      });
-      const incomingCue = createFocusGuardInteractionCue(cueDecision, nowMs);
-      if (incomingCue) {
-        focusGuardCueLastShownAtMsRef.current = cueDecision.shownAtMs;
-        setActiveInteractionCue((current) => resolveNextCue(current, incomingCue, nowMs));
-      }
     }
 
     focusGuardWasMyTurnRef.current = isMyTurn;
@@ -1664,7 +1587,7 @@ export function GameRoomPage({
     if (layoutMode !== "mobile") {
       return;
     }
-    setAdvancedOpen(false);
+    setSettingsOpen(false);
   }, [layoutMode]);
 
   useEffect(() => {
@@ -1941,18 +1864,32 @@ export function GameRoomPage({
   ]);
 
   useEffect(() => {
-    if (layoutMode === "mobile") {
-      return;
-    }
-
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || event.repeat) {
-        return;
-      }
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
         return;
       }
       if (shouldBlockGlobalSpaceHotkey(event.target)) {
+        return;
+      }
+
+      if (!event.repeat) {
+        const layerAction = resolveLayerHotkeyAction(event.key, layerHotkeys);
+        if (layerAction === -1 && layerQuickNav.canGoPrev) {
+          event.preventDefault();
+          handleLayerStep(-1);
+          return;
+        }
+        if (layerAction === 1 && layerQuickNav.canGoNext) {
+          event.preventDefault();
+          handleLayerStep(1);
+          return;
+        }
+      }
+
+      if (layoutMode === "mobile") {
+        return;
+      }
+      if (event.code !== "Space" || event.repeat) {
         return;
       }
       if (!effectivePrimaryIntent.enabled) {
@@ -1963,14 +1900,31 @@ export function GameRoomPage({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [effectivePrimaryIntent.enabled, handlePrimaryAction, layoutMode]);
+  }, [
+    effectivePrimaryIntent.enabled,
+    handleLayerStep,
+    handlePrimaryAction,
+    layerHotkeys,
+    layerQuickNav.canGoNext,
+    layerQuickNav.canGoPrev,
+    layoutMode
+  ]);
 
   const gameToastType = errorMessage ? "error" : activeInteractionCue?.tone ?? null;
   const gameToastMessage = errorMessage ?? activeInteractionCue?.message ?? null;
 
   return (
     <main className={`game-page ${layoutMode === "mobile" ? "mobile" : "desktop"}`}>
-      <div className="board-slot">
+      <div
+        className="board-slot"
+        onPointerDownCapture={(event) => {
+          if (!settingsOpen) {
+            return;
+          }
+          event.stopPropagation();
+          handleCloseSettings();
+        }}
+      >
         {boardSceneLoadFailed ? (
           <BoardLoadingPanel
             state="failed"
@@ -2009,9 +1963,6 @@ export function GameRoomPage({
                   hintMoves={hintMovesForBoard}
                   pendingMove={pendingMove}
                   onPlace={onPlace}
-                  onFocusLayerByTap={handleLayerTapFocus}
-                  onLayerWheel={handleLayerWheel}
-                  onLayerSwipe={handleLayerSwipe}
                   onUserRotate={handleBoardRotate}
                 />
               </BoardSceneMountMarker>
@@ -2036,7 +1987,8 @@ export function GameRoomPage({
         layerQuickNav={layerQuickNav}
         primaryAction={effectivePrimaryIntent}
         onboardingGuide={onboardingGuide.visible ? onboardingGuide : null}
-        advancedOpen={advancedOpen}
+        settingsOpen={settingsOpen}
+        layerHotkeys={layerHotkeys}
         qualityMode={qualityMode}
         qualityLevel={effectiveQualityLevel}
         calmModeActive={autoCalmMode}
@@ -2079,10 +2031,11 @@ export function GameRoomPage({
         onCancelAutoContinue={handleCancelAutoContinue}
         onOnboardingPrimaryAction={handleOnboardingPrimaryAction}
         onOnboardingSkip={handleOnboardingSkip}
-        onToggleAdvanced={handleToggleAdvanced}
+        onOpenSettings={handleOpenSettings}
+        onCloseSettings={handleCloseSettings}
         onLayerStep={handleLayerStep}
-        onLayerSmartJump={handleLayerSmartJump}
-        onAutoFocus={handleAutoFocus}
+        onLayerHotkeyChange={handleLayerHotkeyChange}
+        onResetLayerHotkeys={handleResetLayerHotkeys}
         onToggleAssist={handleAssistToggle}
         onNonFocusLayerOpacityChange={handleNonFocusLayerOpacityChange}
         onQualityModeChange={onQualityModeChange}

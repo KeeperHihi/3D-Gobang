@@ -1,6 +1,11 @@
 import { createMatchQueueGuide } from "../game/interaction/matchQueueGuide";
 import { createMatchBlockerOrchestrator } from "../game/interaction/matchBlockerOrchestrator";
 import { createMatchSecondaryActions } from "../game/interaction/matchSecondaryActions";
+import type {
+  ChallengeIncomingPayload,
+  ChallengeOutgoingPayload,
+  LobbyPlayerSnapshot
+} from "../network/protocol";
 import {
   sceneWarmupHintForMatchPage,
   type SceneWarmupBoardStatus,
@@ -21,12 +26,34 @@ interface MatchPageProps {
   onCancelMatch: () => void;
   onPrepareArena: () => void;
   onRetryWarmup: () => void;
+  displayName: string;
+  onlinePlayers: LobbyPlayerSnapshot[];
+  incomingChallenge: ChallengeIncomingPayload | null;
+  outgoingChallenge: ChallengeOutgoingPayload | null;
+  challengeNotice: string | null;
+  onDisplayNameChange: (displayName: string) => void;
+  onSendChallenge: (targetSocketId: string) => void;
+  onRespondChallenge: (accept: boolean) => void;
+  onCancelOutgoingChallenge: () => void;
 }
 
 function formatWaitTime(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function presenceStatusText(status: LobbyPlayerSnapshot["status"]): string {
+  if (status === "idle") {
+    return "空闲";
+  }
+  if (status === "queuing") {
+    return "匹配中";
+  }
+  if (status === "in-game") {
+    return "对局中";
+  }
+  return "处理中";
 }
 
 export function MatchPage({
@@ -42,7 +69,16 @@ export function MatchPage({
   onStartMatch,
   onCancelMatch,
   onPrepareArena,
-  onRetryWarmup
+  onRetryWarmup,
+  displayName,
+  onlinePlayers,
+  incomingChallenge,
+  outgoingChallenge,
+  challengeNotice,
+  onDisplayNameChange,
+  onSendChallenge,
+  onRespondChallenge,
+  onCancelOutgoingChallenge
 }: MatchPageProps) {
   const isQueuing = matchPhase === "queuing";
   const guide = createMatchQueueGuide({
@@ -75,6 +111,7 @@ export function MatchPage({
     primaryBlockerSource: blockerDecision.primaryBlockerSource,
     canRetryWarmup: secondaryActions.retryWarmupAction.visible && secondaryActions.retryWarmupAction.enabled
   });
+  const challengablePlayers = onlinePlayers.filter((player) => !player.isSelf);
 
   return (
     <main className="match-page">
@@ -87,6 +124,19 @@ export function MatchPage({
         </p>
         <p className="match-status">{guide.headline}</p>
         <p className="match-queue-guide">{guide.detail}</p>
+        <div className="match-display-name-row">
+          <label className="match-display-name-label" htmlFor="match-display-name">
+            你的昵称
+          </label>
+          <input
+            id="match-display-name"
+            className="match-display-name-input"
+            type="text"
+            maxLength={16}
+            value={displayName}
+            onChange={(event) => onDisplayNameChange(event.target.value)}
+          />
+        </div>
         {isQueuing ? (
           <div className="match-queue-panel">
             <div className="match-queue-stat">
@@ -154,6 +204,61 @@ export function MatchPage({
             {secondaryActions.cancelAction.disabledReason}
           </p>
         ) : null}
+        {challengeNotice ? <p className="match-challenge-notice">{challengeNotice}</p> : null}
+        {incomingChallenge ? (
+          <div className="match-challenge-card incoming">
+            <p className="match-challenge-title">收到挑战</p>
+            <p className="match-challenge-detail">{incomingChallenge.fromDisplayName} 邀请你立即开战</p>
+            <div className="match-challenge-actions">
+              <button className="primary-button" type="button" onClick={() => onRespondChallenge(true)}>
+                应战
+              </button>
+              <button className="secondary-button" type="button" onClick={() => onRespondChallenge(false)}>
+                拒绝
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {outgoingChallenge ? (
+          <div className="match-challenge-card outgoing">
+            <p className="match-challenge-title">挑战发送中</p>
+            <p className="match-challenge-detail">
+              已向 {outgoingChallenge.targetDisplayName} 发起挑战，等待对方应答
+            </p>
+            <button className="secondary-button" type="button" onClick={onCancelOutgoingChallenge}>
+              取消挑战
+            </button>
+          </div>
+        ) : null}
+        <div className="match-online-list">
+          <div className="match-online-header">
+            <span>在线玩家</span>
+            <span>{challengablePlayers.length} 人可见</span>
+          </div>
+          {challengablePlayers.length === 0 ? (
+            <p className="match-online-empty">暂无其他在线玩家，先快速匹配也可以。</p>
+          ) : (
+            challengablePlayers.map((player) => {
+              const canChallenge = player.status === "idle" && !isQueuing && outgoingChallenge === null;
+              return (
+                <div key={player.socketId} className="match-online-item">
+                  <div>
+                    <p className="match-online-name">{player.displayName}</p>
+                    <p className={`match-online-status ${player.status}`}>{presenceStatusText(player.status)}</p>
+                  </div>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={!canChallenge}
+                    onClick={() => onSendChallenge(player.socketId)}
+                  >
+                    发起挑战
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
     </main>
   );
