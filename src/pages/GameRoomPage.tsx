@@ -80,6 +80,11 @@ import {
   evaluateFocusGuard
 } from "../game/interaction/focusGuard";
 import { evaluateFocusGuardCue } from "../game/interaction/focusGuardCue";
+import {
+  resolveCueAfterTick,
+  resolveNextCue,
+  type InteractionCue
+} from "../game/interaction/interactionCue";
 import { createPrimaryIntentState } from "../game/interaction/primaryIntent";
 import { evaluateHudSpotlight } from "../game/interaction/hudSpotlight";
 import { evaluateLayerQuickNav } from "../game/interaction/layerQuickNav";
@@ -340,10 +345,7 @@ export function GameRoomPage({
     number | null
   >(null);
   const [winLineCinematicActive, setWinLineCinematicActive] = useState(false);
-  const [focusGuardCueMessage, setFocusGuardCueMessage] = useState<string | null>(null);
-  const [focusGuardCueExpiresAtMs, setFocusGuardCueExpiresAtMs] = useState<number | null>(null);
-  const [layerFocusCueMessage, setLayerFocusCueMessage] = useState<string | null>(null);
-  const [layerFocusCueExpiresAtMs, setLayerFocusCueExpiresAtMs] = useState<number | null>(null);
+  const [activeInteractionCue, setActiveInteractionCue] = useState<InteractionCue | null>(null);
   const [settlementStartedAtMs, setSettlementStartedAtMs] = useState<number | null>(null);
   const [autoRematchCountdownStartedAtMs, setAutoRematchCountdownStartedAtMs] = useState<number | null>(
     null
@@ -1056,8 +1058,15 @@ export function GameRoomPage({
         return;
       }
       layerFocusCueLastShownAtMsRef.current = cueDecision.shownAtMs;
-      setLayerFocusCueMessage(cueDecision.message);
-      setLayerFocusCueExpiresAtMs(cueDecision.expiresAtMs);
+      const incomingCue: InteractionCue = {
+        kind: "tap-focus",
+        tone: "focus-cue",
+        message: cueDecision.message ?? "",
+        priority: 40,
+        shownAtMs: cueDecision.shownAtMs ?? now,
+        expiresAtMs: cueDecision.expiresAtMs ?? now
+      };
+      setActiveInteractionCue((current) => resolveNextCue(current, incomingCue, now));
     },
     [
       canPlace,
@@ -1319,11 +1328,8 @@ export function GameRoomPage({
     setFocusLayer(Math.floor(snapshot.size / 2));
     setAdvancedOpen(false);
     focusGuardCueLastShownAtMsRef.current = null;
-    setFocusGuardCueMessage(null);
-    setFocusGuardCueExpiresAtMs(null);
     layerFocusCueLastShownAtMsRef.current = null;
-    setLayerFocusCueMessage(null);
-    setLayerFocusCueExpiresAtMs(null);
+    setActiveInteractionCue(null);
   }, [snapshot.roomId, snapshot.size]);
 
   useEffect(() => {
@@ -1529,8 +1535,15 @@ export function GameRoomPage({
       });
       if (cueDecision.shouldShow) {
         focusGuardCueLastShownAtMsRef.current = cueDecision.shownAtMs;
-        setFocusGuardCueMessage(cueDecision.message);
-        setFocusGuardCueExpiresAtMs(cueDecision.expiresAtMs);
+        const incomingCue: InteractionCue = {
+          kind: "focus-guard",
+          tone: "focus-guard-cue",
+          message: cueDecision.message ?? "",
+          priority: 60,
+          shownAtMs: cueDecision.shownAtMs ?? nowMs,
+          expiresAtMs: cueDecision.expiresAtMs ?? nowMs
+        };
+        setActiveInteractionCue((current) => resolveNextCue(current, incomingCue, nowMs));
       }
     }
 
@@ -1665,44 +1678,31 @@ export function GameRoomPage({
   }, [layoutMode]);
 
   useEffect(() => {
-    if (focusGuardCueExpiresAtMs === null) {
+    if (!activeInteractionCue) {
       return;
     }
     if (typeof window === "undefined") {
       return;
     }
-    const remainingMs = focusGuardCueExpiresAtMs - Date.now();
-    if (remainingMs <= 0) {
-      setFocusGuardCueMessage(null);
-      setFocusGuardCueExpiresAtMs(null);
+    const nowMs = Date.now();
+    const activeCue = resolveCueAfterTick(activeInteractionCue, nowMs);
+    if (!activeCue) {
+      setActiveInteractionCue(null);
       return;
     }
     const timer = window.setTimeout(() => {
-      setFocusGuardCueMessage(null);
-      setFocusGuardCueExpiresAtMs(null);
-    }, remainingMs);
+      setActiveInteractionCue((current) => resolveCueAfterTick(current, Date.now()));
+    }, Math.max(0, activeCue.expiresAtMs - nowMs));
     return () => window.clearTimeout(timer);
-  }, [focusGuardCueExpiresAtMs]);
+  }, [activeInteractionCue]);
 
   useEffect(() => {
-    if (layerFocusCueExpiresAtMs === null) {
+    if (!errorMessage || !activeInteractionCue) {
       return;
     }
-    if (typeof window === "undefined") {
-      return;
-    }
-    const remainingMs = layerFocusCueExpiresAtMs - Date.now();
-    if (remainingMs <= 0) {
-      setLayerFocusCueMessage(null);
-      setLayerFocusCueExpiresAtMs(null);
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setLayerFocusCueMessage(null);
-      setLayerFocusCueExpiresAtMs(null);
-    }, remainingMs);
-    return () => window.clearTimeout(timer);
-  }, [layerFocusCueExpiresAtMs]);
+    // Keep clearing while error is visible so hidden interaction cues cannot rebound later.
+    setActiveInteractionCue(null);
+  }, [activeInteractionCue, errorMessage]);
 
   useEffect(() => {
     let rafId = 0;
@@ -1975,14 +1975,8 @@ export function GameRoomPage({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [effectivePrimaryIntent.enabled, handlePrimaryAction, layoutMode]);
 
-  const gameToastType = errorMessage
-    ? "error"
-    : focusGuardCueMessage
-      ? "focus-guard-cue"
-      : layerFocusCueMessage
-        ? "focus-cue"
-        : null;
-  const gameToastMessage = errorMessage ?? focusGuardCueMessage ?? layerFocusCueMessage;
+  const gameToastType = errorMessage ? "error" : activeInteractionCue?.tone ?? null;
+  const gameToastMessage = errorMessage ?? activeInteractionCue?.message ?? null;
 
   return (
     <main className={`game-page ${layoutMode === "mobile" ? "mobile" : "desktop"}`}>
