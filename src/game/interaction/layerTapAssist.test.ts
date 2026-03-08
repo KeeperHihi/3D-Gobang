@@ -35,22 +35,48 @@ describe("evaluateLayerTapAssist", () => {
     expect(decision.nextFocusLayer).toBe(4);
   });
 
-  it("returns ignore when cell is occupied", () => {
+  it("returns focus for occupied cell in non-focus layer", () => {
     const decision = createDecision({
+      inFocusLayer: false,
       isEmpty: false,
-      inFocusLayer: false
+      targetLayer: 5,
+      currentLayer: 1
     });
 
-    expect(decision.action).toBe("ignore");
+    expect(decision.action).toBe("focus");
+    expect(decision.nextFocusLayer).toBe(5);
   });
 
-  it("returns ignore when placement is unavailable", () => {
+  it("returns focus for non-focus layer even when placement is unavailable", () => {
     const decision = createDecision({
       canPlace: false,
-      inFocusLayer: false
+      inFocusLayer: false,
+      targetLayer: 6,
+      currentLayer: 0
+    });
+
+    expect(decision.action).toBe("focus");
+    expect(decision.nextFocusLayer).toBe(6);
+  });
+
+  it("returns ignore when occupied in current focus layer", () => {
+    const decision = createDecision({
+      isEmpty: false,
+      inFocusLayer: true
     });
 
     expect(decision.action).toBe("ignore");
+    expect(decision.nextFocusLayer).toBeNull();
+  });
+
+  it("returns ignore in current focus layer when placement is unavailable", () => {
+    const decision = createDecision({
+      canPlace: false,
+      inFocusLayer: true
+    });
+
+    expect(decision.action).toBe("ignore");
+    expect(decision.nextFocusLayer).toBeNull();
   });
 
   it("returns place when current layer already equals target layer", () => {

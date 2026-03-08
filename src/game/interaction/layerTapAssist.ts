@@ -14,14 +14,14 @@ export interface LayerTapAssistDecision {
 }
 
 export function evaluateLayerTapAssist(input: LayerTapAssistInput): LayerTapAssistDecision {
-  if (!input.canPlace || !input.isEmpty) {
+  if (!input.inFocusLayer && input.currentLayer !== input.targetLayer) {
     return {
-      action: "ignore",
-      nextFocusLayer: null
+      action: "focus",
+      nextFocusLayer: input.targetLayer
     };
   }
 
-  if (input.inFocusLayer || input.currentLayer === input.targetLayer) {
+  if (input.canPlace && input.isEmpty) {
     return {
       action: "place",
       nextFocusLayer: null
@@ -29,7 +29,7 @@ export function evaluateLayerTapAssist(input: LayerTapAssistInput): LayerTapAssi
   }
 
   return {
-    action: "focus",
-    nextFocusLayer: input.targetLayer
+    action: "ignore",
+    nextFocusLayer: null
   };
 }
