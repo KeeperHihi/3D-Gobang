@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { sceneWarmupHint, sceneWarmupLoadingStageDetail } from "./sceneWarmup";
+import {
+  sceneWarmupHint,
+  sceneWarmupHintForMatchPage,
+  sceneWarmupLoadingStageDetail
+} from "./sceneWarmup";
 
 describe("sceneWarmupHint", () => {
   it("returns idle guidance", () => {
@@ -42,6 +46,38 @@ describe("sceneWarmupHint", () => {
 
   it("returns auto-retrying guidance in queue retry window", () => {
     expect(sceneWarmupHint("failed", { autoRetrying: true })).toContain("自动重试预热");
+  });
+});
+
+describe("sceneWarmupHintForMatchPage", () => {
+  it("keeps retry hint when warmup-failed blocker allows retry", () => {
+    expect(
+      sceneWarmupHintForMatchPage("failed", {
+        primaryBlockerSource: "warmup-failed",
+        canRetryWarmup: true
+      })
+    ).toContain("可一键重试");
+  });
+
+  it("removes direct retry instruction when connection blocks retry", () => {
+    const hint = sceneWarmupHintForMatchPage("failed", {
+      primaryBlockerSource: "connection",
+      canRetryWarmup: false
+    });
+
+    expect(hint).not.toContain("可一键重试");
+    expect(hint).toContain("网络恢复后可重试预热");
+  });
+
+  it("uses recovery-aware hint when recovering blocks retry", () => {
+    const hint = sceneWarmupHintForMatchPage("failed", {
+      primaryBlockerSource: "recovering",
+      canRetryWarmup: false,
+      boardWarmupStatus: "failed"
+    });
+
+    expect(hint).not.toContain("可一键重试");
+    expect(hint).toContain("恢复后可重试预热");
   });
 });
 

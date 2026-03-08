@@ -1,3 +1,5 @@
+import type { MatchPrimaryBlockerSource } from "./matchBlockerOrchestrator";
+
 export type SceneWarmupStatus = "idle" | "warming" | "ready" | "failed";
 export type SceneWarmupBoardStatus = "idle" | "warming" | "ready" | "failed" | "skipped";
 
@@ -5,6 +7,11 @@ export interface SceneWarmupHintOptions {
   intentOnlyMode?: boolean;
   autoRetrying?: boolean;
   boardWarmupStatus?: SceneWarmupBoardStatus;
+}
+
+export interface MatchPageWarmupHintOptions extends SceneWarmupHintOptions {
+  primaryBlockerSource?: MatchPrimaryBlockerSource | null;
+  canRetryWarmup?: boolean;
 }
 
 export function sceneWarmupHint(
@@ -48,6 +55,41 @@ export function sceneWarmupHint(
   }
 
   return "战场尚未预热；开始匹配前可先准备房间壳与棋盘，减少等待。";
+}
+
+export function sceneWarmupHintForMatchPage(
+  status: SceneWarmupStatus,
+  options?: MatchPageWarmupHintOptions
+): string {
+  const hint = sceneWarmupHint(status, options);
+  if (status !== "failed") {
+    return hint;
+  }
+  if (options?.autoRetrying) {
+    return hint;
+  }
+
+  const canRetryWarmup = options?.canRetryWarmup ?? false;
+  if (canRetryWarmup) {
+    return hint;
+  }
+
+  const blockerSource = options?.primaryBlockerSource ?? null;
+  const boardWarmupStatus = options?.boardWarmupStatus ?? "idle";
+  if (blockerSource === "recovering") {
+    return boardWarmupStatus === "failed"
+      ? "房间壳已就绪，但棋盘预热失败；当前正在恢复对局，恢复后可重试预热。"
+      : "战场预热失败；当前正在恢复对局，恢复后可重试预热。";
+  }
+  if (blockerSource === "connection") {
+    return boardWarmupStatus === "failed"
+      ? "房间壳已就绪，但棋盘预热失败；待网络恢复后可重试预热。"
+      : "战场预热失败；待网络恢复后可重试预热。";
+  }
+
+  return boardWarmupStatus === "failed"
+    ? "房间壳已就绪，但棋盘预热失败；当前暂不可重试，进入对局后仍会继续加载。"
+    : "战场预热失败；当前暂不可重试，进房时仍会继续加载。";
 }
 
 export function sceneWarmupLoadingStageDetail(

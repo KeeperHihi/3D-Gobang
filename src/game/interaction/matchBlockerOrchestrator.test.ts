@@ -46,6 +46,7 @@ describe("createMatchBlockerOrchestrator", () => {
       }
     });
 
+    expect(decision.primaryBlockerSource).toBe("connection");
     expect(decision.primaryBlockerReason).toBe("连接恢复后即可开始匹配");
     expect(decision.suppressPrimaryActionReason).toBe(true);
     expect(decision.suppressCancelReason).toBe(true);
@@ -65,6 +66,7 @@ describe("createMatchBlockerOrchestrator", () => {
       }
     });
 
+    expect(decision.primaryBlockerSource).toBe("connection");
     expect(decision.primaryBlockerReason).toBe("重连中，匹配将在连接恢复后继续");
     expect(decision.suppressPrimaryActionReason).toBe(true);
     expect(decision.suppressCancelReason).toBe(true);
@@ -92,6 +94,7 @@ describe("createMatchBlockerOrchestrator", () => {
       }
     });
 
+    expect(decision.primaryBlockerSource).toBe("recovering");
     expect(decision.primaryBlockerReason).toBe("检测到未完成对局，恢复完成前不可开始新匹配");
     expect(decision.suppressPrimaryActionReason).toBe(true);
     expect(decision.suppressCancelReason).toBe(true);
@@ -101,6 +104,7 @@ describe("createMatchBlockerOrchestrator", () => {
   it("returns no blocker under online idle state", () => {
     const decision = createDecision();
 
+    expect(decision.primaryBlockerSource).toBeNull();
     expect(decision.primaryBlockerReason).toBeNull();
     expect(decision.suppressPrimaryActionReason).toBe(false);
     expect(decision.suppressCancelReason).toBe(false);

@@ -2,7 +2,7 @@ import { createMatchQueueGuide } from "../game/interaction/matchQueueGuide";
 import { createMatchBlockerOrchestrator } from "../game/interaction/matchBlockerOrchestrator";
 import { createMatchSecondaryActions } from "../game/interaction/matchSecondaryActions";
 import {
-  sceneWarmupHint,
+  sceneWarmupHintForMatchPage,
   type SceneWarmupBoardStatus,
   type SceneWarmupStatus
 } from "../game/interaction/sceneWarmup";
@@ -68,10 +68,12 @@ export function MatchPage({
     retryWarmupAction: secondaryActions.retryWarmupAction
   });
   const startDisabled = guide.primaryActionDisabledReason !== null;
-  const warmupHint = sceneWarmupHint(sceneWarmupStatus, {
+  const warmupHint = sceneWarmupHintForMatchPage(sceneWarmupStatus, {
     intentOnlyMode: warmupIntentOnlyMode,
     autoRetrying: isWarmupAutoRetrying,
-    boardWarmupStatus: sceneWarmupBoardStatus
+    boardWarmupStatus: sceneWarmupBoardStatus,
+    primaryBlockerSource: blockerDecision.primaryBlockerSource,
+    canRetryWarmup: secondaryActions.retryWarmupAction.visible && secondaryActions.retryWarmupAction.enabled
   });
 
   return (

@@ -5,6 +5,8 @@ import type { ConnectionStatus } from "./smartAction";
 type MatchBlockerSource = "recovering" | "connection" | "queuing" | "warmup-failed";
 type MatchBlockerOwner = "primary" | "cancel" | "retryWarmup";
 
+export type MatchPrimaryBlockerSource = MatchBlockerSource;
+
 interface BlockerCandidate {
   owner: MatchBlockerOwner;
   source: MatchBlockerSource;
@@ -22,6 +24,7 @@ export interface MatchBlockerOrchestratorInput {
 }
 
 export interface MatchBlockerOrchestratorDecision {
+  primaryBlockerSource: MatchPrimaryBlockerSource | null;
   primaryBlockerReason: string | null;
   suppressPrimaryActionReason: boolean;
   suppressCancelReason: boolean;
@@ -155,6 +158,7 @@ export function createMatchBlockerOrchestrator(
   const candidates = collectCandidates(input);
   if (candidates.length === 0) {
     return {
+      primaryBlockerSource: null,
       primaryBlockerReason: null,
       suppressPrimaryActionReason: false,
       suppressCancelReason: false,
@@ -172,6 +176,7 @@ export function createMatchBlockerOrchestrator(
   const selected = sorted[0];
 
   return {
+    primaryBlockerSource: selected.source,
     primaryBlockerReason: selected.reason,
     suppressPrimaryActionReason: candidates.some(
       (candidate) => candidate.owner === "primary" && candidate.source === selected.source
