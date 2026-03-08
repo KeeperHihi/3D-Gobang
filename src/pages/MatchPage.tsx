@@ -1,4 +1,5 @@
 import { createMatchQueueGuide } from "../game/interaction/matchQueueGuide";
+import { createMatchSecondaryActions } from "../game/interaction/matchSecondaryActions";
 import {
   sceneWarmupHint,
   type SceneWarmupBoardStatus,
@@ -50,10 +51,13 @@ export function MatchPage({
     waitingSeconds: queueElapsedSeconds,
     queueSize
   });
+  const secondaryActions = createMatchSecondaryActions({
+    connectionStatus,
+    isQueuing,
+    isRecoveringSession,
+    sceneWarmupStatus
+  });
   const startDisabled = guide.primaryActionDisabledReason !== null;
-  const cancelDisabled = connectionStatus !== "online" || !isQueuing || isRecoveringSession;
-  const retryWarmupDisabled =
-    connectionStatus !== "online" || sceneWarmupStatus !== "failed" || isRecoveringSession;
   const warmupHint = sceneWarmupHint(sceneWarmupStatus, {
     intentOnlyMode: warmupIntentOnlyMode,
     autoRetrying: isWarmupAutoRetrying,
@@ -98,30 +102,43 @@ export function MatchPage({
         {startDisabled && guide.primaryActionDisabledReason ? (
           <p className="match-primary-disabled-reason">{guide.primaryActionDisabledReason}</p>
         ) : null}
-        {sceneWarmupStatus === "failed" ? (
+        {secondaryActions.retryWarmupAction.visible ? (
           <div className="match-warmup-actions">
             <button
               className="secondary-button"
               type="button"
               onClick={onRetryWarmup}
-              disabled={retryWarmupDisabled}
+              disabled={!secondaryActions.retryWarmupAction.enabled}
             >
-              一键重试预热
+              {secondaryActions.retryWarmupAction.label}
             </button>
+            {!secondaryActions.retryWarmupAction.enabled &&
+            secondaryActions.retryWarmupAction.disabledReason ? (
+              <p className="match-secondary-disabled-reason">
+                {secondaryActions.retryWarmupAction.disabledReason}
+              </p>
+            ) : null}
           </div>
         ) : null}
         {isWarmupAutoRetrying ? (
           <p className="match-warmup-retrying">正在自动重试预热...</p>
         ) : null}
-        {isQueuing ? (
+        {secondaryActions.cancelAction.visible ? (
           <button
             className="secondary-button"
             type="button"
             onClick={onCancelMatch}
-            disabled={cancelDisabled}
+            disabled={!secondaryActions.cancelAction.enabled}
           >
-            一键取消匹配
+            {secondaryActions.cancelAction.label}
           </button>
+        ) : null}
+        {secondaryActions.cancelAction.visible &&
+        !secondaryActions.cancelAction.enabled &&
+        secondaryActions.cancelAction.disabledReason ? (
+          <p className="match-secondary-disabled-reason">
+            {secondaryActions.cancelAction.disabledReason}
+          </p>
         ) : null}
       </div>
     </main>

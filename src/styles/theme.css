@@ -293,6 +293,13 @@ body {
   color: rgba(203, 233, 255, 0.82);
 }
 
+.match-secondary-disabled-reason {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(200, 228, 249, 0.78);
+}
+
 .secondary-button {
   width: 100%;
   margin-top: 10px;
