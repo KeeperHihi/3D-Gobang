@@ -267,8 +267,14 @@ body {
   color: rgba(188, 229, 255, 0.84);
 }
 
+.match-display-name-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .match-display-name-input {
-  width: 100%;
+  flex: 1;
   height: 42px;
   border-radius: 10px;
   border: 1px solid rgba(136, 214, 255, 0.42);
@@ -276,6 +282,32 @@ body {
   color: #e7f6ff;
   padding: 0 12px;
   font-size: 14px;
+}
+
+.match-display-name-save {
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid rgba(128, 218, 255, 0.58);
+  background: linear-gradient(90deg, rgba(73, 142, 228, 0.42), rgba(101, 102, 219, 0.36));
+  color: #e2f5ff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0 14px;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease;
+}
+
+.match-display-name-save:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+
+.match-display-name-error {
+  margin: 6px 2px 0;
+  font-size: 12px;
+  color: rgba(255, 177, 177, 0.98);
 }
 
 .match-challenge-notice {
@@ -1193,6 +1225,10 @@ body {
   margin-bottom: 0;
 }
 
+.hud-assist-actions {
+  margin-top: -2px;
+}
+
 .hud-settings-modal {
   position: absolute;
   inset: 8px;
@@ -1202,7 +1238,24 @@ body {
   box-shadow:
     0 12px 34px rgba(10, 33, 95, 0.35),
     0 0 0 1px rgba(255, 255, 255, 0.04) inset;
-  animation: hud-panel-in 0.2s ease;
+  opacity: 0;
+  transform: translateY(8px) scale(0.985);
+  transition:
+    opacity 0.24s ease,
+    transform 0.24s ease;
+  pointer-events: none;
+}
+
+.hud-settings-modal.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.hud-settings-modal.is-closing {
+  opacity: 0;
+  transform: translateY(8px) scale(0.985);
+  pointer-events: none;
 }
 
 .hud-settings-header {
@@ -1248,17 +1301,6 @@ body {
 .hud-advanced-panel::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: rgba(132, 204, 255, 0.42);
-}
-
-@keyframes hud-panel-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .hud-mini-button {
@@ -1531,6 +1573,15 @@ body {
   }
 
   .match-online-item .secondary-button {
+    width: 100%;
+  }
+
+  .match-display-name-control {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .match-display-name-save {
     width: 100%;
   }
 

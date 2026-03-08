@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { createMatchQueueGuide } from "../game/interaction/matchQueueGuide";
 import { createMatchBlockerOrchestrator } from "../game/interaction/matchBlockerOrchestrator";
 import { createMatchSecondaryActions } from "../game/interaction/matchSecondaryActions";
@@ -112,6 +113,29 @@ export function MatchPage({
     canRetryWarmup: secondaryActions.retryWarmupAction.visible && secondaryActions.retryWarmupAction.enabled
   });
   const challengablePlayers = onlinePlayers.filter((player) => !player.isSelf);
+  const [displayNameDraft, setDisplayNameDraft] = useState(displayName);
+  const [displayNameError, setDisplayNameError] = useState<string | null>(null);
+  const committedDraftRef = useRef(displayName);
+
+  useEffect(() => {
+    setDisplayNameDraft(displayName);
+    committedDraftRef.current = displayName;
+    setDisplayNameError(null);
+  }, [displayName]);
+
+  const handleDisplayNameCommit = () => {
+    const committed = displayNameDraft.trim();
+    if (!committed) {
+      setDisplayNameError("昵称不能为空");
+      return;
+    }
+    if (committed !== committedDraftRef.current) {
+      onDisplayNameChange(committed);
+    }
+    committedDraftRef.current = committed;
+    setDisplayNameDraft(committed);
+    setDisplayNameError(null);
+  };
 
   return (
     <main className="match-page">
@@ -128,14 +152,31 @@ export function MatchPage({
           <label className="match-display-name-label" htmlFor="match-display-name">
             你的昵称
           </label>
-          <input
-            id="match-display-name"
-            className="match-display-name-input"
-            type="text"
-            maxLength={16}
-            value={displayName}
-            onChange={(event) => onDisplayNameChange(event.target.value)}
-          />
+          <div className="match-display-name-control">
+            <input
+              id="match-display-name"
+              className="match-display-name-input"
+              type="text"
+              maxLength={16}
+              value={displayNameDraft}
+              onChange={(event) => {
+                setDisplayNameDraft(event.target.value);
+                if (displayNameError) {
+                  setDisplayNameError(null);
+                }
+              }}
+              onBlur={handleDisplayNameCommit}
+            />
+            <button
+              className="match-display-name-save"
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={handleDisplayNameCommit}
+            >
+              保存
+            </button>
+          </div>
+          {displayNameError ? <p className="match-display-name-error">{displayNameError}</p> : null}
         </div>
         {isQueuing ? (
           <div className="match-queue-panel">

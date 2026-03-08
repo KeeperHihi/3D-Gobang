@@ -76,6 +76,7 @@ const TURN_NUDGE_STORAGE_KEY = "nebula-cube-turn-nudge-v1";
 const TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY = "nebula-cube-turn-nudge-permission-hint-v1";
 const TURN_NUDGE_PERMISSION_SNOOZE_STORAGE_KEY = "nebula-cube-turn-nudge-permission-snooze-v2";
 const DISPLAY_NAME_STORAGE_KEY = "nebula-cube-display-name-v1";
+const DEFAULT_DISPLAY_NAME = "星际玩家";
 const WARMUP_IDLE_AUTOSTART_DELAY_MS = 900;
 const DISPLAY_NAME_MAX_LENGTH = 16;
 
@@ -209,12 +210,14 @@ function persistTurnNudgePermissionSnoozedUntilMsToStorage(snoozedUntilMs: numbe
   localStorage.removeItem(TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY);
 }
 
-function normalizeDisplayName(raw: string | null | undefined): string {
+function sanitizeDisplayName(raw: string | null | undefined): string {
   const trimmed = (raw ?? "").trim();
-  if (!trimmed) {
-    return "星际玩家";
-  }
   return trimmed.slice(0, DISPLAY_NAME_MAX_LENGTH);
+}
+
+function normalizeDisplayName(raw: string | null | undefined): string {
+  const sanitized = sanitizeDisplayName(raw);
+  return sanitized || DEFAULT_DISPLAY_NAME;
 }
 
 function readDisplayNameFromStorage(): string {
@@ -981,7 +984,7 @@ export default function App() {
     setIncomingChallenge(null);
     setOutgoingChallenge(null);
     socket.emit("queue:join", {
-      displayName
+      displayName: displayNameRef.current
     });
   };
 
@@ -997,7 +1000,12 @@ export default function App() {
   };
 
   const updateDisplayName = (nextDisplayName: string) => {
-    setDisplayName(normalizeDisplayName(nextDisplayName));
+    const committed = sanitizeDisplayName(nextDisplayName);
+    if (!committed) {
+      return;
+    }
+    displayNameRef.current = committed;
+    setDisplayName(committed);
   };
 
   const requestChallenge = (targetSocketId: string) => {
