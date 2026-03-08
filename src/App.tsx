@@ -25,11 +25,6 @@ import {
 } from "./game/interaction/warmupPolicy";
 import { preloadBoardScene } from "./ui/boardSceneLoader";
 import {
-  createInitialNetworkLatencyProfile,
-  deriveTimeoutAssistThresholdMs,
-  updateLatencySamples
-} from "./game/interaction/networkLatency";
-import {
   createInitialContinueTransitionState,
   reduceContinueTransition,
   shouldRestoreContinueMatchBackup,
@@ -44,6 +39,7 @@ import type {
   LobbyPlayerSnapshot,
   MoveAckPayload,
   PlayerMark,
+  RoomChatMessage,
   RoomSnapshot
 } from "./network/protocol";
 
@@ -71,8 +67,6 @@ interface WarmupNetworkSnapshot {
 const SESSION_STORAGE_KEY = "nebula-cube-session";
 const QUALITY_MODE_STORAGE_KEY = "nebula-cube-quality-mode";
 const ONBOARDING_STORAGE_KEY = "nebula-cube-onboarding-v1";
-const TIMEOUT_ASSIST_STORAGE_KEY = "nebula-cube-timeout-assist-v1";
-const AUTO_REMATCH_STORAGE_KEY = "nebula-cube-auto-rematch-v1";
 const TURN_NUDGE_STORAGE_KEY = "nebula-cube-turn-nudge-v1";
 const TURN_NUDGE_PERMISSION_HINT_STORAGE_KEY = "nebula-cube-turn-nudge-permission-hint-v1";
 const TURN_NUDGE_PERMISSION_SNOOZE_STORAGE_KEY = "nebula-cube-turn-nudge-permission-snooze-v2";
@@ -150,26 +144,6 @@ function persistOnboardingCompleted(completed: boolean): void {
     return;
   }
   localStorage.setItem(ONBOARDING_STORAGE_KEY, "done");
-}
-
-function readTimeoutAssistFromStorage(): boolean {
-  const raw = localStorage.getItem(TIMEOUT_ASSIST_STORAGE_KEY);
-  if (raw === "off") {
-    return false;
-  }
-  return true;
-}
-
-function persistTimeoutAssistToStorage(enabled: boolean): void {
-  localStorage.setItem(TIMEOUT_ASSIST_STORAGE_KEY, enabled ? "on" : "off");
-}
-
-function readAutoRematchFromStorage(): boolean {
-  return localStorage.getItem(AUTO_REMATCH_STORAGE_KEY) === "on";
-}
-
-function persistAutoRematchToStorage(enabled: boolean): void {
-  localStorage.setItem(AUTO_REMATCH_STORAGE_KEY, enabled ? "on" : "off");
 }
 
 function readTurnNudgeFromStorage(): boolean {
@@ -268,12 +242,6 @@ export default function App() {
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(() =>
     readOnboardingCompletedFromStorage()
   );
-  const [timeoutAssistEnabled, setTimeoutAssistEnabled] = useState<boolean>(() =>
-    readTimeoutAssistFromStorage()
-  );
-  const [autoRematchEnabled, setAutoRematchEnabled] = useState<boolean>(() =>
-    readAutoRematchFromStorage()
-  );
   const [turnNudgeEnabled, setTurnNudgeEnabled] = useState<boolean>(() =>
     readTurnNudgeFromStorage()
   );
@@ -285,11 +253,9 @@ export default function App() {
   const [incomingChallenge, setIncomingChallenge] = useState<ChallengeIncomingPayload | null>(null);
   const [outgoingChallenge, setOutgoingChallenge] = useState<ChallengeOutgoingPayload | null>(null);
   const [challengeNotice, setChallengeNotice] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
   const [continueTransition, setContinueTransition] = useState(() =>
     createInitialContinueTransitionState()
-  );
-  const [networkLatencyProfile, setNetworkLatencyProfile] = useState(() =>
-    createInitialNetworkLatencyProfile()
   );
   const [sceneWarmupStatus, setSceneWarmupStatus] = useState<SceneWarmupStatus>("idle");
   const [sceneWarmupBoardStatus, setSceneWarmupBoardStatus] = useState<SceneWarmupBoardStatus>("idle");
@@ -476,14 +442,6 @@ export default function App() {
   useEffect(() => {
     persistOnboardingCompleted(onboardingCompleted);
   }, [onboardingCompleted]);
-
-  useEffect(() => {
-    persistTimeoutAssistToStorage(timeoutAssistEnabled);
-  }, [timeoutAssistEnabled]);
-
-  useEffect(() => {
-    persistAutoRematchToStorage(autoRematchEnabled);
-  }, [autoRematchEnabled]);
 
   useEffect(() => {
     persistTurnNudgeToStorage(turnNudgeEnabled);
@@ -685,6 +643,7 @@ export default function App() {
       setRoomEntryMode("fresh");
       setPendingMove(null);
       pendingMoveSubmittedAtRef.current.clear();
+      setChatMessages([]);
 
       const resetTransition = reduceContinueTransition(acceptedTransition, {
         type: "RESET"
@@ -772,6 +731,7 @@ export default function App() {
       applyContinueTransition({ type: "RESET" });
       setIncomingChallenge(null);
       setOutgoingChallenge(null);
+      setChatMessages([]);
       if (!sessionRef.current) {
         setMatchPhase("idle");
         resetQueueState();
@@ -850,6 +810,7 @@ export default function App() {
       setErrorMessage(null);
       setPendingMove(null);
       pendingMoveSubmittedAtRef.current.clear();
+      setChatMessages([]);
       setIncomingChallenge(null);
       setOutgoingChallenge(null);
       setChallengeNotice(null);
@@ -866,6 +827,7 @@ export default function App() {
       setErrorMessage(null);
       setPendingMove(null);
       pendingMoveSubmittedAtRef.current.clear();
+      setChatMessages([]);
       setIncomingChallenge(null);
       setOutgoingChallenge(null);
       setChallengeNotice(null);
@@ -885,6 +847,25 @@ export default function App() {
       });
     });
 
+    socket.on("room:chat:history", ({ roomId, messages }) => {
+      if (sessionRef.current?.roomId !== roomId) {
+        return;
+      }
+      setChatMessages(messages);
+    });
+
+    socket.on("room:chat:message", ({ roomId, message }) => {
+      if (sessionRef.current?.roomId !== roomId) {
+        return;
+      }
+      setChatMessages((current) => {
+        if (current.some((item) => item.id === message.id)) {
+          return current;
+        }
+        return [...current, message].slice(-80);
+      });
+    });
+
     socket.on("room:resume-failed", ({ reason }) => {
       rollbackContinueMatchIfNeeded();
       sessionRef.current = null;
@@ -897,14 +878,13 @@ export default function App() {
       setErrorMessage(reason);
       setPendingMove(null);
       pendingMoveSubmittedAtRef.current.clear();
+      setChatMessages([]);
     });
 
     socket.on("game:move:ack", ({ clientMoveId, accepted, reason, roomMoveNumber }: MoveAckPayload) => {
       const submittedAt = pendingMoveSubmittedAtRef.current.get(clientMoveId);
       if (submittedAt !== undefined) {
         pendingMoveSubmittedAtRef.current.delete(clientMoveId);
-        const roundTripMs = Date.now() - submittedAt;
-        setNetworkLatencyProfile((current) => updateLatencySamples(current, roundTripMs));
       }
 
       setPendingMove((currentPendingMove) => {
@@ -1192,6 +1172,25 @@ export default function App() {
     });
   };
 
+  const sendRoomChatMessage = (message: string) => {
+    if (!session) {
+      return;
+    }
+    if (!socket.connected) {
+      setErrorMessage("正在连接服务器，请稍后重试");
+      return;
+    }
+    const normalized = message.trim();
+    if (!normalized) {
+      return;
+    }
+    socket.emit("room:chat:send", {
+      roomId: session.roomId,
+      seatToken: session.seatToken,
+      message: normalized
+    });
+  };
+
   const leaveRoom = () => {
     sessionRef.current = null;
     snapshotRef.current = null;
@@ -1208,6 +1207,7 @@ export default function App() {
     setIncomingChallenge(null);
     setOutgoingChallenge(null);
     setPendingMove(null);
+    setChatMessages([]);
     continueMatchBackupRef.current = null;
     applyContinueTransition({ type: "RESET" });
     pendingMoveSubmittedAtRef.current.clear();
@@ -1250,7 +1250,6 @@ export default function App() {
     roomEntryMode === "fresh" &&
     !snapshot.winner &&
     snapshot.board.every((cell) => cell === 0);
-  const timeoutAssistThresholdMs = deriveTimeoutAssistThresholdMs(networkLatencyProfile);
 
   return (
     <Suspense
@@ -1285,16 +1284,18 @@ export default function App() {
         onContinueMatch={requestContinueMatch}
         continueSubmitting={continueTransition.phase === "submitting"}
         onCompleteOnboarding={() => setOnboardingCompleted(true)}
-        timeoutAssistEnabled={timeoutAssistEnabled}
-        onTimeoutAssistEnabledChange={setTimeoutAssistEnabled}
-        timeoutAssistThresholdMs={timeoutAssistThresholdMs}
-        timeoutAssistNetworkTier={networkLatencyProfile.networkTier}
-        autoRematchEnabled={autoRematchEnabled}
-        onAutoRematchEnabledChange={setAutoRematchEnabled}
+        timeoutAssistEnabled={false}
+        onTimeoutAssistEnabledChange={() => undefined}
+        timeoutAssistThresholdMs={0}
+        timeoutAssistNetworkTier="stable"
+        autoRematchEnabled={false}
+        onAutoRematchEnabledChange={() => undefined}
         turnNudgeEnabled={turnNudgeEnabled}
         onTurnNudgeEnabledChange={setTurnNudgeEnabled}
         turnNudgePermissionSnoozedUntilMs={turnNudgePermissionSnoozedUntilMs}
         onTurnNudgePermissionSnoozedUntilMsChange={setTurnNudgePermissionSnoozedUntilMs}
+        chatMessages={chatMessages}
+        onSendChatMessage={sendRoomChatMessage}
         onSurrender={requestSurrender}
         onLeave={leaveRoom}
       />

@@ -181,6 +181,31 @@ export interface ChallengeResolvedPayload {
   message: string;
 }
 
+export interface RoomChatSendPayload {
+  roomId: string;
+  seatToken: string;
+  message: string;
+}
+
+export interface RoomChatMessage {
+  id: string;
+  roomId: string;
+  senderMark: PlayerMark;
+  senderDisplayName: string;
+  message: string;
+  sentAt: number;
+}
+
+export interface RoomChatMessagePayload {
+  roomId: string;
+  message: RoomChatMessage;
+}
+
+export interface RoomChatHistoryPayload {
+  roomId: string;
+  messages: RoomChatMessage[];
+}
+
 export interface ClientToServerEvents {
   "queue:join": (payload: QueueJoinPayload) => void;
   "queue:leave": (payload: QueueLeavePayload) => void;
@@ -196,6 +221,7 @@ export interface ClientToServerEvents {
   "game:rematch:cancel": (payload: RematchCancelPayload) => void;
   "room:resume": (payload: ResumePayload) => void;
   "room:state:request": (payload: RequestStatePayload) => void;
+  "room:chat:send": (payload: RoomChatSendPayload) => void;
 }
 
 export interface ServerToClientEvents {
@@ -209,6 +235,8 @@ export interface ServerToClientEvents {
   "room:update": (payload: RoomUpdatePayload) => void;
   "room:resumed": (payload: RoomResumedPayload) => void;
   "room:resume-failed": (payload: ResumeFailedPayload) => void;
+  "room:chat:message": (payload: RoomChatMessagePayload) => void;
+  "room:chat:history": (payload: RoomChatHistoryPayload) => void;
   "game:move:ack": (payload: MoveAckPayload) => void;
   "game:error": (payload: ErrorPayload) => void;
 }

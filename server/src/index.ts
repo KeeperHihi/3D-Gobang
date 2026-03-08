@@ -9,6 +9,7 @@ import type {
   ChallengeResolvedOutcome,
   LobbyPresenceStatus,
   PlayerMark,
+  RoomChatMessage,
   ServerToClientEvents
 } from "../../shared/network/protocol";
 import {
@@ -68,6 +69,10 @@ const RECONNECT_GRACE_PERIOD_MS = 30_000;
 const CONTINUE_AVOID_OPPONENT_MS = 20_000;
 const CHALLENGE_TIMEOUT_MS = 30_000;
 const DISPLAY_NAME_MAX_LENGTH = 16;
+const ROOM_CHAT_MAX_HISTORY = 60;
+const ROOM_CHAT_MAX_MESSAGE_LENGTH = 220;
+const ROOM_CHAT_RATE_LIMIT_WINDOW_MS = 2_500;
+const ROOM_CHAT_RATE_LIMIT_MAX_MESSAGES = 8;
 
 interface LobbyProfile {
   displayName: string;
@@ -85,6 +90,8 @@ interface ChallengeState {
 const lobbyProfiles = new Map<string, LobbyProfile>();
 const challenges = new Map<string, ChallengeState>();
 const challengeBySocket = new Map<string, string>();
+const roomChatHistoryMap = new Map<string, RoomChatMessage[]>();
+const roomChatRateLimitMap = new Map<string, { windowStartedAt: number; sentCount: number }>();
 
 function fallbackDisplayName(socketId: string): string {
   return `玩家-${socketId.slice(0, 4)}`;
@@ -148,6 +155,52 @@ function emitLobbyPresenceToSocket(
 function broadcastLobbyPresence(): void {
   io.sockets.sockets.forEach((connectedSocket) => {
     emitLobbyPresenceToSocket(connectedSocket);
+  });
+}
+
+function normalizeChatMessage(rawMessage: string | undefined): string {
+  const normalized = (rawMessage ?? "").replace(/\r/g, "").trim();
+  if (!normalized) {
+    return "";
+  }
+  return normalized.slice(0, ROOM_CHAT_MAX_MESSAGE_LENGTH);
+}
+
+function canSendRoomChat(socketId: string, nowMs: number): boolean {
+  const currentWindow = roomChatRateLimitMap.get(socketId);
+  if (!currentWindow || nowMs - currentWindow.windowStartedAt >= ROOM_CHAT_RATE_LIMIT_WINDOW_MS) {
+    roomChatRateLimitMap.set(socketId, {
+      windowStartedAt: nowMs,
+      sentCount: 1
+    });
+    return true;
+  }
+
+  if (currentWindow.sentCount >= ROOM_CHAT_RATE_LIMIT_MAX_MESSAGES) {
+    return false;
+  }
+  currentWindow.sentCount += 1;
+  return true;
+}
+
+function appendRoomChatMessage(roomId: string, message: RoomChatMessage): void {
+  const current = roomChatHistoryMap.get(roomId) ?? [];
+  const next = [...current, message];
+  if (next.length > ROOM_CHAT_MAX_HISTORY) {
+    roomChatHistoryMap.set(roomId, next.slice(next.length - ROOM_CHAT_MAX_HISTORY));
+    return;
+  }
+  roomChatHistoryMap.set(roomId, next);
+}
+
+function emitRoomChatHistoryToSocket(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  roomId: string
+): void {
+  const messages = roomChatHistoryMap.get(roomId) ?? [];
+  socket.emit("room:chat:history", {
+    roomId,
+    messages
   });
 }
 
@@ -331,6 +384,7 @@ function detachRoomIfAbandoned(roomId: string): void {
   clearReconnectForfeitTimersForRoom(roomId);
   clearTurnForfeitTimer(roomId);
   rooms.delete(roomId);
+  roomChatHistoryMap.delete(roomId);
 }
 
 function attachSocketToRoom(
@@ -411,12 +465,14 @@ function startRoomMatch(
     seatToken: xSeatToken,
     snapshot
   });
+  emitRoomChatHistoryToSocket(firstSocket, roomId);
   secondSocket.emit("queue:matched", {
     roomId,
     mark: "O",
     seatToken: oSeatToken,
     snapshot
   });
+  emitRoomChatHistoryToSocket(secondSocket, roomId);
 
   broadcastLobbyPresence();
 }
@@ -742,6 +798,7 @@ io.on("connection", (socket) => {
       seatToken,
       snapshot: snapshotFromRoomState(room)
     });
+    emitRoomChatHistoryToSocket(socket, roomId);
     emitRoomUpdate(roomId);
     broadcastLobbyPresence();
   });
@@ -753,6 +810,52 @@ io.on("connection", (socket) => {
     }
     socket.emit("room:update", {
       snapshot: snapshotFromRoomState(resolved.room)
+    });
+    emitRoomChatHistoryToSocket(socket, roomId);
+  });
+
+  socket.on("room:chat:send", ({ roomId, seatToken, message }) => {
+    const resolved = resolveRoomAndMark(roomId, seatToken);
+    if (!resolved) {
+      emitGameError(socket, "无效聊天请求");
+      return;
+    }
+
+    const assignedSocketId = resolved.room.players[resolved.mark].socketId;
+    if (assignedSocketId && assignedSocketId !== socket.id) {
+      emitGameError(socket, "该席位已在其他设备在线");
+      return;
+    }
+
+    const normalizedMessage = normalizeChatMessage(message);
+    if (!normalizedMessage) {
+      return;
+    }
+
+    const nowMs = Date.now();
+    if (!canSendRoomChat(socket.id, nowMs)) {
+      emitGameError(socket, "发送太快了，请稍后再试");
+      return;
+    }
+
+    setPlayerConnection(resolved.room, resolved.mark, socket.id, true);
+    clearReconnectForfeitTimer(roomId, resolved.mark);
+    clearReconnectDeadline(resolved.room, resolved.mark);
+    attachSocketToRoom(socket, roomId);
+    setLobbyStatus(socket.id, "in-game");
+
+    const messagePayload: RoomChatMessage = {
+      id: randomUUID().slice(0, 12),
+      roomId,
+      senderMark: resolved.mark,
+      senderDisplayName: ensureLobbyProfile(socket.id).displayName,
+      message: normalizedMessage,
+      sentAt: nowMs
+    };
+    appendRoomChatMessage(roomId, messagePayload);
+    io.to(roomId).emit("room:chat:message", {
+      roomId,
+      message: messagePayload
     });
   });
 
@@ -923,6 +1026,7 @@ io.on("connection", (socket) => {
     matchmaker.remove(socket.id);
     cancelChallengeForSocket(socket.id, "cancelled", "对方已离线，挑战已取消");
     lobbyProfiles.delete(socket.id);
+    roomChatRateLimitMap.delete(socket.id);
 
     const roomId = socketRoomMap.get(socket.id);
     socketRoomMap.delete(socket.id);

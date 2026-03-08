@@ -172,7 +172,7 @@ export function createSmartActionState(input: SmartActionInput): SmartActionStat
       actionType: "enableAssist",
       label: "开启提示并推荐",
       enabled: true,
-      reason: "点击后开启战术辅助；也可以直接在棋盘手动落子",
+      reason: "开启后会高亮关键建议点，帮助你更快决策",
       target: null
     };
   }

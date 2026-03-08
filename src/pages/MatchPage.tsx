@@ -176,6 +176,7 @@ export function MatchPage({
   const [displayNameError, setDisplayNameError] = useState<string | null>(null);
   const [displayNameSavedToastVisible, setDisplayNameSavedToastVisible] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
   const [ticketDraft, setTicketDraft] = useState("");
   const [ticketError, setTicketError] = useState<string | null>(null);
   const [ticketSubmitNotice, setTicketSubmitNotice] = useState<string | null>(null);
@@ -343,6 +344,9 @@ export function MatchPage({
         >
           {guide.primaryActionLabel}
         </button>
+        <button className="secondary-button match-tutorial-trigger" type="button" onClick={() => setTutorialOpen(true)}>
+          新手教程
+        </button>
         {blockerDecision.primaryBlockerReason ? (
           <p className="match-primary-blocker-reason">{blockerDecision.primaryBlockerReason}</p>
         ) : null}
@@ -442,6 +446,46 @@ export function MatchPage({
           )}
         </div>
       </div>
+      {tutorialOpen ? (
+        <div
+          className="match-tutorial-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="新手教程"
+          onClick={() => setTutorialOpen(false)}
+        >
+          <section className="match-tutorial-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="match-tutorial-header">
+              <div>
+                <p className="match-tutorial-kicker">快速上手</p>
+                <h3>新手教程</h3>
+              </div>
+              <button
+                className="match-tutorial-close"
+                type="button"
+                aria-label="关闭新手教程"
+                onClick={() => setTutorialOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="match-tutorial-list">
+              <p>
+                <strong>快捷键切换聚焦层</strong>
+                <span>默认按 D 上一层、A 下一层，可在设置里改为你顺手的键位。</span>
+              </p>
+              <p>
+                <strong>滚轮缩放</strong>
+                <span>鼠标滚轮可快速拉近或拉远棋盘，观察全局或细节都更顺手。</span>
+              </p>
+              <p>
+                <strong>可调节清晰度</strong>
+                <span>在设置中调节“未聚焦层清晰度”，减少视觉干扰并突出当前战场。</span>
+              </p>
+            </div>
+          </section>
+        </div>
+      ) : null}
       <button
         className="match-feedback-trigger"
         type="button"

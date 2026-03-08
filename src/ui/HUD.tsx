@@ -123,14 +123,8 @@ function spotlightTitle(cardId: HudSpotlightCardId): string {
   if (cardId === "turn-clock") {
     return "回合时钟";
   }
-  if (cardId === "timeout-assist") {
-    return "超时护航";
-  }
   if (cardId === "win-line") {
     return "胜线导演";
-  }
-  if (cardId === "auto-rematch") {
-    return "连战模式";
   }
   if (cardId === "auto-continue") {
     return "自动继续";
@@ -380,11 +374,6 @@ export function HUD({
   const turnRemainingSeconds =
     turnRemainingMs === null ? null : Math.max(0, Math.ceil(turnRemainingMs / 1000));
   const showTurnClock = !winner && turnRemainingSeconds !== null;
-  const timeoutAssistThresholdSeconds = Math.max(1, Math.ceil(timeoutAssistThresholdMs / 1000));
-  const autoRematchCountdownSeconds =
-    autoRematchCountdownRemainingMs === null
-      ? null
-      : Math.max(0, Math.ceil(autoRematchCountdownRemainingMs / 1000));
   const autoContinueCountdownSeconds =
     autoContinueCountdownRemainingMs === null
       ? null
@@ -393,10 +382,8 @@ export function HUD({
     rematchWaitRemainingMs === null ? null : Math.max(0, Math.ceil(rematchWaitRemainingMs / 1000));
   const nonFocusOpacityPercent = Math.round(Math.max(2, Math.min(100, nonFocusLayerOpacity * 100)));
   const primaryCardId = hudSpotlight.primaryCard?.id ?? null;
-  const showTimeoutAssistHint = primaryCardId === "timeout-assist" && !winner && turn === myMark;
   const showWinLineSummary =
     primaryCardId === "win-line" && Boolean(winner && winner !== "draw" && winLineSummary);
-  const showAutoRematchHint = primaryCardId === "auto-rematch" && Boolean(winner) && opponentConnected;
   const showAutoContinueHint =
     primaryCardId === "auto-continue" &&
     Boolean(winner) &&
@@ -413,38 +400,6 @@ export function HUD({
   const showReconnectSpotlight = primaryCardId === "reconnect" && showReconnectDeadline;
   const showReadyCheckSpotlight = primaryCardId === "ready-check" && showRematchReadyCheck;
   const showOnboardingSpotlight = primaryCardId === "onboarding" && Boolean(onboardingGuide);
-  const timeoutAssistNetworkHint =
-    timeoutAssistNetworkTier === "unstable"
-      ? "弱网提前"
-      : timeoutAssistNetworkTier === "elevated"
-        ? "网络波动提前"
-        : null;
-  const timeoutAssistText = !timeoutAssistEnabled
-    ? "超时护航已关闭"
-    : timeoutAssistUrgency === "armed"
-      ? timeoutAssistAutoActSource === "fallbackTarget"
-        ? timeoutAssistNetworkHint
-          ? `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，${timeoutAssistNetworkHint}即将执行兜底落子`
-          : `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，即将执行兜底落子`
-        : timeoutAssistNetworkHint
-          ? `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，${timeoutAssistNetworkHint}自动执行当前主动作`
-          : `超时护航：剩余 ${turnRemainingSeconds ?? 0}s，将自动执行当前主动作`
-      : timeoutAssistUrgency === "triggered"
-        ? timeoutAssistNetworkHint
-          ? `超时护航：本回合已自动执行主动作（${timeoutAssistNetworkHint}）`
-          : "超时护航：本回合已自动执行主动作"
-        : `超时护航已开启（阈值 ${timeoutAssistThresholdSeconds}s）`;
-  const autoRematchText = !autoRematchEnabled
-    ? "连战模式已关闭"
-    : autoRematchPhase === "countdown"
-      ? `连战模式：${autoRematchCountdownSeconds ?? 0}s 后自动准备`
-      : autoRematchPhase === "armed"
-        ? myRematchReady
-          ? "连战模式：已自动准备，等待对手"
-          : "连战模式：准备提交中"
-        : autoRematchPhase === "cancelled"
-          ? "连战模式：本局已取消自动准备"
-          : "连战模式已开启";
   const rematchWaitText =
     rematchWaitPhase === "fallback-ready"
       ? "等待较久，你可以一键继续匹配"
@@ -490,14 +445,8 @@ export function HUD({
       if (item.id === "turn-clock") {
         return `${turn === myMark ? "你的回合" : "对手回合"} · 剩余 ${turnRemainingSeconds ?? 0}s`;
       }
-      if (item.id === "timeout-assist") {
-        return timeoutAssistText;
-      }
       if (item.id === "win-line") {
         return winLineSummary ? `胜线解析：${winLineSummary}` : null;
-      }
-      if (item.id === "auto-rematch") {
-        return autoRematchText;
       }
       if (item.id === "auto-continue") {
         return autoContinueText;
@@ -766,34 +715,6 @@ export function HUD({
                 </button>
               </div>
               <div className="hud-setting-row">
-                <span className="hud-setting-label">连战模式</span>
-                <button
-                  className={`hud-mini-button ${autoRematchEnabled ? "active" : ""}`}
-                  type="button"
-                  onClick={onToggleAutoRematch}
-                >
-                  {autoRematchEnabled ? "已开启" : "已关闭"}
-                </button>
-              </div>
-              {autoRematchCanCancel ? (
-                <div className="hud-setting-row">
-                  <span className="hud-setting-label">连战倒计时</span>
-                  <button className="hud-mini-button" type="button" onClick={onCancelAutoRematch}>
-                    取消自动准备
-                  </button>
-                </div>
-              ) : null}
-              <div className="hud-setting-row">
-                <span className="hud-setting-label">超时护航</span>
-                <button
-                  className={`hud-mini-button ${timeoutAssistEnabled ? "active" : ""}`}
-                  type="button"
-                  onClick={onToggleTimeoutAssist}
-                >
-                  {timeoutAssistEnabled ? "已开启" : "已关闭"}
-                </button>
-              </div>
-              <div className="hud-setting-row">
                 <span className="hud-setting-label">回合唤醒</span>
                 <button
                   className={`hud-mini-button ${turnNudgeEnabled ? "active" : ""}`}
@@ -833,24 +754,6 @@ export function HUD({
                   离开
                 </button>
               </div>
-            </div>
-            <div className="hud-actions">
-              <button
-                className="hud-mini-button"
-                type="button"
-                onClick={() => onLayerStep(-1)}
-                disabled={focusLayer <= 0}
-              >
-                {prevLayerLabel}
-              </button>
-              <button
-                className="hud-mini-button"
-                type="button"
-                onClick={() => onLayerStep(1)}
-                disabled={focusLayer >= boardSize - 1}
-              >
-                {nextLayerLabel}
-              </button>
             </div>
           </div>
         </div>

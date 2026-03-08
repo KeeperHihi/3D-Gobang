@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode
 } from "react";
-import type { Coordinate3D, PlayerMark, RoomSnapshot } from "../network/protocol";
+import type { Coordinate3D, PlayerMark, RoomChatMessage, RoomSnapshot } from "../network/protocol";
 import { playDropSfx, playTurnNudgeSfx, playWinSfx } from "../audio/sfx";
 import type { BoardCell } from "../game/engine/board";
 import { analyzeMoveHints, type MoveHint } from "../game/engine/moveHints";
@@ -104,6 +104,7 @@ import {
 import { shouldAllowAdaptiveRenderTuning } from "../game/interaction/foregroundAdaptation";
 import { BoardLoadingPanel } from "../ui/BoardLoadingPanel";
 import { createLazyBoardScene } from "../ui/boardSceneLoader";
+import { GameChatPanel } from "../ui/GameChatPanel";
 import { HUD } from "../ui/HUD";
 
 interface GameRoomPageProps {
@@ -134,6 +135,8 @@ interface GameRoomPageProps {
   onTurnNudgeEnabledChange: (enabled: boolean) => void;
   turnNudgePermissionSnoozedUntilMs: number | null;
   onTurnNudgePermissionSnoozedUntilMsChange: (snoozedUntilMs: number | null) => void;
+  chatMessages: RoomChatMessage[];
+  onSendChatMessage: (message: string) => void;
   onSurrender: () => void;
   onLeave: () => void;
 }
@@ -274,6 +277,8 @@ export function GameRoomPage({
   onTurnNudgeEnabledChange,
   turnNudgePermissionSnoozedUntilMs,
   onTurnNudgePermissionSnoozedUntilMsChange,
+  chatMessages,
+  onSendChatMessage,
   onSurrender,
   onLeave
 }: GameRoomPageProps) {
@@ -844,11 +849,10 @@ export function GameRoomPage({
     ]
   );
   const showTurnCountdown = !snapshot.winner && turnRemainingMs !== null;
-  const showTimeoutAssistHint = !snapshot.winner && snapshot.turn === myMark;
+  const showTimeoutAssistHint = false;
   const showWinLineSummary = Boolean(snapshot.winner && snapshot.winner !== "draw" && winLineDirector);
-  const showAutoRematchHint = Boolean(snapshot.winner) && opponentConnected;
-  const showAutoContinueHint =
-    Boolean(snapshot.winner) && rematchWaitDecision.phase === "fallback-ready" && autoRematchEnabled;
+  const showAutoRematchHint = false;
+  const showAutoContinueHint = false;
   const showRematchWaitHint =
     Boolean(snapshot.winner) &&
     myRematchReady &&
@@ -2072,6 +2076,13 @@ export function GameRoomPage({
         onSurrender={handleSurrenderAction}
         onRematch={handleRematchAction}
         onLeave={onLeave}
+      />
+      <GameChatPanel
+        layoutMode={layoutMode}
+        myMark={myMark}
+        messages={chatMessages}
+        disabled={connectionStatus !== "online"}
+        onSendMessage={onSendChatMessage}
       />
       {gameToastMessage ? (
         <div
