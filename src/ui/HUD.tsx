@@ -50,7 +50,9 @@ interface HUDProps {
   renderBootstrapPhase: RenderBootstrapPhase;
   averageFps: number | null;
   myConnected: boolean;
+  opponentLabel: string;
   opponentConnected: boolean;
+  botThinking: boolean;
   turnRemainingMs: number | null;
   turnUrgent: boolean;
   timeoutAssistEnabled: boolean;
@@ -170,7 +172,9 @@ export function HUD({
   renderBootstrapPhase,
   averageFps,
   myConnected,
+  opponentLabel,
   opponentConnected,
+  botThinking,
   turnRemainingMs,
   turnUrgent,
   timeoutAssistEnabled,
@@ -365,7 +369,9 @@ export function HUD({
     ? winnerText(winner, myMark)
     : turn === myMark
       ? "轮到你落子"
-      : "等待对手落子";
+      : botThinking
+        ? "AI 思考中..."
+        : "等待对手落子";
   const reconnectDeadlineSeconds =
     opponentReconnectRemainingMs === null ? null : Math.max(0, Math.ceil(opponentReconnectRemainingMs / 1000));
   const showReconnectDeadline = !winner && reconnectDeadlineSeconds !== null && !opponentConnected;
@@ -443,7 +449,9 @@ export function HUD({
         return `对手掉线，${reconnectDeadlineSeconds ?? 0}s 内未重连将自动判负`;
       }
       if (item.id === "turn-clock") {
-        return `${turn === myMark ? "你的回合" : "对手回合"} · 剩余 ${turnRemainingSeconds ?? 0}s`;
+        return `${turn === myMark ? "你的回合" : botThinking ? "AI 回合" : "对手回合"} · 剩余 ${
+          turnRemainingSeconds ?? 0
+        }s`;
       }
       if (item.id === "win-line") {
         return winLineSummary ? `胜线解析：${winLineSummary}` : null;
@@ -489,7 +497,8 @@ export function HUD({
         <div className="hud-turn">{turnText}</div>
         {showTurnClock ? (
           <div className={`hud-turn-clock ${turnUrgent ? "urgent" : ""}`}>
-            {turn === myMark ? "你的回合" : "对手回合"} · 剩余 {turnRemainingSeconds}s（以服务器结算为准）
+            {turn === myMark ? "你的回合" : botThinking ? "AI 回合" : "对手回合"} · 剩余{" "}
+            {turnRemainingSeconds}s（以服务器结算为准）
           </div>
         ) : null}
         {showMinimalConnectionSpotlight ? (
@@ -622,8 +631,8 @@ export function HUD({
               <span>{myConnected ? "在线" : "掉线"}</span>
             </div>
             <div className="hud-row">
-              <span>对手</span>
-              <span>{opponentConnected ? "在线" : "掉线"}</span>
+              <span>{opponentLabel}</span>
+              <span>{botThinking ? "思考中" : opponentConnected ? "在线" : "掉线"}</span>
             </div>
             <div className="hud-row">
               <span>聚焦层</span>

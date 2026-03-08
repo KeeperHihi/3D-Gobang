@@ -972,7 +972,7 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [pendingMove, socket]);
 
-  const startMatch = () => {
+  const startQueueMatch = (mode: "pvp" | "pve") => {
     activateAudioAmbience();
     if (sessionRef.current && !snapshot) {
       setErrorMessage("正在恢复对局，请稍后");
@@ -992,8 +992,18 @@ export default function App() {
     setIncomingChallenge(null);
     setOutgoingChallenge(null);
     socket.emit("queue:join", {
-      displayName: displayNameRef.current
+      displayName: displayNameRef.current,
+      mode,
+      botLevel: mode === "pve" ? "hard" : undefined
     });
+  };
+
+  const startMatch = () => {
+    startQueueMatch("pvp");
+  };
+
+  const startBotMatch = () => {
+    startQueueMatch("pve");
   };
 
   const cancelMatch = () => {
@@ -1227,6 +1237,7 @@ export default function App() {
         sceneWarmupBoardStatus={sceneWarmupBoardStatus}
         isRecoveringSession={isRecoveringSession}
         onStartMatch={startMatch}
+        onStartBotMatch={startBotMatch}
         onCancelMatch={cancelMatch}
         warmupIntentOnlyMode={warmupPolicyDecision.intentOnlyMode}
         isWarmupAutoRetrying={warmupRetryScheduledAtMs !== null}

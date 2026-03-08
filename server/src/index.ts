@@ -5,13 +5,16 @@ import express from "express";
 import { Server, type Socket } from "socket.io";
 import { Matchmaker, type MatchEnqueueOptions } from "./matchmaker";
 import type {
+  BotLevel,
   ClientToServerEvents,
   ChallengeResolvedOutcome,
   LobbyPresenceStatus,
   PlayerMark,
+  QueueMode,
   RoomChatMessage,
   ServerToClientEvents
 } from "../../shared/network/protocol";
+import { chooseBestBotMove } from "./bot/engine";
 import {
   applyDisconnectForfeitIfExpired,
   applyMoveToRoom,
@@ -65,9 +68,11 @@ const socketRoomMap = new Map<string, string>();
 const reconnectForfeitTimers = new Map<string, NodeJS.Timeout>();
 const turnForfeitTimers = new Map<string, NodeJS.Timeout>();
 const continueAvoidRetryTimers = new Map<string, NodeJS.Timeout>();
+const botMoveTimers = new Map<string, NodeJS.Timeout>();
 const RECONNECT_GRACE_PERIOD_MS = 30_000;
 const CONTINUE_AVOID_OPPONENT_MS = 20_000;
 const CHALLENGE_TIMEOUT_MS = 30_000;
+const BOT_THINK_DELAY_MS = 220;
 const DISPLAY_NAME_MAX_LENGTH = 16;
 const ROOM_CHAT_MAX_HISTORY = 60;
 const ROOM_CHAT_MAX_MESSAGE_LENGTH = 220;
@@ -292,6 +297,33 @@ function clearContinueAvoidRetryTimer(socketId: string): void {
   continueAvoidRetryTimers.delete(socketId);
 }
 
+function clearBotMoveTimer(roomId: string): void {
+  const timer = botMoveTimers.get(roomId);
+  if (!timer) {
+    return;
+  }
+  clearTimeout(timer);
+  botMoveTimers.delete(roomId);
+}
+
+function normalizeQueueMode(mode: QueueMode | undefined): QueueMode {
+  return mode === "pve" ? "pve" : "pvp";
+}
+
+function normalizeBotLevel(level: BotLevel | undefined): BotLevel {
+  return level === "normal" ? "normal" : "hard";
+}
+
+function humanMarksForRoom(room: RoomState): PlayerMark[] {
+  if (room.botMark === "X") {
+    return ["O"];
+  }
+  if (room.botMark === "O") {
+    return ["X"];
+  }
+  return ["X", "O"];
+}
+
 function emitRoomUpdate(roomId: string): void {
   const room = rooms.get(roomId);
   if (!room) {
@@ -300,6 +332,54 @@ function emitRoomUpdate(roomId: string): void {
   io.to(roomId).emit("room:update", {
     snapshot: snapshotFromRoomState(room)
   });
+}
+
+function scheduleBotMoveIfNeeded(roomId: string): void {
+  clearBotMoveTimer(roomId);
+  const room = rooms.get(roomId);
+  if (!room || room.mode !== "pve" || !room.botMark || room.winner || room.turn !== room.botMark) {
+    return;
+  }
+
+  const timeout = setTimeout(() => {
+    botMoveTimers.delete(roomId);
+
+    const currentRoom = rooms.get(roomId);
+    if (
+      !currentRoom ||
+      currentRoom.mode !== "pve" ||
+      !currentRoom.botMark ||
+      currentRoom.winner ||
+      currentRoom.turn !== currentRoom.botMark
+    ) {
+      return;
+    }
+
+    const moveDecision = chooseBestBotMove({
+      board: [...currentRoom.board],
+      size: currentRoom.size,
+      connect: currentRoom.connect,
+      winLinesIndex: currentRoom.winLinesIndex,
+      botMark: currentRoom.botMark
+    });
+
+    const applyResult = applyMoveToRoom(currentRoom, currentRoom.botMark, moveDecision.coordinate);
+    if (!applyResult.accepted) {
+      if (applyResult.timedOut) {
+        clearReconnectForfeitTimersForRoom(roomId);
+        clearTurnForfeitTimer(roomId);
+      }
+      emitRoomUpdate(roomId);
+      detachRoomIfAbandoned(roomId);
+      return;
+    }
+
+    scheduleTurnForfeit(roomId);
+    emitRoomUpdate(roomId);
+    detachRoomIfAbandoned(roomId);
+  }, BOT_THINK_DELAY_MS);
+
+  botMoveTimers.set(roomId, timeout);
 }
 
 function scheduleTurnForfeit(roomId: string): void {
@@ -376,13 +456,25 @@ function detachRoomIfAbandoned(roomId: string): void {
   if (!room) {
     return;
   }
-  if (room.players.X.connected || room.players.O.connected) {
+
+  const humanMarks = humanMarksForRoom(room);
+  const hasConnectedHuman = humanMarks.some((mark) => room.players[mark].connected);
+  if (hasConnectedHuman) {
     return;
   }
+
+  const hasReconnectGrace = !room.winner && humanMarks.some((mark) => {
+    return room.players[mark].reconnectDeadlineAt !== null;
+  });
+  if (hasReconnectGrace) {
+    return;
+  }
+
   seatTokenMap.delete(room.players.X.seatToken);
   seatTokenMap.delete(room.players.O.seatToken);
   clearReconnectForfeitTimersForRoom(roomId);
   clearTurnForfeitTimer(roomId);
+  clearBotMoveTimer(roomId);
   rooms.delete(roomId);
   roomChatHistoryMap.delete(roomId);
 }
@@ -474,6 +566,45 @@ function startRoomMatch(
   });
   emitRoomChatHistoryToSocket(secondSocket, roomId);
 
+  broadcastLobbyPresence();
+}
+
+function startBotMatch(
+  socket: Socket<ClientToServerEvents, ServerToClientEvents>,
+  botLevel: BotLevel
+): void {
+  clearContinueAvoidRetryTimer(socket.id);
+  matchmaker.remove(socket.id);
+  cancelChallengeForSocket(socket.id, "cancelled", "挑战已取消");
+
+  const roomId = createRoomId();
+  const playerSeatToken = randomUUID();
+  const botSeatToken = randomUUID();
+  const room = createRoomState({
+    roomId,
+    playerXSocketId: socket.id,
+    playerOSocketId: null,
+    playerXSeatToken: playerSeatToken,
+    playerOSeatToken: botSeatToken,
+    mode: "pve",
+    botMark: "O",
+    botLevel
+  });
+
+  rooms.set(roomId, room);
+  seatTokenMap.set(playerSeatToken, { roomId, mark: "X" });
+
+  attachSocketToRoom(socket, roomId);
+  scheduleTurnForfeit(roomId);
+  setLobbyStatus(socket.id, "in-game");
+
+  socket.emit("queue:matched", {
+    roomId,
+    mark: "X",
+    seatToken: playerSeatToken,
+    snapshot: snapshotFromRoomState(room)
+  });
+  emitRoomChatHistoryToSocket(socket, roomId);
   broadcastLobbyPresence();
 }
 
@@ -687,7 +818,7 @@ io.on("connection", (socket) => {
     resolveChallenge(challengeId, "cancelled", "挑战已取消");
   });
 
-  socket.on("queue:join", ({ displayName }) => {
+  socket.on("queue:join", ({ displayName, mode, botLevel }) => {
     if (socketRoomMap.has(socket.id)) {
       emitGameError(socket, "你已在房间中，请先离开当前对局");
       return;
@@ -698,6 +829,13 @@ io.on("connection", (socket) => {
       profile.displayName = normalizeDisplayName(displayName, profile.displayName);
     }
     cancelChallengeForSocket(socket.id, "cancelled", "挑战已取消");
+
+    const normalizedMode = normalizeQueueMode(mode);
+    if (normalizedMode === "pve") {
+      startBotMatch(socket, normalizeBotLevel(botLevel));
+      return;
+    }
+
     enqueueSocketForMatch(socket);
   });
 
@@ -721,6 +859,10 @@ io.on("connection", (socket) => {
     const resolved = resolveRoomAndMark(roomId, seatToken);
     if (!resolved) {
       emitGameError(socket, "无效继续匹配请求");
+      return;
+    }
+    if (resolved.room.mode === "pve") {
+      emitGameError(socket, "人机对战无需继续匹配，请返回主界面重新开始");
       return;
     }
 
@@ -800,6 +942,7 @@ io.on("connection", (socket) => {
     });
     emitRoomChatHistoryToSocket(socket, roomId);
     emitRoomUpdate(roomId);
+    scheduleBotMoveIfNeeded(roomId);
     broadcastLobbyPresence();
   });
 
@@ -936,6 +1079,7 @@ io.on("connection", (socket) => {
     });
     scheduleTurnForfeit(roomId);
     emitRoomUpdate(roomId);
+    scheduleBotMoveIfNeeded(roomId);
   });
 
   socket.on("game:rematch", ({ roomId, seatToken }) => {
@@ -962,8 +1106,13 @@ io.on("connection", (socket) => {
       return;
     }
 
+    if (!rematchResult.started && resolved.room.botMark && resolved.room.botMark !== resolved.mark) {
+      requestRematch(resolved.room, resolved.room.botMark);
+    }
+
     scheduleTurnForfeit(roomId);
     emitRoomUpdate(roomId);
+    scheduleBotMoveIfNeeded(roomId);
   });
 
   socket.on("game:surrender", ({ roomId, seatToken }) => {

@@ -24,6 +24,7 @@ interface MatchPageProps {
   isWarmupAutoRetrying: boolean;
   isRecoveringSession: boolean;
   onStartMatch: () => void;
+  onStartBotMatch: () => void;
   onCancelMatch: () => void;
   onPrepareArena: () => void;
   onRetryWarmup: () => void;
@@ -127,6 +128,7 @@ export function MatchPage({
   isWarmupAutoRetrying,
   isRecoveringSession,
   onStartMatch,
+  onStartBotMatch,
   onCancelMatch,
   onPrepareArena,
   onRetryWarmup,
@@ -333,17 +335,30 @@ export function MatchPage({
           </div>
         ) : null}
         <p className={`match-warmup-status ${sceneWarmupStatus}`}>{warmupHint}</p>
-        <button
-          className="primary-button"
-          type="button"
-          onClick={onStartMatch}
-          onPointerEnter={onPrepareArena}
-          onFocus={onPrepareArena}
-          onTouchStart={onPrepareArena}
-          disabled={startDisabled}
-        >
-          {guide.primaryActionLabel}
-        </button>
+        <div className="match-mode-actions">
+          <button
+            className="primary-button"
+            type="button"
+            onClick={onStartMatch}
+            onPointerEnter={onPrepareArena}
+            onFocus={onPrepareArena}
+            onTouchStart={onPrepareArena}
+            disabled={startDisabled}
+          >
+            {guide.primaryActionLabel}
+          </button>
+          <button
+            className="bot-button"
+            type="button"
+            onClick={onStartBotMatch}
+            onPointerEnter={onPrepareArena}
+            onFocus={onPrepareArena}
+            onTouchStart={onPrepareArena}
+            disabled={startDisabled}
+          >
+            人机对战 · AI Hard
+          </button>
+        </div>
         <button className="secondary-button match-tutorial-trigger" type="button" onClick={() => setTutorialOpen(true)}>
           新手教程
         </button>

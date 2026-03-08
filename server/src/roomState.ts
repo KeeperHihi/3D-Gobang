@@ -10,9 +10,11 @@ import {
 import { checkWinFromLastMove } from "../../shared/game/checkWin";
 import { createWinLinesIndex, type WinLinesIndex } from "../../shared/game/winLines";
 import type {
+  BotLevel,
   Coordinate3D,
   MoveRecord,
   PlayerMark,
+  QueueMode,
   RoomSnapshot,
   Winner
 } from "../../shared/network/protocol";
@@ -37,6 +39,9 @@ export interface RoomState {
   roomId: string;
   size: number;
   connect: number;
+  mode: QueueMode;
+  botLevel: BotLevel | null;
+  botMark: PlayerMark | null;
   board: BoardCell[];
   turn: PlayerMark;
   turnDeadlineAt: number | null;
@@ -62,10 +67,13 @@ export interface RoomState {
 
 interface RoomCreateOptions {
   roomId: string;
-  playerXSocketId: string;
-  playerOSocketId: string;
+  playerXSocketId: string | null;
+  playerOSocketId: string | null;
   playerXSeatToken: string;
   playerOSeatToken: string;
+  mode?: QueueMode;
+  botMark?: PlayerMark | null;
+  botLevel?: BotLevel | null;
   size?: number;
   connect?: number;
 }
@@ -96,10 +104,16 @@ export interface SurrenderResult {
 export function createRoomState(options: RoomCreateOptions): RoomState {
   const size = options.size ?? DEFAULT_BOARD_SIZE;
   const connect = options.connect ?? DEFAULT_CONNECT_COUNT;
+  const mode = options.mode ?? "pvp";
+  const botMark = options.botMark ?? null;
+  const botLevel = mode === "pve" ? options.botLevel ?? "hard" : null;
   const room: RoomState = {
     roomId: options.roomId,
     size,
     connect,
+    mode,
+    botLevel,
+    botMark,
     board: createBoard(size),
     turn: "X",
     turnDeadlineAt: null,
@@ -110,13 +124,13 @@ export function createRoomState(options: RoomCreateOptions): RoomState {
       X: {
         seatToken: options.playerXSeatToken,
         socketId: options.playerXSocketId,
-        connected: true,
+        connected: options.playerXSocketId !== null,
         reconnectDeadlineAt: null
       },
       O: {
         seatToken: options.playerOSeatToken,
         socketId: options.playerOSocketId,
-        connected: true,
+        connected: options.playerOSocketId !== null,
         reconnectDeadlineAt: null
       }
     },
@@ -134,6 +148,10 @@ export function createRoomState(options: RoomCreateOptions): RoomState {
   };
 
   startTurnDeadline(room, Date.now());
+  if (botMark) {
+    room.players[botMark].connected = true;
+    room.players[botMark].reconnectDeadlineAt = null;
+  }
   return room;
 }
 
@@ -232,6 +250,9 @@ export function snapshotFromRoomState(room: RoomState): RoomSnapshot {
     roomId: room.roomId,
     size: room.size,
     connect: room.connect,
+    mode: room.mode,
+    botLevel: room.botLevel,
+    botMark: room.botMark,
     board: room.board,
     turn: room.turn,
     turnDeadlineAt: room.turnDeadlineAt,

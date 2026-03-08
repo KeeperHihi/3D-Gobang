@@ -1,5 +1,7 @@
 export type PlayerMark = "X" | "O";
 export type Winner = PlayerMark | "draw" | null;
+export type QueueMode = "pvp" | "pve";
+export type BotLevel = "normal" | "hard";
 
 export interface Coordinate3D {
   x: number;
@@ -28,6 +30,9 @@ export interface RoomSnapshot {
   roomId: string;
   size: number;
   connect: number;
+  mode?: QueueMode;
+  botLevel?: BotLevel | null;
+  botMark?: PlayerMark | null;
   board: number[];
   turn: PlayerMark;
   turnDeadlineAt: number | null;
@@ -78,6 +83,8 @@ export interface ResumeFailedPayload {
 
 export interface QueueJoinPayload {
   displayName?: string;
+  mode?: QueueMode;
+  botLevel?: BotLevel;
 }
 
 export interface QueueLeavePayload {}

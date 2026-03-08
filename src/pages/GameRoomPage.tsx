@@ -391,6 +391,9 @@ export function GameRoomPage({
     moveNumber: number;
   } | null>(null);
   const opponentMark: PlayerMark = myMark === "X" ? "O" : "X";
+  const isBotMatch = snapshot.mode === "pve";
+  const opponentLabel = isBotMatch ? `AI${snapshot.botLevel ? ` (${snapshot.botLevel.toUpperCase()})` : ""}` : "对手";
+  const botThinking = isBotMatch && !snapshot.winner && snapshot.turn === opponentMark;
   const opponentConnected = snapshot.players[opponentMark].connected;
   const opponentReconnectDeadlineAt = snapshot.players[opponentMark].reconnectDeadlineAt;
   const turnDeadlineAt = snapshot.turnDeadlineAt;
@@ -2028,7 +2031,9 @@ export function GameRoomPage({
         renderBootstrapPhase={renderBootstrapDecision.phase}
         averageFps={averageFps}
         myConnected={snapshot.players[myMark].connected}
+        opponentLabel={opponentLabel}
         opponentConnected={opponentConnected}
+        botThinking={botThinking}
         turnRemainingMs={turnRemainingMs}
         turnUrgent={turnUrgent}
         timeoutAssistEnabled={timeoutAssistEnabled}
