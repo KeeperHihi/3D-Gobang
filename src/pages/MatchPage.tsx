@@ -38,6 +38,51 @@ interface MatchPageProps {
   onCancelOutgoingChallenge: () => void;
 }
 
+interface FeedbackTicket {
+  id: string;
+  content: string;
+  createdAt: number;
+  status: "open";
+}
+
+const FEEDBACK_TICKET_STORAGE_KEY = "nebula-cube-feedback-tickets-v1";
+const FEEDBACK_TICKET_MAX_COUNT = 12;
+
+function readFeedbackTicketsFromStorage(): FeedbackTicket[] {
+  if (typeof localStorage === "undefined") {
+    return [];
+  }
+  const raw = localStorage.getItem(FEEDBACK_TICKET_STORAGE_KEY);
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as FeedbackTicket[];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter((ticket) => {
+        return (
+          typeof ticket?.id === "string" &&
+          typeof ticket?.content === "string" &&
+          typeof ticket?.createdAt === "number" &&
+          ticket.status === "open"
+        );
+      })
+      .slice(0, FEEDBACK_TICKET_MAX_COUNT);
+  } catch {
+    return [];
+  }
+}
+
+function persistFeedbackTicketsToStorage(tickets: FeedbackTicket[]): void {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
+  localStorage.setItem(FEEDBACK_TICKET_STORAGE_KEY, JSON.stringify(tickets));
+}
+
 function formatWaitTime(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -55,6 +100,20 @@ function presenceStatusText(status: LobbyPlayerSnapshot["status"]): string {
     return "对局中";
   }
   return "处理中";
+}
+
+function formatFeedbackTicketTime(createdAt: number): string {
+  try {
+    return new Intl.DateTimeFormat("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(createdAt);
+  } catch {
+    return String(createdAt);
+  }
 }
 
 export function MatchPage({
@@ -116,8 +175,16 @@ export function MatchPage({
   const [displayNameDraft, setDisplayNameDraft] = useState(displayName);
   const [displayNameError, setDisplayNameError] = useState<string | null>(null);
   const [displayNameSavedToastVisible, setDisplayNameSavedToastVisible] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [ticketDraft, setTicketDraft] = useState("");
+  const [ticketError, setTicketError] = useState<string | null>(null);
+  const [ticketSubmitNotice, setTicketSubmitNotice] = useState<string | null>(null);
+  const [feedbackTickets, setFeedbackTickets] = useState<FeedbackTicket[]>(() =>
+    readFeedbackTicketsFromStorage()
+  );
   const committedDraftRef = useRef(displayName);
   const displayNameSavedToastTimerRef = useRef<number | null>(null);
+  const ticketNoticeTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     setDisplayNameDraft(displayName);
@@ -147,6 +214,20 @@ export function MatchPage({
 
   useEffect(() => () => clearDisplayNameSavedToastTimer(), []);
 
+  const clearTicketNoticeTimer = () => {
+    if (typeof window === "undefined" || ticketNoticeTimerRef.current === null) {
+      return;
+    }
+    window.clearTimeout(ticketNoticeTimerRef.current);
+    ticketNoticeTimerRef.current = null;
+  };
+
+  useEffect(() => () => clearTicketNoticeTimer(), []);
+
+  useEffect(() => {
+    persistFeedbackTicketsToStorage(feedbackTickets);
+  }, [feedbackTickets]);
+
   const handleDisplayNameCommit = () => {
     const committed = displayNameDraft.trim();
     if (!committed) {
@@ -161,6 +242,35 @@ export function MatchPage({
     committedDraftRef.current = committed;
     setDisplayNameDraft(committed);
     setDisplayNameError(null);
+  };
+
+  const handleTicketSubmit = () => {
+    const content = ticketDraft.trim();
+    if (!content) {
+      setTicketError("建议内容不能为空");
+      return;
+    }
+    const nextTicket: FeedbackTicket = {
+      id:
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID().slice(0, 8)
+          : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      content: content.slice(0, 300),
+      createdAt: Date.now(),
+      status: "open"
+    };
+    setFeedbackTickets((current) => [nextTicket, ...current].slice(0, FEEDBACK_TICKET_MAX_COUNT));
+    setTicketDraft("");
+    setTicketError(null);
+    setTicketSubmitNotice("工单已提交，感谢反馈");
+    if (typeof window === "undefined") {
+      return;
+    }
+    clearTicketNoticeTimer();
+    ticketNoticeTimerRef.current = window.setTimeout(() => {
+      setTicketSubmitNotice(null);
+      ticketNoticeTimerRef.current = null;
+    }, 2000);
   };
 
   return (
@@ -332,6 +442,77 @@ export function MatchPage({
           )}
         </div>
       </div>
+      <button
+        className="match-feedback-trigger"
+        type="button"
+        onClick={() => {
+          setFeedbackOpen(true);
+          setTicketError(null);
+        }}
+      >
+        反馈
+      </button>
+      <aside className={`match-feedback-panel ${feedbackOpen ? "is-open" : ""}`} aria-hidden={!feedbackOpen}>
+        <div className="match-feedback-panel-header">
+          <div>
+            <p className="match-feedback-kicker">帮助我们更好</p>
+            <h3>提交工单</h3>
+          </div>
+          <button
+            className="match-feedback-close"
+            type="button"
+            onClick={() => {
+              setFeedbackOpen(false);
+              setTicketError(null);
+            }}
+            aria-label="关闭工单面板"
+          >
+            ×
+          </button>
+        </div>
+        <label className="match-feedback-label" htmlFor="match-feedback-input">
+          你的建议
+        </label>
+        <textarea
+          id="match-feedback-input"
+          className="match-feedback-input"
+          maxLength={300}
+          placeholder="例如：希望支持观战模式、快捷复盘、战绩筛选..."
+          value={ticketDraft}
+          onChange={(event) => {
+            setTicketDraft(event.target.value);
+            if (ticketError) {
+              setTicketError(null);
+            }
+          }}
+        />
+        <div className="match-feedback-actions">
+          <button className="primary-button match-feedback-submit" type="button" onClick={handleTicketSubmit}>
+            提交工单
+          </button>
+        </div>
+        {ticketError ? <p className="match-feedback-error">{ticketError}</p> : null}
+        {ticketSubmitNotice ? <p className="match-feedback-notice">{ticketSubmitNotice}</p> : null}
+        <div className="match-feedback-list">
+          <div className="match-feedback-list-header">
+            <span>已有工单</span>
+            <span>{feedbackTickets.length} 条</span>
+          </div>
+          {feedbackTickets.length === 0 ? (
+            <p className="match-feedback-empty">还没有工单，欢迎提交第一条建议。</p>
+          ) : (
+            feedbackTickets.map((ticket) => (
+              <article key={ticket.id} className="match-feedback-item">
+                <div className="match-feedback-item-meta">
+                  <span>#{ticket.id}</span>
+                  <span>{formatFeedbackTicketTime(ticket.createdAt)}</span>
+                </div>
+                <p>{ticket.content}</p>
+              </article>
+            ))
+          )}
+        </div>
+      </aside>
     </main>
   );
 }

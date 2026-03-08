@@ -48,6 +48,15 @@ function normalizeLayout(input: ReturnType<typeof buildBoardInstanceLayout>) {
   }));
 }
 
+function resolveOpacityByBoardIndex(
+  layout: ReturnType<typeof buildBoardInstanceLayout>,
+  boardIndex: number
+): number {
+  const lookup = layout.indexToInstance.get(boardIndex);
+  const bucket = layout.buckets.find((candidate) => candidate.id === lookup?.bucketId);
+  return bucket?.style.opacity ?? 0;
+}
+
 describe("buildBoardInstanceLayout", () => {
   it("creates reversible mapping between board index and instance id", () => {
     const input = createInput();
@@ -136,5 +145,25 @@ describe("buildBoardInstanceLayout", () => {
     expect(interactiveBucket?.style.scale).toBe(1);
     expect(interactiveBucket?.style.opacity).toBe(0.24);
     expect(interactiveBucket?.style.emissiveIntensity).toBe(0.4);
+  });
+
+  it("applies non-focus opacity slider only to empty cells", () => {
+    const lowOpacityLayout = buildBoardInstanceLayout(
+      createInput({
+        focusLayer: 1,
+        nonFocusLayerOpacity: 0.24
+      })
+    );
+    const highOpacityLayout = buildBoardInstanceLayout(
+      createInput({
+        focusLayer: 1,
+        nonFocusLayerOpacity: 0.88
+      })
+    );
+
+    // Index 1 is a placed piece on a non-focus layer; opacity should not be affected by slider.
+    expect(resolveOpacityByBoardIndex(lowOpacityLayout, 1)).toBe(resolveOpacityByBoardIndex(highOpacityLayout, 1));
+    // Index 0 is empty on a non-focus layer; opacity should follow slider value.
+    expect(resolveOpacityByBoardIndex(lowOpacityLayout, 0)).toBeLessThan(resolveOpacityByBoardIndex(highOpacityLayout, 0));
   });
 });

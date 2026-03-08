@@ -134,6 +134,7 @@ interface GameRoomPageProps {
   onTurnNudgeEnabledChange: (enabled: boolean) => void;
   turnNudgePermissionSnoozedUntilMs: number | null;
   onTurnNudgePermissionSnoozedUntilMsChange: (snoozedUntilMs: number | null) => void;
+  onSurrender: () => void;
   onLeave: () => void;
 }
 
@@ -273,6 +274,7 @@ export function GameRoomPage({
   onTurnNudgeEnabledChange,
   turnNudgePermissionSnoozedUntilMs,
   onTurnNudgePermissionSnoozedUntilMsChange,
+  onSurrender,
   onLeave
 }: GameRoomPageProps) {
   const lastMoveNumberRef = useRef(0);
@@ -337,7 +339,7 @@ export function GameRoomPage({
   );
   const [focusMode, setFocusMode] = useState<"auto" | "manual">("manual");
   const [focusLayer, setFocusLayer] = useState(Math.floor(snapshot.size / 2));
-  const [nonFocusLayerOpacity, setNonFocusLayerOpacity] = useState(1);
+  const [nonFocusLayerOpacity, setNonFocusLayerOpacity] = useState(0.66);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [layerHotkeys, setLayerHotkeys] = useState<LayerHotkeys>(() => readLayerHotkeysFromStorage());
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
@@ -929,6 +931,19 @@ export function GameRoomPage({
     stopWinLineCinematic();
     onRematch();
   }, [onRematch, stopWinLineCinematic]);
+  const handleSurrenderAction = useCallback(() => {
+    if (snapshot.winner || connectionStatus !== "online") {
+      return;
+    }
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm("确认认输并结束当前对局？");
+      if (!confirmed) {
+        return;
+      }
+    }
+    stopWinLineCinematic();
+    onSurrender();
+  }, [connectionStatus, onSurrender, snapshot.winner, stopWinLineCinematic]);
 
   const handleToggleTimeoutAssist = useCallback(() => {
     onTimeoutAssistEnabledChange(!timeoutAssistEnabled);
@@ -2053,6 +2068,8 @@ export function GameRoomPage({
         onToggleAssist={handleAssistToggle}
         onNonFocusLayerOpacityChange={handleNonFocusLayerOpacityChange}
         onQualityModeChange={onQualityModeChange}
+        canSurrender={!snapshot.winner && connectionStatus === "online"}
+        onSurrender={handleSurrenderAction}
         onRematch={handleRematchAction}
         onLeave={onLeave}
       />

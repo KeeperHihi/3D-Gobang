@@ -77,7 +77,8 @@ export function buildBoardInstanceLayout(input: BuildBoardInstanceLayoutInput): 
     const inFocusLayer = input.focusLayer === null || coordinate.z === input.focusLayer;
     const interactive = input.canPlace && isEmpty && inFocusLayer;
     const hint = isEmpty ? input.hintMap.get(index) : undefined;
-    const layerOpacityFactor = input.focusLayer === null ? 1 : inFocusLayer ? 1 : otherLayerOpacity;
+    const layerOpacityFactor =
+      input.focusLayer === null || inFocusLayer || !isEmpty ? 1 : otherLayerOpacity;
     const color = value === 1 ? "#64f6ff" : value === 2 ? "#ff69d0" : "#182850";
     const emissiveBaseColor = value === 1 ? "#48ffff" : value === 2 ? "#ff52da" : "#4f8eff";
     const emissive = hint?.color ?? emissiveBaseColor;

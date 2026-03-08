@@ -22,6 +22,7 @@ import {
   markForSocket,
   recordMoveAck,
   requestRematch,
+  requestSurrender,
   clearTurnDeadline,
   setPlayerConnection,
   startReconnectDeadline,
@@ -855,6 +856,34 @@ io.on("connection", (socket) => {
     const rematchResult = requestRematch(resolved.room, resolved.mark);
     if (!rematchResult.accepted) {
       emitGameError(socket, rematchResult.reason ?? "再来一局请求失败");
+      return;
+    }
+
+    scheduleTurnForfeit(roomId);
+    emitRoomUpdate(roomId);
+  });
+
+  socket.on("game:surrender", ({ roomId, seatToken }) => {
+    const resolved = resolveRoomAndMark(roomId, seatToken);
+    if (!resolved) {
+      emitGameError(socket, "无效认输请求");
+      return;
+    }
+    const assignedSocketId = resolved.room.players[resolved.mark].socketId;
+    if (assignedSocketId && assignedSocketId !== socket.id) {
+      emitGameError(socket, "该席位已在其他设备在线");
+      return;
+    }
+
+    setPlayerConnection(resolved.room, resolved.mark, socket.id, true);
+    clearReconnectForfeitTimer(roomId, resolved.mark);
+    clearReconnectDeadline(resolved.room, resolved.mark);
+    attachSocketToRoom(socket, roomId);
+    setLobbyStatus(socket.id, "in-game");
+
+    const surrenderResult = requestSurrender(resolved.room, resolved.mark);
+    if (!surrenderResult.accepted) {
+      emitGameError(socket, surrenderResult.reason ?? "认输请求失败");
       return;
     }
 

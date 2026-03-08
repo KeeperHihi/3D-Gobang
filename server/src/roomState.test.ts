@@ -10,6 +10,7 @@ import {
   getRecordedMoveAck,
   recordMoveAck,
   requestRematch,
+  requestSurrender,
   snapshotFromRoomState,
   setPlayerConnection,
   startReconnectDeadline
@@ -151,6 +152,36 @@ describe("requestRematch", () => {
       accepted: false,
       canceled: false,
       reason: "对局尚未结束，无法取消再来一局"
+    });
+  });
+});
+
+describe("requestSurrender", () => {
+  it("settles game immediately and awards win to opponent", () => {
+    const room = createFixtureRoom();
+    room.rematchVotes.add("X");
+    room.winningLine = [0, 1, 2, 3, 4];
+
+    const result = requestSurrender(room, "X");
+
+    expect(result).toEqual({
+      accepted: true
+    });
+    expect(room.winner).toBe("O");
+    expect(room.winningLine).toBeNull();
+    expect(room.turnDeadlineAt).toBeNull();
+    expect(room.rematchVotes.size).toBe(0);
+  });
+
+  it("rejects surrender after match is already settled", () => {
+    const room = createFixtureRoom();
+    room.winner = "X";
+
+    const result = requestSurrender(room, "O");
+
+    expect(result).toEqual({
+      accepted: false,
+      reason: "对局已结束，无法认输"
     });
   });
 });

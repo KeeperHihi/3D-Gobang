@@ -88,6 +88,11 @@ export interface RematchCancelResult {
   reason?: string;
 }
 
+export interface SurrenderResult {
+  accepted: boolean;
+  reason?: string;
+}
+
 export function createRoomState(options: RoomCreateOptions): RoomState {
   const size = options.size ?? DEFAULT_BOARD_SIZE;
   const connect = options.connect ?? DEFAULT_CONNECT_COUNT;
@@ -392,6 +397,24 @@ export function applyMoveToRoom(
   room.turn = room.turn === "X" ? "O" : "X";
   startTurnDeadline(room, Date.now());
   return { accepted: true };
+}
+
+export function requestSurrender(room: RoomState, mark: PlayerMark): SurrenderResult {
+  if (room.winner) {
+    return {
+      accepted: false,
+      reason: "对局已结束，无法认输"
+    };
+  }
+
+  room.winner = mark === "X" ? "O" : "X";
+  room.winningLine = null;
+  room.rematchVotes.clear();
+  clearReconnectDeadlines(room);
+  clearTurnDeadline(room);
+  return {
+    accepted: true
+  };
 }
 
 export function requestRematch(room: RoomState, mark: PlayerMark): RematchRequestResult {

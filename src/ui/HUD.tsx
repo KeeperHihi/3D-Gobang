@@ -94,6 +94,8 @@ interface HUDProps {
   onToggleAssist: () => void;
   onNonFocusLayerOpacityChange: (opacity: number) => void;
   onQualityModeChange: (mode: QualityMode) => void;
+  canSurrender: boolean;
+  onSurrender: () => void;
   onRematch: () => void;
   onLeave: () => void;
 }
@@ -218,6 +220,8 @@ export function HUD({
   onToggleAssist,
   onNonFocusLayerOpacityChange,
   onQualityModeChange,
+  canSurrender,
+  onSurrender,
   onRematch,
   onLeave
 }: HUDProps) {
@@ -445,6 +449,8 @@ export function HUD({
     rematchWaitPhase === "fallback-ready"
       ? "等待较久，你可以一键继续匹配"
       : `等待对手确认，${rematchWaitRemainingSeconds ?? 0}s 后可继续匹配`;
+  const prevLayerLabel = `上一层 (${layerHotkeys.up.toUpperCase()})`;
+  const nextLayerLabel = `下一层 (${layerHotkeys.down.toUpperCase()})`;
   const autoContinueText =
     autoContinuePhase === "countdown"
       ? `${autoContinueCountdownSeconds ?? 0}s 后自动继续匹配`
@@ -583,7 +589,7 @@ export function HUD({
               onClick={() => onLayerStep(-1)}
               disabled={!layerQuickNav.canGoPrev}
             >
-              上一层
+              {prevLayerLabel}
             </button>
             <button
               className="hud-mini-button"
@@ -591,7 +597,7 @@ export function HUD({
               onClick={() => onLayerStep(1)}
               disabled={!layerQuickNav.canGoNext}
             >
-              下一层
+              {nextLayerLabel}
             </button>
           </div>
           <div className="hud-layer-rail-tags">
@@ -813,6 +819,14 @@ export function HUD({
                   </button>
                 </div>
               ) : null}
+              {canSurrender ? (
+                <div className="hud-setting-row">
+                  <span className="hud-setting-label">对局操作</span>
+                  <button className="hud-mini-button danger" type="button" onClick={onSurrender}>
+                    认输
+                  </button>
+                </div>
+              ) : null}
               <div className="hud-setting-row">
                 <span className="hud-setting-label">离开房间</span>
                 <button className="hud-mini-button danger" type="button" onClick={onLeave}>
@@ -827,7 +841,7 @@ export function HUD({
                 onClick={() => onLayerStep(-1)}
                 disabled={focusLayer <= 0}
               >
-                上一层
+                {prevLayerLabel}
               </button>
               <button
                 className="hud-mini-button"
@@ -835,7 +849,7 @@ export function HUD({
                 onClick={() => onLayerStep(1)}
                 disabled={focusLayer >= boardSize - 1}
               >
-                下一层
+                {nextLayerLabel}
               </button>
             </div>
           </div>

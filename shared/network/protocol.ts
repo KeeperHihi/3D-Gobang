@@ -113,6 +113,11 @@ export interface RematchCancelPayload {
   seatToken: string;
 }
 
+export interface SurrenderPayload {
+  roomId: string;
+  seatToken: string;
+}
+
 export interface ResumePayload {
   roomId: string;
   seatToken: string;
@@ -186,6 +191,7 @@ export interface ClientToServerEvents {
   "challenge:respond": (payload: ChallengeRespondPayload) => void;
   "challenge:cancel": (payload: ChallengeCancelPayload) => void;
   "game:place": (payload: PlaceMovePayload) => void;
+  "game:surrender": (payload: SurrenderPayload) => void;
   "game:rematch": (payload: RematchPayload) => void;
   "game:rematch:cancel": (payload: RematchCancelPayload) => void;
   "room:resume": (payload: ResumePayload) => void;

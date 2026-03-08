@@ -36,6 +36,7 @@ import {
   type ContinueTransitionEvent
 } from "./game/interaction/continueTransition";
 import { TURN_NUDGE_PERMISSION_SNOOZE_MS } from "./game/interaction/turnNudgePermission";
+import { activateAudioAmbience } from "./audio/sfx";
 import type {
   ChallengeIncomingPayload,
   ChallengeOutgoingPayload,
@@ -345,6 +346,32 @@ export default function App() {
       });
     }
   }, [displayName, socket]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    let unlocked = false;
+    const unlockAudio = () => {
+      if (unlocked) {
+        return;
+      }
+      unlocked = true;
+      activateAudioAmbience();
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("touchstart", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+    };
+
+    window.addEventListener("pointerdown", unlockAudio, { passive: true });
+    window.addEventListener("touchstart", unlockAudio, { passive: true });
+    window.addEventListener("keydown", unlockAudio);
+    return () => {
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("touchstart", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+    };
+  }, []);
 
   const applyContinueTransition = (event: ContinueTransitionEvent) => {
     setContinueTransition((current) => {
@@ -966,6 +993,7 @@ export default function App() {
   }, [pendingMove, socket]);
 
   const startMatch = () => {
+    activateAudioAmbience();
     if (sessionRef.current && !snapshot) {
       setErrorMessage("正在恢复对局，请稍后");
       return;
@@ -1047,6 +1075,7 @@ export default function App() {
   };
 
   const placePiece = (coordinate: Coordinate3D) => {
+    activateAudioAmbience();
     if (!session || !snapshot) {
       return;
     }
@@ -1098,6 +1127,20 @@ export default function App() {
       return;
     }
     socket.emit("game:rematch:cancel", {
+      roomId: session.roomId,
+      seatToken: session.seatToken
+    });
+  };
+
+  const requestSurrender = () => {
+    if (!session) {
+      return;
+    }
+    if (!socket.connected) {
+      setErrorMessage("正在连接服务器，请稍后重试");
+      return;
+    }
+    socket.emit("game:surrender", {
       roomId: session.roomId,
       seatToken: session.seatToken
     });
@@ -1252,6 +1295,7 @@ export default function App() {
         onTurnNudgeEnabledChange={setTurnNudgeEnabled}
         turnNudgePermissionSnoozedUntilMs={turnNudgePermissionSnoozedUntilMs}
         onTurnNudgePermissionSnoozedUntilMsChange={setTurnNudgePermissionSnoozedUntilMs}
+        onSurrender={requestSurrender}
         onLeave={leaveRoom}
       />
     </Suspense>

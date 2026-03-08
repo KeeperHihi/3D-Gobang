@@ -460,6 +460,201 @@ body {
   color: rgba(255, 223, 156, 0.9);
 }
 
+.match-feedback-trigger {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 18;
+  height: 48px;
+  min-width: 96px;
+  border-radius: 999px;
+  border: 1px solid rgba(142, 234, 255, 0.58);
+  background: linear-gradient(115deg, rgba(77, 182, 245, 0.5), rgba(87, 116, 216, 0.42));
+  color: #e9f8ff;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  box-shadow:
+    0 16px 36px rgba(20, 66, 132, 0.38),
+    0 0 18px rgba(97, 191, 255, 0.22);
+  transition:
+    transform 0.18s ease,
+    filter 0.18s ease,
+    box-shadow 0.22s ease;
+}
+
+.match-feedback-trigger:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+  box-shadow:
+    0 20px 42px rgba(20, 66, 132, 0.44),
+    0 0 22px rgba(97, 191, 255, 0.28);
+}
+
+.match-feedback-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 84px;
+  z-index: 17;
+  width: min(390px, calc(100vw - 32px));
+  max-height: min(68vh, 620px);
+  border-radius: 18px;
+  border: 1px solid rgba(131, 229, 255, 0.45);
+  background: linear-gradient(160deg, rgba(8, 19, 41, 0.94), rgba(7, 12, 29, 0.92));
+  box-shadow:
+    0 18px 46px rgba(11, 41, 101, 0.48),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  backdrop-filter: blur(14px);
+  padding: 14px;
+  opacity: 0;
+  transform: translate3d(0, 14px, 0) scale(0.96);
+  pointer-events: none;
+  transition:
+    opacity 0.28s ease,
+    transform 0.32s cubic-bezier(0.2, 0.68, 0.2, 1);
+}
+
+.match-feedback-panel.is-open {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+  pointer-events: auto;
+}
+
+.match-feedback-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.match-feedback-kicker {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: rgba(160, 236, 255, 0.88);
+}
+
+.match-feedback-panel-header h3 {
+  margin: 4px 0 0;
+  font-size: 23px;
+  color: #ebf8ff;
+}
+
+.match-feedback-close {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(136, 216, 255, 0.42);
+  background: rgba(28, 60, 117, 0.62);
+  color: #eaf7ff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.match-feedback-label {
+  display: block;
+  margin-top: 10px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: rgba(197, 232, 254, 0.9);
+}
+
+.match-feedback-input {
+  width: 100%;
+  min-height: 88px;
+  max-height: 128px;
+  resize: vertical;
+  border-radius: 11px;
+  border: 1px solid rgba(124, 213, 255, 0.44);
+  background: rgba(20, 42, 86, 0.62);
+  color: #e6f6ff;
+  padding: 10px 11px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.match-feedback-actions {
+  margin-top: 10px;
+}
+
+.match-feedback-submit {
+  height: 44px;
+  border-radius: 11px;
+  font-size: 15px;
+}
+
+.match-feedback-error {
+  margin: 8px 2px 0;
+  color: rgba(255, 182, 182, 0.95);
+  font-size: 12px;
+}
+
+.match-feedback-notice {
+  margin: 8px 2px 0;
+  color: rgba(189, 255, 224, 0.96);
+  font-size: 12px;
+}
+
+.match-feedback-list {
+  margin-top: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(117, 202, 255, 0.28);
+  background: rgba(31, 69, 130, 0.24);
+  padding: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.match-feedback-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: rgba(193, 228, 250, 0.9);
+}
+
+.match-feedback-empty {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(190, 220, 240, 0.8);
+}
+
+.match-feedback-item {
+  border-radius: 10px;
+  border: 1px solid rgba(120, 210, 255, 0.24);
+  background: rgba(16, 39, 81, 0.48);
+  padding: 8px 9px;
+  margin-top: 8px;
+}
+
+.match-feedback-item:first-of-type {
+  margin-top: 0;
+}
+
+.match-feedback-item-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: rgba(173, 225, 255, 0.86);
+  margin-bottom: 5px;
+}
+
+.match-feedback-item p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(218, 239, 255, 0.93);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .primary-button {
   width: 100%;
   height: 56px;
@@ -1645,5 +1840,18 @@ body {
 
   .secondary-button {
     height: 46px;
+  }
+
+  .match-feedback-trigger {
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .match-feedback-panel {
+    right: 12px;
+    left: 12px;
+    width: auto;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    max-height: min(66vh, 540px);
   }
 }
