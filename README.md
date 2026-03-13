@@ -1,3 +1,6 @@
+# 注意
+本仓库为上游仓库 [auto evolution project](https://github.com/KeeperHihi/auto-evol-project) 的衍生作品，由 `gpt-5.3-codex-xhigh` 迭代 72 轮生成。
+
 # Nebula Cube 3D 五子棋
 
 支持在线匹配与人机对战的 3D 五子棋。棋盘是立方体，任意空间方向连成 5 子即获胜。
