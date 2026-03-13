@@ -1,5 +1,5 @@
 # 注意
-本仓库为上游仓库 [auto evolution project](https://github.com/KeeperHihi/auto-evol-project) 的衍生作品，由 `gpt-5.3-codex-xhigh` 迭代 72 轮生成。
+本仓库为上游仓库 [Auto-Evolution-Project](https://github.com/KeeperHihi/auto-evol-project) 的衍生作品，由 `gpt-5.3-codex-xhigh` 迭代 72 轮生成。
 
 # Nebula Cube 3D 五子棋
 
